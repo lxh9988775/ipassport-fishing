@@ -24,7 +24,6 @@
 #include "freertos/queue.h"
 #include "nvs_flash.h"
 #include "nvs.h"
-#include "esp_timer.h"   /* esp_timer_get_time()：单调时钟，不依赖 LVGL 版本 */
 #include "lvgl.h"
 #include "bsp_display.h"   /* 显示初始化 + LVGL 接入（bsp_lvgl_init/lock/unlock） */
 #include "bsp_button.h"    /* 三键回调 */
@@ -34,9 +33,10 @@
 #include "fishing_audio.h"
 
 /* ===================== 单调时钟（毫秒） ===================== */
-/* 用 esp_timer 取微秒→毫秒，避免依赖 LVGL 版本里的 tick API 名称 */
+/* 用 FreeRTOS 节拍计数换算毫秒（sdkconfig 里 FREERTOS_HZ=1000，portTICK_PERIOD_MS=1），
+ * 不依赖 LVGL 版本里的 tick API 名称，也不需要额外组件。 */
 static uint32_t now_ms(void) {
-    return (uint32_t)(esp_timer_get_time() / 1000ULL);
+    return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
 }
 
 /* ===================== NVS（最高分断电不丢） ===================== */
