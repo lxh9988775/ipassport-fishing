@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: firmware-${{ github.ref }}
@@ -56,3 +56,20 @@ jobs:
           path: build/FoloToy-AI-Passport-full.bin
           if-no-files-found: error
           retention-days: 7
+
+      # 把编译好的整镜像提交到 build-artifacts 分支，
+      # 这样即使 github.com 网页打不开，也能用 git 直接把 .bin 取回本地。
+      - name: Publish firmware to build-artifacts branch
+        run: |
+          set -eu
+          cp build/FoloToy-AI-Passport-full.bin /tmp/firmware.bin
+          ls -lh /tmp/firmware.bin
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan build-artifacts
+          git rm -rf --cached . >/dev/null 2>&1 || true
+          find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} + 2>/dev/null || true
+          cp /tmp/firmware.bin FoloToy-AI-Passport-full.bin
+          git add -f FoloToy-AI-Passport-full.bin
+          git commit -m "firmware build ${GITHUB_RUN_ID} from ${GITHUB_SHA}"
+          git push --force origin HEAD:build-artifacts
