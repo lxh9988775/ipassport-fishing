@@ -13,66 +13,76 @@
 
 ---
 
-## 0. 本地先验证逻辑（不需任何环境）
+## 路线：云端自动编译（已选定，电脑不用装任何工具）
+
+链路：**推代码到 GitHub → GitHub 云端自动编译 → 下载 full.bin → 官网发布技能上传社区**
+
+编译由官方工作流 `.github/workflows/firmware-checks.yml` 完成（push 到 `main` 自动触发）：
+- 环境：`espressif/esp-idf-ci-action` + **ESP-IDF v5.5.3** + target `esp32c3`
+- 命令：`./tools/validate.sh --firmware`（编译 → `merge-bin` 合并整镜像 → 校验分区/≤8MB）
+- 产物：`build/FoloToy-AI-Passport-full.bin`，上传为 Actions Artifact
+
+---
+
+## 第 1 步：把代码推到 GitHub（公开仓库）
+
+你的仓库已经建好并且是公开的：
+```
+https://github.com/lxh9988775/ipassport-fishing
+```
+本地已有 2 个提交等待推送。用 GitHub Desktop：
+1. 打开 GitHub Desktop（当前仓库应为 `AIpassport`）
+2. 顶部 **Sign in**（或右上角 Push 时提示登录）→ 浏览器打开 **github.com** 登录并授权
+3. 回到 Desktop 点 **Push origin**
+4. 推完在浏览器打开上面那个链接，应能看到 `main/`、`components/`、`docs/` 等文件
+
+> ⚠️ **推不上时的排查**：本机曾有一条"GitHub 加速"全局规则
+> `url.https://ghproxy.net/https://github.com/.insteadOf = https://github.com/`，
+> 它会把**登录地址和推送地址**都改写成镜像站 `ghproxy.net`，导致：
+> ① 登录页打不开（Invalid input）；② 推送时"找不到 ghproxy 的凭据"而失败。
+> 该规则已删除（原配置备份在 `C:/Users/8605464/.gitconfig.backup-aipassport`）。
+> 如日后还想为 `git clone` 加速而恢复，请只对 clone 单次使用，不要再设全局规则。
+
+## 第 2 步：等云端编译（全自动，约 3~8 分钟）
+
+1. 打开 `https://github.com/lxh9988775/ipassport-fishing/actions`
+2. 看到 **Firmware checks** 正在跑（黄点）→ 等它变 **绿勾**
+3. 点进那次运行 → 页面底部 **Artifacts** → 下载 `firmware-<编号>`
+4. 解压后得到 `FoloToy-AI-Passport-full.bin` —— 这就是能上传社区的固件
+
+> ❌ 红叉也不用慌：点进去看是哪一步报错，把日志发我，我直接改代码。
+> ⚠️ 千万别用 `idf.py build` 单独产出的 app-only bin（缺 bootloader/分区表），社区校验会拒。
+
+## 第 3 步：上传到社区（官网发布技能）
+
+按官方 `docs/development/release/publish-to-community.md`，上传靠官网的**发布技能**，
+不是手动拖文件。流程：
+1. 安装发布技能：`https://ai-passport.folotoy.cn/skills/folotoy-ai-passport-publisher.zip`
+2. 准备好四样东西：
+   - **固件**：第 2 步下载的 `FoloToy-AI-Passport-full.bin`
+   - **封面图**：一张代表性 JPEG/PNG/WebP（≤10 MiB）
+   - **双语标题 + 简介**（中英文，例：竿影浮标 / Rod & Float — 三键钓鱼小游戏）
+   - **Git 源码地址**：`https://github.com/lxh9988775/ipassport-fishing`
+3. 在官网注册 / 登录**授权**，逐项预览确认后再上传（助手不碰你的密码）
+
+---
+
+## 附：本地编译（可选，不装也能走完全流程）
+
+若哪天要脱离网络编译：装 **ESP-IDF 5.5.3** 后
 ```bash
 cd AIpassport
+idf.py build
+idf.py merge-bin -o build/FoloToy-AI-Passport-full.bin
+./tools/validate.sh --firmware        # 可选，官方校验
+```
+真机烧录：`idf.py flash` 或 `esptool.py write_flash 0x0 build/FoloToy-AI-Passport-full.bin`。
+浏览器模拟器（不用真机）：https://openswiftuiproject.github.io/FoloToy-Passport-Simulator
+
+本地逻辑自测（零依赖，随时可跑）：
+```bash
 python tools/verify_logic.py      # 7 项逻辑测试，全过即可放心
 ```
-
-## 1. 安装 ESP-IDF 5.5.3（仅首次）
-官方要求 **ESP-IDF 5.5.3**（见 `sdkconfig.defaults`）。Windows 用 Git Bash：
-```bash
-# 任选一路下载（国内用清华/中科大镜像更快）
-git clone -b v5.5.3 --recursive https://github.com/espressif/esp-idf.git
-cd esp-idf && ./install.sh esp32c3
-# 每次新开终端先激活：
-. $HOME/esp/esp-idf/export.sh      # 实际路径以你安装位置为准
-```
-
-## 2. 构建 + 合并整镜像（上传必须用这个）
-```bash
-cd AIpassport
-idf.py build                                  # 编译 app + bootloader + 分区表
-idf.py merge-bin -o build/FoloToy-AI-Passport-full.bin
-# ↑ 这是从 0x0 开始的完整镜像，包含 bootloader+分区表+应用，≤8MB
-```
-> ⚠️ 别用 `idf.py build` 单独产出的 `build/FoloToy-AI-Passport.bin`（app-only，缺 bootloader/分区表），
-> 社区校验会拒。上传只认 **`build/FoloToy-AI-Passport-full.bin`**。
-
-## 3.（推荐）跑官方校验
-```bash
-./tools/validate.sh --firmware    # 需要 idf.py + cc + python3，Git Bash 里跑
-```
-它通过后会把 `build/FoloToy-AI-Passport-full.bin` 放到 `build/`，并校验分区偏移 / 不重叠 / ≤8MB。
-
-## 4. 真机 / 模拟器先自测（可选，但建议）
-- **模拟器**（不用真机）：https://openswiftuiproject.github.io/FoloToy-Passport-Simulator
-  加载导出的 `full.bin` 即可看画面 + 按键 + 声音。
-- **真机烧录**：`idf.py flash` 或
-  `esptool.py write_flash 0x0 build/FoloToy-AI-Passport-full.bin`（Chrome/Edge 网页 USB 也行）。
-
-## 5. 把代码推到公开 Git 仓库（上传的前置条件）
-社区要求源码是一个**公开可达的 HTTPS Git 页面**（GitHub / Gitee / GitLab / Codeberg）。
-```bash
-cd AIpassport
-git init && git add -A && git commit -m "feat: fishing game for AI Passport"
-# 在 GitHub 建一个公开仓库，然后：
-git remote add origin https://github.com/<你的用户名>/ai-passport-fishing.git
-git push -u origin main
-```
-记下这个仓库的 HTTPS 页面地址（下一步要填）。
-
-## 6. 上传到社区（官网发布技能）
-按官方 `docs/development/release/publish-to-community.md`，上传靠官网的**发布技能**，
-不是手动拖文件。流程（在你的 AI 助手 / 官网里）：
-1. 安装发布技能：`https://ai-passport.folotoy.cn/skills/folotoy-ai-passport-publisher.zip`
-2. 技能会引导你准备：
-   - **固件**：`build/FoloToy-AI-Passport-full.bin`（已校验）
-   - **封面图**：一张代表性 JPEG/PNG/WebP（≤10MiB）
-   - **双语标题 + 简介**（中英文）
-   - **Git 源码地址**：第 5 步的公开仓库 HTTPS 页
-3. 在官网注册 / 登录**授权**，预览每个字段并确认后再上传。
-   （助手不碰你的密码；凭证由你在官网自己处理。）
 
 ---
 
@@ -92,6 +102,7 @@ main/fishing_audio.{h,c}   音效（代码生成 PCM，走官方 BSP）
 main/fishing.c             应用层：LVGL 画面 + 三键(回调/队列) + 电量 + NVS 最高分
 main/main.c                入口：BSP 硬件初始化顺序 → fishing_app_start()
 main/CMakeLists.txt        只编 fishing 文件
+.github/workflows/firmware-checks.yml   云端自动编译（push main 触发）
 tools/verify_logic.py      逻辑即时校验（零依赖）
 tests/fishing_logic_test.c C 单测（装 gcc/ESP-IDF 后跑权威版）
 ```
