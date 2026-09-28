@@ -1,0 +1,21 @@
+build/
+sdkconfig
+sdkconfig.old
+managed_components/
+.vscode/
+.idea/
+
+# WorkBuddy 本地记忆（含个人信息/项目笔记，切勿公开上传到 GitHub）
+.workbuddy/
+
+# 系统垃圾文件
+.DS_Store
+Thumbs.db
+*.log
+
+# Generated repository-local links; canonical skill sources live in skills/.
+/.agents/skills/passport-develop
+/.agents/skills/passport-setup
+/.agents/skills/passport-build
+/.agents/skills/passport-device-test
+/.agents/skills/passport-debug
