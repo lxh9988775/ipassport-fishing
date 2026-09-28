@@ -33,12 +33,13 @@ def strip_comments(s):
 def needed_chars():
     with open(SRC_C, "r", encoding="utf-8") as f:
         src = strip_comments(f.read())
+    lits = re.findall(r'"((?:[^"\\]|\\.)*)"', src)
     need = {}
-    for lit in re.findall(r'"((?:[^"\\]|\\.)*)"', src):
+    for lit in lits:
         for ch in lit:
             if ord(ch) > 0x7F:
                 need.setdefault(ch, set()).add(lit)
-    return need
+    return need, lits
 
 
 def font_chars():
@@ -49,27 +50,63 @@ def font_chars():
     return have
 
 
+def width_check(lits):
+    """文案宽度护栏：单行超过屏宽 240px 就会被裁掉，这类问题编译期发现不了。"""
+    otf = os.path.join(ROOT, "assets", "fonts", "SourceHanSansCN-Normal.otf")
+    if not os.path.exists(otf):
+        print("\n[跳过] 宽度检查：本地没有源字体 assets/fonts/SourceHanSansCN-Normal.otf")
+        return 0
+    try:
+        from PIL import ImageFont
+    except ImportError:
+        print("\n[跳过] 宽度检查：未安装 Pillow")
+        return 0
+
+    SCREEN_W = 240          # 屏宽
+    MAX_W = SCREEN_W - 8    # 两侧各留 4px
+    font = ImageFont.truetype(otf, 16)
+    over = []
+    for lit in lits:
+        probe = lit.replace("\\n", "\n").replace("%d", "0").replace("%s", "X").replace("%%", "%")
+        widest = max((font.getlength(line) for line in probe.split("\n")), default=0)
+        if widest > MAX_W:
+            over.append((widest, lit))
+
+    print("\n宽度检查（16px 字号，上限 %dpx / 屏宽 %dpx）" % (MAX_W, SCREEN_W))
+    if over:
+        print("[FAIL] 以下文案超出屏宽，会被裁掉：")
+        for w, lit in sorted(over, reverse=True):
+            print("  %.1fpx  %s" % (w, lit))
+        return 1
+    print("[PASS] 所有文案单行宽度均在屏宽内。")
+    return 0
+
+
 def main():
     if not os.path.exists(SRC_C) or not os.path.exists(FONT_C):
         print("[FAIL] 找不到 %s 或 %s" % (SRC_C, FONT_C))
         return 2
 
-    need = needed_chars()
+    need, lits = needed_chars()
     have = font_chars()
     missing = {c: v for c, v in need.items() if c not in have}
 
     print("源文案中的非 ASCII 字符：%d 个" % len(need))
     print("子集字库覆盖字形：%d 个（含 ASCII）" % len(have))
 
+    rc = 0
     if missing:
         print("\n[FAIL] 以下字符字库里没有，屏上会显示方框：")
-        for ch, lits in sorted(missing.items()):
-            print("  %s  U+%04X   出现在：%s" % (ch, ord(ch), " / ".join(sorted(lits))))
-        print("\n修法：把缺字补进 tools/gen_font.py 的 TEXTS，再跑 python tools/gen_font.py")
-        return 1
+        for ch, lits_ in sorted(missing.items()):
+            print("  %s  U+%04X   出现在：%s" % (ch, ord(ch), " / ".join(sorted(lits_))))
+        print("\n修法：把缺字补进屏上文案，再跑 python tools/gen_font.py 重新生成字库")
+        rc = 1
+    else:
+        print("\n[PASS] 屏上所有中文文案，子集字库均覆盖，无缺字。")
 
-    print("\n[PASS] 屏上所有中文文案，子集字库均覆盖，无缺字。")
-    return 0
+    if width_check(lits) != 0:
+        rc = 1
+    return rc
 
 
 if __name__ == "__main__":

@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>竿影浮标 · 上架材料清单</title>
+<style>
+  :root{
+    --sky:#87CEEB; --deep:#143C78; --buoy:#FF5050;
+    --ink:#16202f; --muted:#5b6879; --line:#e2e9f0;
+    --ok:#1f7a3f; --warn:#b06b00; --bg:#f4f8fb;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:28px 16px 56px; background:var(--bg); color:var(--ink);
+    font:15px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei","PingFang SC",sans-serif;
+  }
+  .wrap{max-width:900px;margin:0 auto}
+  header{
+    background:linear-gradient(160deg,var(--sky) 0%,#6fb6de 42%,var(--deep) 42.2%,#0d2a55 100%);
+    color:#fff;border-radius:16px;padding:26px 28px;margin-bottom:22px;
+    box-shadow:0 6px 24px rgba(20,60,120,.18);
+  }
+  header h1{margin:0 0 6px;font-size:24px;letter-spacing:.5px}
+  header p{margin:0;opacity:.92;font-size:13.5px}
+  .badge{
+    display:inline-block;margin-top:14px;background:rgba(255,255,255,.18);
+    border:1px solid rgba(255,255,255,.35);border-radius:999px;
+    padding:4px 14px;font-size:13px;font-weight:600;
+  }
+  h2{font-size:17px;margin:30px 0 12px;padding-left:11px;border-left:4px solid var(--buoy);line-height:1.3}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px}
+  .card{
+    background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px 18px;
+    box-shadow:0 1px 3px rgba(20,60,120,.05);
+  }
+  .card .k{font-size:12.5px;color:var(--muted);letter-spacing:.4px;margin-bottom:6px}
+  .card .v{font-size:15.5px;font-weight:600;word-break:break-all}
+  .card .s{margin-top:8px;font-size:12.5px;font-weight:600}
+  .ok{color:var(--ok)} .warn{color:var(--warn)}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  th,td{padding:11px 14px;text-align:left;border-bottom:1px solid var(--line);font-size:14px;vertical-align:top}
+  th{background:#f0f5fa;font-size:13px;color:var(--muted);font-weight:600;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  td.mono{font-family:ui-monospace,Consolas,monospace;font-size:13px;word-break:break-all}
+  ol.steps{padding-left:0;list-style:none;counter-reset:s;margin:0}
+  ol.steps li{
+    counter-increment:s;position:relative;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:14px 18px 14px 54px;margin-bottom:10px;
+  }
+  ol.steps li::before{
+    content:counter(s);position:absolute;left:16px;top:14px;width:24px;height:24px;
+    background:var(--deep);color:#fff;border-radius:50%;font-size:13px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;
+  }
+  ol.steps li b{display:block;margin-bottom:2px}
+  .note{
+    background:#fff8ec;border:1px solid #f0dcb4;border-left:4px solid var(--warn);
+    border-radius:10px;padding:13px 16px;font-size:13.5px;margin:14px 0;
+  }
+  .note b{color:var(--warn)}
+  details{background:#fff;border:1px solid var(--line);border-radius:12px;padding:0 18px;margin-bottom:10px}
+  details summary{cursor:pointer;padding:13px 0;font-weight:600;font-size:14px;outline:none}
+  details[open] summary{border-bottom:1px solid var(--line);margin-bottom:12px}
+  details .body{padding-bottom:14px;font-size:14px;white-space:pre-wrap}
+  .en{color:var(--muted);font-size:13.5px}
+  footer{text-align:center;color:var(--muted);font-size:12.5px;margin-top:34px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>竿影浮标 · 上架材料清单</h1>
+  <p>AI Passport 社区（ai-passport.folotoy.cn）· 上传前逐项核对</p>
+  <span class="badge" id="badge">4 / 4 材料已齐 · 只差你登录授权</span>
+</header>
+
+<h2>一、四样必需材料</h2>
+<div class="grid">
+  <div class="card">
+    <div class="k">① 固件（合并整镜像）</div>
+    <div class="v">FoloToy-AI-Passport-full.bin</div>
+    <div class="s ok" id="fw-status">✓ 771,984 字节 · 从 0x0 起 · 云端校验 PASS</div>
+  </div>
+  <div class="card">
+    <div class="k">② 封面图</div>
+    <div class="v">fishing-cover.png</div>
+    <div class="s ok">✓ 1024×1024 · 582 KB · 已去生成水印</div>
+  </div>
+  <div class="card">
+    <div class="k">③ 中英标题 + 简介</div>
+    <div class="v">已起草，可直接粘贴</div>
+    <div class="s ok">✓ 见下方「文案」区块</div>
+  </div>
+  <div class="card">
+    <div class="k">④ 源码地址（公开 HTTPS Git）</div>
+    <div class="v" style="font-size:13.5px">github.com/lxh9988775/<br>ipassport-fishing</div>
+    <div class="s ok">✓ 仓库已 public</div>
+  </div>
+</div>
+
+<h2>二、逐字段对照表</h2>
+<table>
+  <thead>
+    <tr><th>上传字段</th><th>你要填 / 上传的内容</th><th>状态</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>固件文件</td>
+      <td class="mono">FoloToy-AI-Passport-full.bin<br><span id="fw-detail">753.9 KB（771,984 字节）· 含 bootloader + 分区表<br>SHA-256 9e45d0b0…237a</span></td>
+      <td class="ok">已备好</td>
+    </tr>
+    <tr>
+      <td>封面图</td>
+      <td class="mono">assets/cover/fishing-cover.png</td>
+      <td class="ok">已备好</td>
+    </tr>
+    <tr>
+      <td>标题（中文）</td>
+      <td>竿影浮标 · 钓鱼忙</td>
+      <td class="ok">已定稿</td>
+    </tr>
+    <tr>
+      <td>标题（English）</td>
+      <td class="en">Rod &amp; Float — Fishing Mini-Game</td>
+      <td class="ok">已定稿</td>
+    </tr>
+    <tr>
+      <td>简介（中文）</td>
+      <td>见下方折叠区，直接复制</td>
+      <td class="ok">已定稿</td>
+    </tr>
+    <tr>
+      <td>简介（English）</td>
+      <td>见下方折叠区，直接复制</td>
+      <td class="ok">已定稿</td>
+    </tr>
+    <tr>
+      <td>源码地址</td>
+      <td class="mono">https://github.com/lxh9988775/ipassport-fishing</td>
+      <td class="ok">已公开</td>
+    </tr>
+    <tr>
+      <td>官网账号 + 授权</td>
+      <td>你自己在 ai-passport.folotoy.cn 注册 / 登录并批准</td>
+      <td class="warn">← 只有这一步需要你亲自做</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>三、你还要做的（3 步）</h2>
+<ol class="steps">
+  <li>
+    <b>装发布技能</b>
+    把这段提示词丢给助手，它会从官网拉官方发布技能：
+    <div class="mono" style="margin-top:6px;background:#f4f8fb;padding:9px 11px;border-radius:8px;font-size:12.5px">
+      请安装 FoloToy AI Passport 发布助手：https://ai-passport.folotoy.cn/skills/folotoy-ai-passport-publisher.zip
+    </div>
+  </li>
+  <li>
+    <b>登录并授权</b>
+    首次会引导你在官网注册 / 登录。<b>密码只有你输，助手不碰。</b>
+  </li>
+  <li>
+    <b>核对预览再点上传</b>
+    技能会把上面每个字段先展示一遍给你确认 —— 逐项对一遍，确认无误再上传。
+    被拒时不要反复重试，先把服务端返回的原因贴出来查。
+  </li>
+</ol>
+
+<h2>四、文案（可直接复制）</h2>
+<details>
+  <summary>中文标题 / 简介</summary>
+  <div class="body"><b>竿影浮标 · 钓鱼忙</b>
+
+一款为 AI Passport 打造的掌上钓鱼小游戏。抛竿 → 等鱼咬钩 → 限时提竿，钓到的鱼越大分越高。全中文界面，三键操作无需触屏：OK 抛竿 / 提竿，长按 OK 进入菜单，上下键切换饵料与钓点。三种饵料（蚯蚓 / 面团 / 亮片）× 三种钓点（静水塘 / 急流河 / 深海）—— 深海分高但咬钩窗口更短，亮片更容易钓上大鱼。含限时咬钩窗口、计分、最高分掉电不丢（NVS）、音效与实时电量显示。纯 LVGL 绘制、零外部素材，适配 8MB Flash。</div>
+</details>
+<details>
+  <summary>English title / description</summary>
+  <div class="body" style="font-family:inherit"><b>Rod &amp; Float — Fishing Mini-Game</b>
+
+A pocket fishing mini-game for the AI Passport. Cast, wait for the bite, then strike in time to reel in fish — the bigger the catch, the higher the score. Chinese UI, three buttons, no touchscreen: OK to cast / strike, long-press OK for the menu, UP / DOWN to switch baits and fishing spots. Three baits (worm / bread / lure) × three spots (pond / river / sea) — the sea pays more but the bite window is shorter, and the lure attracts bigger fish. Includes a timed bite window, scoring, a persistent high score saved to NVS, sound effects and a live battery indicator. Pure LVGL UI with zero external assets, tuned for 8 MB flash.</div>
+</details>
+
+<h2>五、避坑提醒</h2>
+<div class="note">
+  <b>① 别传错固件。</b>必须是 <span class="mono">merge-bin</span> 出来的完整镜像（从 0x0 起，含 bootloader + 分区表）。
+  用 <span class="mono">idf.py build</span> 单出的 app-only bin 会被社区校验直接拒。
+</div>
+<div class="note">
+  <b>② 仓库要保持 public。</b>社区要能拉到源码；改成私有会导致校验失败。
+</div>
+<div class="note">
+  <b>③ 封面尺寸。</b>要求 JPEG / PNG / WebP 且 ≤ 10 MiB。当前 582 KB，留了很大余量。
+</div>
+
+<footer>生成于 2026-09-28 · 竿影浮标 v1.0（中文版）</footer>
+
+</div>
+</body>
+</html>
