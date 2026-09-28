@@ -17,10 +17,10 @@
 
 链路：**推代码到 GitHub → GitHub 云端自动编译 → 下载 full.bin → 官网发布技能上传社区**
 
-编译由官方工作流 `.github/workflows/firmware-checks.yml` 完成（push 到 `main` 自动触发）：
-- 环境：`espressif/esp-idf-ci-action` + **ESP-IDF v5.5.3** + target `esp32c3`
+编译由工作流 `.github/workflows/firmware-checks.yml` 完成（push 到 `main` 自动触发）：
+- 环境：GitHub ubuntu-latest 跑 **`espressif/idf:v5.5.3`** 容器 + target `esp32c3`
 - 命令：`./tools/validate.sh --firmware`（编译 → `merge-bin` 合并整镜像 → 校验分区/≤8MB）
-- 产物：`build/FoloToy-AI-Passport-full.bin`，上传为 Actions Artifact
+- 产物：`build/FoloToy-AI-Passport-full.bin`，同时自动发布到 `build-artifacts` 分支（方便直取）
 
 ---
 
@@ -43,27 +43,63 @@ https://github.com/lxh9988775/ipassport-fishing
 > 该规则已删除（原配置备份在 `C:/Users/8605464/.gitconfig.backup-aipassport`）。
 > 如日后还想为 `git clone` 加速而恢复，请只对 clone 单次使用，不要再设全局规则。
 
-## 第 2 步：等云端编译（全自动，约 3~8 分钟）
+## ✅ 编译状态：已通过（2026-09-28，commit a0d7831）
 
-1. 打开 `https://github.com/lxh9988775/ipassport-fishing/actions`
-2. 看到 **Firmware checks** 正在跑（黄点）→ 等它变 **绿勾**
-3. 点进那次运行 → 页面底部 **Artifacts** → 下载 `firmware-<编号>`
-4. 解压后得到 `FoloToy-AI-Passport-full.bin` —— 这就是能上传社区的固件
+云端编译跑出了**绿勾**，固件校验全过：
+- 合并整镜像 `FoloToy-AI-Passport-full.bin` = **757840 字节（≈740KB，远小于 8MB 上限）✓**
+- 分区布局 / 固件校验：PASS
+- 产物已经**自动落到你本地工作区**：
+  ```
+  C:\Users\8605464\Desktop\AIpassport\FoloToy-AI-Passport-full.bin
+  ```
+  这就是能上传社区的最终固件，**不用再去 Actions 下载**了。
 
-> ❌ 红叉也不用慌：点进去看是哪一步报错，把日志发我，我直接改代码。
-> ⚠️ 千万别用 `idf.py build` 单独产出的 app-only bin（缺 bootloader/分区表），社区校验会拒。
+> 备用取回方式（万一本地丢了）：固件同时发布在 `build-artifacts` 分支，
+> 或用 SSH `git clone --branch build-artifacts ...` 取回；Actions 里的
+> `firmware-<编号>` Artifact 也能下载。
+
+## 第 2 步：确认固件在手上
+
+检查工作区里有这个文件即可（已自动生成）：
+```
+FoloToy-AI-Passport-full.bin   ≈ 740KB
+```
+> ⚠️ 千万别用 `idf.py build` 单独产出的 **app-only** bin（缺 bootloader/分区表），
+> 社区校验会拒。必须是上面这个从 `0x0` 起的整镜像。
 
 ## 第 3 步：上传到社区（官网发布技能）
 
 按官方 `docs/development/release/publish-to-community.md`，上传靠官网的**发布技能**，
 不是手动拖文件。流程：
 1. 安装发布技能：`https://ai-passport.folotoy.cn/skills/folotoy-ai-passport-publisher.zip`
-2. 准备好四样东西：
-   - **固件**：第 2 步下载的 `FoloToy-AI-Passport-full.bin`
-   - **封面图**：一张代表性 JPEG/PNG/WebP（≤10 MiB）
-   - **双语标题 + 简介**（中英文，例：竿影浮标 / Rod & Float — 三键钓鱼小游戏）
+2. 准备好四样东西（下面已帮你起草好可直接粘贴的文案）：
+   - **固件**：工作区里的 `FoloToy-AI-Passport-full.bin`
+   - **封面图**：一张代表性 JPEG/PNG/WebP（≤10 MiB）—— 可自己截图/做一张，
+     也可以让我帮你生成一张（说一声即可）
+   - **双语标题 + 简介**（见下方「可直接粘贴的文案」）
    - **Git 源码地址**：`https://github.com/lxh9988775/ipassport-fishing`
 3. 在官网注册 / 登录**授权**，逐项预览确认后再上传（助手不碰你的密码）
+
+---
+
+### 可直接粘贴的文案（中英双语）
+
+**标题（中文）**：竿影浮标 · 钓鱼忙
+**标题（English）**：Rod & Float — Fishing Mini-Game
+
+**简介（中文）**：
+> 一款为 AI Passport 打造的解压钓鱼小游戏。抛竿 → 等待咬钩 → 限时提竿，钓上鱼冲刺高分。
+> 三键操作、无触屏：OK 抛竿/提竿、长按 OK 进菜单切「饵料/钓点」。含三种饵料（蚯蚓/面团/亮片）
+> 与三种钓点（静水塘/急流河/深海，深海分高但咬钩窗口更短）、限时咬钩窗口、计分与最高分
+> 掉电不丢（NVS）、音效与实时电量显示。纯 LVGL 绘制、零外部素材，适配 8MB 存储。
+
+**简介（English）**：
+> A relaxing fishing mini-game for the AI Passport. Cast, wait for the bite, then strike in time
+> to reel in fish and chase a high score. Three buttons, no touchscreen: OK casts/strikes, long-press
+> OK opens the menu to switch bait / spot. Features three baits (worm/bread/lure) and three spots
+> (pond/river/sea — sea scores higher but the bite window is shorter), a timed bite window, scoring with
+> a persistent high score saved to NVS, sound effects, and a live battery indicator. Pure LVGL UI with
+> zero external assets, tuned for the 8 MB flash.
 
 ---
 

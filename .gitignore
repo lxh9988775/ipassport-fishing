@@ -13,6 +13,13 @@ managed_components/
 Thumbs.db
 *.log
 
+# 字体源文件（8.4MB，可由 tools/gen_font.py 重新下载生成；下载方式见 assets/fonts/README.md）
+assets/fonts/*.otf
+assets/fonts/*.ttf
+
+# 合并镜像产物（由 CI 产出，不入主分支；成品在 build-artifacts 分支）
+/FoloToy-AI-Passport-full.bin
+
 # Generated repository-local links; canonical skill sources live in skills/.
 /.agents/skills/passport-develop
 /.agents/skills/passport-setup

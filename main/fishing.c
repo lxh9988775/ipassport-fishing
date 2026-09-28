@@ -32,6 +32,23 @@
 #include "fishing_logic.h"
 #include "fishing_audio.h"
 
+/* ===================== 中文字体 ===================== */
+/* 屏上文案用中文。LVGL 自带字体（Montserrat / 内置 CJK 子集）都不含本游戏用字
+ * （「钓 鱼 饵 蚯 蚓 咬 抛 竿 塘 钩」实测缺字），故用 lv_font_conv 生成的专用子集字体，
+ * 只打包屏上真正会出现的字（≈150 字形 / 90 KB），定义在 assets/fonts/fishing_cjk_16.c。
+ *
+ * 改文案后的同步流程：
+ *   1) 改本文件里的中文文案
+ *   2) 同步 tools/gen_font.py 的 TEXTS 列表
+ *   3) 跑 python tools/gen_font.py 重新生成字体
+ *   4) 跑 python tools/check_cjk_coverage.py 复核无缺字
+ */
+LV_FONT_DECLARE(fishing_cjk_16);
+
+static void use_cjk(lv_obj_t *o) {
+    lv_obj_set_style_text_font(o, &fishing_cjk_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
 /* ===================== 单调时钟（毫秒） ===================== */
 /* 用 FreeRTOS 节拍计数换算毫秒（sdkconfig 里 FREERTOS_HZ=1000，portTICK_PERIOD_MS=1），
  * 不依赖 LVGL 版本里的 tick API 名称，也不需要额外组件。 */
@@ -133,26 +150,40 @@ static void build_ui(void) {
     lv_obj_clear_flag(g_fish, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_fish, LV_OBJ_FLAG_HIDDEN);
 
-    /* HUD 文本 */
+    /* HUD 文本（16px 中文字体，行高约 21px） */
     g_lbl_score = lv_label_create(g_screen);
-    lv_label_set_text(g_lbl_score, "SCORE 0");
-    lv_obj_set_pos(g_lbl_score, 4, 4);
+    lv_label_set_text(g_lbl_score, "得分 0");
+    lv_obj_set_pos(g_lbl_score, 4, 2);
+    use_cjk(g_lbl_score);
 
     g_lbl_high = lv_label_create(g_screen);
-    lv_label_set_text(g_lbl_high, "BEST 0");
-    lv_obj_set_pos(g_lbl_high, 4, 20);
+    lv_label_set_text(g_lbl_high, "最高 0");
+    lv_obj_set_pos(g_lbl_high, 4, 24);
+    use_cjk(g_lbl_high);
 
     g_lbl_batt = lv_label_create(g_screen);
-    lv_label_set_text(g_lbl_batt, "BAT --%");
-    lv_obj_set_pos(g_lbl_batt, 160, 4);
+    lv_label_set_text(g_lbl_batt, "电量 --%");
+    lv_obj_set_pos(g_lbl_batt, 146, 2);
+    use_cjk(g_lbl_batt);
 
+    /* 底部提示：落在深色水面上，用白字保证可读 */
     g_lbl_status = lv_label_create(g_screen);
-    lv_label_set_text(g_lbl_status, "OK=Cast  LongOK=Menu");
-    lv_obj_set_pos(g_lbl_status, 4, 300);
+    lv_label_set_text(g_lbl_status, "OK 抛竿 · 长按菜单");
+    lv_obj_set_pos(g_lbl_status, 4, 296);
+    use_cjk(g_lbl_status);
+    lv_obj_set_style_text_color(g_lbl_status, lv_color_white(), 0);
 
+    /* 菜单浮层：深色半透明底板 + 白字，避免压在天空/水面交界处看不清 */
     g_lbl_menu = lv_label_create(g_screen);
     lv_obj_add_flag(g_lbl_menu, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(g_lbl_menu, 16, 120);
+    lv_obj_set_pos(g_lbl_menu, 8, 104);
+    use_cjk(g_lbl_menu);
+    lv_obj_set_style_text_color(g_lbl_menu, lv_color_white(), 0);
+    lv_obj_set_style_bg_color(g_lbl_menu, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_lbl_menu, 190, 0);
+    lv_obj_set_style_pad_all(g_lbl_menu, 8, 0);
+    lv_obj_set_style_radius(g_lbl_menu, 6, 0);
+    lv_obj_set_style_text_line_space(g_lbl_menu, 4, 0);
 }
 
 /* ===================== UI 刷新 ===================== */
@@ -160,15 +191,16 @@ static void refresh_ui(void) {
     fishing_status_t st;
     fishing_get_status(&st);
 
-    char buf[48];
-    snprintf(buf, sizeof(buf), "SCORE %d", st.score);
+    /* 中文按 UTF-8 存（3 字节/字），缓冲区按最长的菜单文案留足空间 */
+    char buf[256];
+    snprintf(buf, sizeof(buf), "得分 %d", st.score);
     lv_label_set_text(g_lbl_score, buf);
-    snprintf(buf, sizeof(buf), "BEST %d", st.high_score);
+    snprintf(buf, sizeof(buf), "最高 %d", st.high_score);
     lv_label_set_text(g_lbl_high, buf);
 
     /* 电量 */
     if (g_batt_soc >= 0) {
-        snprintf(buf, sizeof(buf), "BAT %d%%", g_batt_soc);
+        snprintf(buf, sizeof(buf), "电量 %d%%", g_batt_soc);
         lv_label_set_text(g_lbl_batt, buf);
     }
 
@@ -181,27 +213,27 @@ static void refresh_ui(void) {
         lv_obj_add_flag(g_fish, LV_OBJ_FLAG_HIDDEN);
     }
 
-    /* 状态文本（LVGL 默认字体无中文字形，屏上统一用英文，避免方块） */
-    const char *hint = "OK=Cast  LongOK=Menu";
+    /* 状态文本（中文，字符已全部打进子集字库，见 assets/fonts/fishing_cjk_16.c） */
+    const char *hint = "OK 抛竿 · 长按菜单";
     switch (st.state) {
-        case STATE_IDLE:    hint = "OK=Cast  LongOK=Menu"; break;
-        case STATE_WAITING: hint = "Waiting for bite..."; break;
-        case STATE_BITE:    hint = "BITE! Press OK!"; break;
-        case STATE_CATCH:   hint = "Caught! +score"; break;
-        case STATE_MISS:    hint = "Missed! try again"; break;
-        case STATE_MENU:    hint = "Menu: UP/DN tune, OK switch, LongOK ok"; break;
+        case STATE_IDLE:    hint = "OK 抛竿 · 长按菜单"; break;
+        case STATE_WAITING: hint = "等鱼上钩…"; break;
+        case STATE_BITE:    hint = "咬钩了！按 OK 提竿"; break;
+        case STATE_CATCH:   hint = "钓到啦！加分"; break;
+        case STATE_MISS:    hint = "跑鱼了…再来"; break;
+        case STATE_MENU:    hint = "上下选择 · 长按返回"; break;
         default: break;
     }
     lv_label_set_text(g_lbl_status, hint);
 
     /* 菜单内容 */
     if (st.state == STATE_MENU) {
-        const char *baits[] = {"WORM", "BREAD", "LURE"};
-        const char *spots[] = {"POND", "RIVER", "SEA"};
+        const char *baits[] = {"蚯蚓", "面团", "亮片"};
+        const char *spots[] = {"静水塘", "急流河", "深海"};
         snprintf(buf, sizeof(buf),
-                 "BAIT[%s] SPOT[%s]\nEdit: %s\nUP/DN tune LongOK ok",
+                 "饵料[%s]  钓点[%s]\n编辑：%s\n上下选择  长按返回",
                  baits[st.bait], spots[st.spot],
-                 g_menu_sel == 0 ? "BAIT" : "SPOT");
+                 g_menu_sel == 0 ? "饵料" : "钓点");
         lv_label_set_text(g_lbl_menu, buf);
         lv_obj_clear_flag(g_lbl_menu, LV_OBJ_FLAG_HIDDEN);
     } else {
