@@ -45,12 +45,12 @@ static uint32_t now_ms(void) {
 
 static int nvs_load_high(void) {
     nvs_handle_t h;
-    int val = 0;
+    int32_t val = 0;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) == ESP_OK) {
         nvs_get_i32(h, NVS_KEY_HIGH, &val);
         nvs_close(h);
     }
-    return val;
+    return (int)val;
 }
 static void nvs_save_high(int v) {
     nvs_handle_t h;
@@ -110,7 +110,7 @@ static void build_ui(void) {
     lv_obj_clear_flag(g_water, LV_OBJ_FLAG_SCROLLABLE);
 
     /* 鱼线（一条竖线，从顶部到浮标） */
-    static lv_point_t line_pts[] = {{120, 10}, {120, 175}};
+    static lv_point_precise_t line_pts[] = {{120, 10}, {120, 175}};
     g_floatline = lv_line_create(g_screen);
     lv_line_set_points(g_floatline, line_pts, 2);
     lv_obj_set_style_line_width(g_floatline, 2, 0);
