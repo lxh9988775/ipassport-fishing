@@ -40,16 +40,20 @@ jobs:
             ci-ccache-
 
       - name: Build and verify merged firmware
-        uses: espressif/esp-idf-ci-action@9d38657f3d789ca759b2b37aaf5ceffbc42c4f0d # v1
-        with:
-          esp_idf_version: v5.5.3
-          target: esp32c3
-          extra_docker_args: >-
-            -e CCACHE_DIR=/app/${{ github.repository }}/.ccache
-            -e IDF_CCACHE_ENABLE=1
-          command: ./tools/validate.sh --firmware
+        run: |
+          set -o pipefail
+          mkdir -p .ccache
+          docker run --rm \
+            -e IDF_TARGET=esp32c3 \
+            -e CCACHE_DIR=/app/${{ github.repository }}/.ccache \
+            -e IDF_CCACHE_ENABLE=1 \
+            -v "${GITHUB_WORKSPACE}:/app/${{ github.repository }}" \
+            -w "/app/${{ github.repository }}" \
+            espressif/idf:v5.5.3 \
+            /bin/bash -c 'git config --global --add safe.directory "*" && ./tools/validate.sh --firmware' 2>&1 | tee /tmp/build.log
 
       - name: Upload verified firmware
+        if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: firmware-${{ github.run_id }}
@@ -60,16 +64,35 @@ jobs:
       # 把编译好的整镜像提交到 build-artifacts 分支，
       # 这样即使 github.com 网页打不开，也能用 git 直接把 .bin 取回本地。
       - name: Publish firmware to build-artifacts branch
+        if: success()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          cp build/FoloToy-AI-Passport-full.bin /tmp/firmware.bin
-          ls -lh /tmp/firmware.bin
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout --orphan build-artifacts
-          git rm -rf --cached . >/dev/null 2>&1 || true
-          find . -mindepth 1 -maxdepth 1 -not -name .git -exec rm -rf {} + 2>/dev/null || true
-          cp /tmp/firmware.bin FoloToy-AI-Passport-full.bin
+          rm -rf /tmp/fwrepo && mkdir -p /tmp/fwrepo && cd /tmp/fwrepo
+          git init -q .
+          cp "${GITHUB_WORKSPACE}/build/FoloToy-AI-Passport-full.bin" FoloToy-AI-Passport-full.bin
+          ls -lh FoloToy-AI-Passport-full.bin
           git add -f FoloToy-AI-Passport-full.bin
-          git commit -m "firmware build ${GITHUB_RUN_ID} from ${GITHUB_SHA}"
-          git push --force origin HEAD:build-artifacts
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "firmware build ${GITHUB_RUN_ID} from ${GITHUB_SHA}"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:build-artifacts
+
+      # 无论成功失败都把构建日志推送到 ci-logs 分支，网页打不开时也能排查
+      - name: Publish build log to ci-logs branch
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -u
+          if [ -f /tmp/build.log ]; then cp /tmp/build.log /tmp/ci-log.txt; else echo "(no build log captured)" > /tmp/ci-log.txt; fi
+          tail -c 150000 /tmp/ci-log.txt > /tmp/ci-log-trim.txt
+          rm -rf /tmp/logrepo && mkdir -p /tmp/logrepo && cd /tmp/logrepo
+          git init -q .
+          cp /tmp/ci-log-trim.txt build-log.txt
+          git add -f build-log.txt
+          git -c user.name="github-actions[bot]" \
+              -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -q -m "build log ${GITHUB_RUN_ID} (${GITHUB_SHA})"
+          git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:ci-logs
