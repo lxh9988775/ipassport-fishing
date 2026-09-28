@@ -1,0 +1,6 @@
+Getting started — no network setup needed, just power on and play:
+
+1. In the menu, use UP / DOWN to switch bait (worm / dough / spinner) and spot (pond / river / deep sea); long-press OK to return to the game.
+2. Press OK to cast. Once the float lands, wait patiently.
+3. When the float dips and the "bite" prompt appears, press OK right away to strike — time it well to land the fish; strike too early or too late and it escapes.
+4. Each catch scores by your current bait and spot. Your best score is saved automatically and carries over to your next session.
