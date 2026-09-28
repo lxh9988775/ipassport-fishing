@@ -24,6 +24,7 @@
 #include "freertos/queue.h"
 #include "nvs_flash.h"
 #include "nvs.h"
+#include "esp_timer.h"   /* esp_timer_get_time()：单调时钟，不依赖 LVGL 版本 */
 #include "lvgl.h"
 #include "bsp_display.h"   /* 显示初始化 + LVGL 接入（bsp_lvgl_init/lock/unlock） */
 #include "bsp_button.h"    /* 三键回调 */
@@ -31,6 +32,12 @@
 #include "bsp_audio.h"     /* 音频播放 */
 #include "fishing_logic.h"
 #include "fishing_audio.h"
+
+/* ===================== 单调时钟（毫秒） ===================== */
+/* 用 esp_timer 取微秒→毫秒，避免依赖 LVGL 版本里的 tick API 名称 */
+static uint32_t now_ms(void) {
+    return (uint32_t)(esp_timer_get_time() / 1000ULL);
+}
 
 /* ===================== NVS（最高分断电不丢） ===================== */
 #define NVS_NS "fishing"
@@ -261,8 +268,8 @@ static void game_task(void *arg) {
             handle_btn(e.btn, e.ev);
         }
 
-        /* 2) 推进逻辑层（lv_tick_get 单调毫秒时钟） */
-        int now = (int)lv_tick_get();
+        /* 2) 推进逻辑层（单调毫秒时钟） */
+        int now = (int)now_ms();
         fishing_event_t evt = fishing_tick(now);
         if (evt == EVT_BITE_START)       fishing_audio_play(SFX_BITE);
         else if (evt == EVT_BITE_TIMEOUT) fishing_audio_play(SFX_MISS);
@@ -295,7 +302,7 @@ void fishing_on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
 void fishing_app_start(void) {
     s_btn_q = xQueueCreate(16, sizeof(btn_ev_t));
 
-    fishing_init((uint32_t)lv_tick_get());
+    fishing_init(now_ms());
     fishing_set_high_score(nvs_load_high());
     fishing_audio_init();   /* 设置采样格式 + 音量（bsp_audio_init 已在 main 完成） */
 

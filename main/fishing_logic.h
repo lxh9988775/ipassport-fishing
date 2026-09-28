@@ -16,6 +16,7 @@
 #define FISHING_LOGIC_H
 
 #include <stdint.h>
+#include <stddef.h>   /* NULL */
 
 #ifdef __cplusplus
 extern "C" {
