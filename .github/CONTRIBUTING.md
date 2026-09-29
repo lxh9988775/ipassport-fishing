@@ -39,13 +39,22 @@ idf.py flash monitor          # Optional incremental application flash
 idf.py fullclean              # Clear stale build state (never for user source changes)
 ```
 
-The current baseline includes a pure-logic test that runs without hardware:
+The baseline includes pure-logic tests that run without hardware, for example the
+rounded-corner masking geometry used by the display layer:
 
 ```bash
-cc -std=c11 -Wall -Wextra -Werror -Imain \
-  tests/test_ui_pixel_math.c main/ui_pixel_math.c \
-  -o /tmp/test_ui_pixel_math
-/tmp/test_ui_pixel_math
+cc -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
+  tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
+  -o /tmp/test_bsp_display_rounding
+/tmp/test_bsp_display_rounding
+```
+
+Screen layout is guarded by a static check that reads the real font metrics, so a
+label can never silently run off the 240x320 display, slide under the 30px rounded
+corners, or land on top of another element:
+
+```bash
+python3 tools/check_ui_layout.py
 ```
 
 The repository provides one validation entry point for local development and CI:

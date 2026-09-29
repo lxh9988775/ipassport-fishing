@@ -33,13 +33,20 @@ idf.py flash monitor          # 可选：增量 app 烧录
 idf.py fullclean              # 配置过期时清空生成状态（勿用于清理用户源码改动）
 ```
 
-当前基线含一个可脱离硬件运行的纯逻辑测试：
+基线含若干可脱离硬件运行的纯逻辑测试，例如显示层用到的圆角遮罩几何判据：
 
 ```bash
-cc -std=c11 -Wall -Wextra -Werror -Imain \
-  tests/test_ui_pixel_math.c main/ui_pixel_math.c \
-  -o /tmp/test_ui_pixel_math
-/tmp/test_ui_pixel_math
+cc -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
+  tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
+  -o /tmp/test_bsp_display_rounding
+/tmp/test_bsp_display_rounding
+```
+
+屏幕布局由静态检查守着：它读的是固件里那份字库的真实字宽，所以文字既不会
+悄悄跑出 240x320 的屏，也不会滑进四角 30px 的圆角遮罩里，更不会压在别的元素上：
+
+```bash
+python3 tools/check_ui_layout.py
 ```
 
 本仓库为本地开发和 CI 提供同一个验证入口：

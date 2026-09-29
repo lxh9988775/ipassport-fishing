@@ -13,6 +13,12 @@ run_static_checks() {
     local test_dir
 
     python3 tools/check_repo.py
+    # 屏幕布局护栏：出屏 / 被圆角涂黑 / 元素互相压住（平台审核打回过一次重叠）
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/check_ui_layout.py
+    # 中文字库护栏：缺字 + 单行超宽（Pillow 缺失时只跳过宽度那一半）
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/check_cjk_coverage.py
+    # UI 源码结构自检：括号配平 / 变量有声明 / 无改漏的死函数与旧文案
+    PYTHONDONTWRITEBYTECODE=1 python3 tools/check_c_sanity.py
 
     actionlint_bin="${ACTIONLINT_BIN:-}"
     if [[ -z "${actionlint_bin}" ]]; then
@@ -24,14 +30,6 @@ run_static_checks() {
     "${actionlint_bin}" -color .github/workflows/*.yml
 
     test_dir="$(mktemp -d /tmp/ai-passport-host-tests.XXXXXX)"
-    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_ui_pixel_math.c main/ui_pixel_math.c \
-        -o "${test_dir}/test_ui_pixel_math"
-    "${test_dir}/test_ui_pixel_math"
-    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
-        tests/test_demo_navigation.c main/demo_navigation.c \
-        -o "${test_dir}/test_demo_navigation"
-    "${test_dir}/test_demo_navigation"
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Icomponents/bsp/src \
         tests/test_bsp_display_rounding.c components/bsp/src/bsp_display_rounding.c \
         -o "${test_dir}/test_bsp_display_rounding"

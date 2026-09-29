@@ -111,11 +111,23 @@ static const lv_image_dsc_t *const SIL_IMG[FISH_SPECIES_COUNT] = {
 static const lv_image_dsc_t *const BG_IMG[FISH_SPOT_COUNT] = { &bg_pond, &bg_river, &bg_sea };
 
 /* ===================== UI 对象 ===================== */
+/*
+ * 屏幕布局有两条硬约束，改坐标前务必先读：
+ *   1) 屏只有 240px 宽，四角还有 30px 圆角遮罩（BSP_LVGL_SCREEN_RADIUS），
+ *      被遮区域一律涂黑 —— 顶部 y=4 那一行实际只剩 x∈[16,223] 可见。
+ *   2) 中文 16px 一个字，四个中文标签横排就是 128px 起，塞不下。
+ * 所以顶栏只放三项："得分 / 最高 / 电池图形+百分比"，钓点名改挂场景面板右上角。
+ * 改完必须跑 tools/check_ui_layout.py（出屏/被圆角切/互相压住 都会报出来）。
+ */
 static lv_obj_t *g_bg          = NULL;   /* 背景（按钓点切换） */
 static lv_obj_t *g_lbl_score   = NULL;
 static lv_obj_t *g_lbl_high    = NULL;
-static lv_obj_t *g_lbl_batt    = NULL;
-static lv_obj_t *g_lbl_spot    = NULL;   /* 右上角钓点 */
+static lv_obj_t *g_lbl_batt    = NULL;   /* 电量百分比数字（单位由电池图形表达） */
+static lv_obj_t *g_batt_body   = NULL;   /* 电池外壳 */
+static lv_obj_t *g_batt_fill   = NULL;   /* 电池内部电量条 */
+static lv_obj_t *g_batt_nub    = NULL;   /* 电池正极凸点 */
+static lv_obj_t *g_lbl_spot    = NULL;   /* 钓点名（挂在场景面板右上角的胶囊里） */
+static lv_obj_t *g_spot_cap    = NULL;   /* 钓点名胶囊底 */
 static lv_obj_t *g_lbl_hint    = NULL;   /* 底部提示 */
 
 /* 钓鱼场景 */
@@ -182,9 +194,13 @@ static void build_ui(void) {
     lv_img_set_src(g_bg, BG_IMG[0]);
     lv_obj_set_pos(g_bg, 0, 0);
 
-    /* HUD：加深色半透明底，保证在任意场景上都看得清 */
+    /* ---- 顶栏 HUD ----
+     * 屏只有 240px 宽、左右还被圆角各吃掉约 16px，所以刻意只放三项：
+     *   左「得分」 · 中「最高」 · 右「电池图形 + 百分比」
+     * 电量不再写「电量」二字 —— 电池图形本身就是单位，省下的宽度留给分数。
+     * 三项最坏（得分/最高各四位、电量 100）合计约 181px，落在可见区 x∈[17,223] 内。 */
     lv_obj_t *hud = lv_obj_create(scr);
-    lv_obj_set_size(hud, SCR_W, HUD_H);
+    lv_obj_set_size(hud, SCR_W, HUD_H + 2);   /* 文字底边在 y=24，底板盖到 24 */
     lv_obj_set_pos(hud, 0, 0);
     lv_obj_set_style_bg_color(hud, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(hud, 150, 0);
@@ -194,15 +210,48 @@ static void build_ui(void) {
     lv_obj_clear_flag(hud, LV_OBJ_FLAG_SCROLLABLE);
     (void)hud;
 
-    g_lbl_score = make_label(scr, "得分 0", 4, 4, lv_color_white());
-    g_lbl_high  = make_label(scr, "最高 0", 78, 4, lv_color_white());
-    g_lbl_batt  = make_label(scr, "电量 --", 150, 4, lv_color_white());
-    g_lbl_spot  = make_label(scr, "静水塘", 196, 4, lv_color_white());
+    g_lbl_score = make_label(scr, "得分 0", 17, 4, lv_color_white());
+    g_lbl_high  = make_label(scr, "最高 0", 96, 4, lv_color_white());
 
-    g_lbl_hint = make_label(scr, "", 4, 298, lv_color_white());
+    /* 电池：壳 + 内部电量条 + 正极凸点。
+     * 不用 LV_SYMBOL_BATTERY_* —— 本应用把文字字体换成了 fishing_cjk_16（.fallback
+     * 为 NULL），内置符号字形取不到，画出来是空的。 */
+    g_batt_body = lv_obj_create(scr);
+    lv_obj_set_size(g_batt_body, 12, 8);
+    lv_obj_set_pos(g_batt_body, 176, 9);
+    lv_obj_set_style_bg_opa(g_batt_body, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_color(g_batt_body, lv_color_white(), 0);
+    lv_obj_set_style_border_width(g_batt_body, 1, 0);
+    lv_obj_set_style_radius(g_batt_body, 1, 0);
+    lv_obj_set_style_pad_all(g_batt_body, 0, 0);
+    lv_obj_clear_flag(g_batt_body, LV_OBJ_FLAG_SCROLLABLE);
+
+    g_batt_fill = lv_obj_create(g_batt_body);
+    lv_obj_set_size(g_batt_fill, 10, 6);
+    lv_obj_set_pos(g_batt_fill, 0, 0);        /* 相对内容区，正好贴在边框内侧 */
+    lv_obj_set_style_bg_color(g_batt_fill, lv_color_make(90, 220, 120), 0);
+    lv_obj_set_style_bg_opa(g_batt_fill, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_batt_fill, 0, 0);
+    lv_obj_set_style_radius(g_batt_fill, 0, 0);
+    lv_obj_clear_flag(g_batt_fill, LV_OBJ_FLAG_SCROLLABLE);
+
+    g_batt_nub = lv_obj_create(scr);
+    lv_obj_set_size(g_batt_nub, 2, 4);
+    lv_obj_set_pos(g_batt_nub, 188, 11);
+    lv_obj_set_style_bg_color(g_batt_nub, lv_color_white(), 0);
+    lv_obj_set_style_bg_opa(g_batt_nub, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_batt_nub, 0, 0);
+    lv_obj_set_style_radius(g_batt_nub, 0, 0);
+    lv_obj_clear_flag(g_batt_nub, LV_OBJ_FLAG_SCROLLABLE);
+
+    g_lbl_batt = make_label(scr, "--", 193, 4, lv_color_white());
+
+    /* 底部提示：文案长短不一，交给 BOTTOM_MID 自动居中，别手算 x 再撞上圆角 */
+    g_lbl_hint = make_label(scr, "", 0, 0, lv_color_white());
     lv_obj_set_style_bg_color(g_lbl_hint, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_lbl_hint, 170, 0);
-    lv_obj_set_style_pad_all(g_lbl_hint, 2, 0);
+    lv_obj_set_style_pad_all(g_lbl_hint, 1, 0);
+    lv_obj_align(g_lbl_hint, LV_ALIGN_BOTTOM_MID, 0, -5);
 
     /* ---------- 钓鱼场景 ---------- */
     g_scene = lv_obj_create(scr);
@@ -211,6 +260,22 @@ static void build_ui(void) {
     lv_obj_set_style_bg_opa(g_scene, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(g_scene, 0, 0);
     lv_obj_clear_flag(g_scene, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 钓点名：挂在场景面板右上角的小胶囊里。
+     * 放在 g_scene 内部 → 切到菜单/图鉴时随场景一起隐藏，show_only() 不用改。
+     * 绝对位置 (172,28)~(229,47)，该高度上右侧圆角只吃到 x=237，不会切到文字。 */
+    g_spot_cap = lv_obj_create(g_scene);
+    lv_obj_set_size(g_spot_cap, 58, 20);
+    lv_obj_set_pos(g_spot_cap, 172, 6);
+    lv_obj_set_style_bg_color(g_spot_cap, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_spot_cap, 140, 0);
+    lv_obj_set_style_border_width(g_spot_cap, 0, 0);
+    lv_obj_set_style_radius(g_spot_cap, 10, 0);
+    lv_obj_set_style_pad_all(g_spot_cap, 0, 0);
+    lv_obj_clear_flag(g_spot_cap, LV_OBJ_FLAG_SCROLLABLE);
+
+    g_lbl_spot = make_label(g_spot_cap, "静水塘", 0, 0, lv_color_white());
+    lv_obj_center(g_lbl_spot);
 
     g_floatbob = lv_img_create(g_scene);
     lv_img_set_src(g_floatbob, &prop_float);
@@ -333,7 +398,12 @@ static void build_ui(void) {
     g_cdx_img  = lv_img_create(g_codex);
     lv_obj_set_pos(g_cdx_img, 92, 14);
     g_cdx_name = make_label(g_codex, "", 8, 56, lv_color_white());
+    /* 稀有度/完美标记上移到名称行，meta 只留体长+钓数：
+     * 原来「传说 · 最大 888.8 厘米 · 已钓 8888 条 · 完美✓」要 345px，屏只有 240px。
+     * DOT 模式兜底 —— 万一以后文案又变长，末尾显示省略号，绝不出屏、绝不折行。 */
     g_cdx_meta = make_label(g_codex, "", 8, 78, lv_color_make(190, 210, 240));
+    lv_obj_set_width(g_cdx_meta, SCR_W - 16);
+    lv_label_set_long_mode(g_cdx_meta, LV_LABEL_LONG_DOT);
     g_cdx_desc = make_label(g_codex, "", 8, 104, lv_color_white());
     lv_obj_set_width(g_cdx_desc, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_desc, LV_LABEL_LONG_WRAP);
@@ -356,19 +426,41 @@ static void show_only(int which) {
 }
 
 /* ===================== 各面板刷新 ===================== */
+
+/* 电量：图形 + 数字。
+ * 刻意不写在 refresh_scene 里 —— 它是常驻顶栏的一部分，收线/菜单/图鉴页也得刷新，
+ * 否则在那些页面里电量会冻在上一次的值。 */
+static void hud_batt_refresh(void) {
+    if (g_batt_soc < 0) {                      /* 电量计不应答就优雅降级 */
+        lv_label_set_text(g_lbl_batt, "--");
+        lv_obj_add_flag(g_batt_fill, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_border_color(g_batt_body, lv_color_make(130, 130, 130), 0);
+        return;
+    }
+    lv_obj_clear_flag(g_batt_fill, LV_OBJ_FLAG_HIDDEN);
+    /* 低电量连外壳一起变红 —— 只填 2px 红条在 8px 高的电池上根本看不出来 */
+    lv_obj_set_style_border_color(g_batt_body,
+                                  g_batt_soc < 20 ? lv_color_make(230, 60, 50)
+                                                  : lv_color_white(), 0);
+    lv_obj_set_width(g_batt_fill, 1 + g_batt_soc * 9 / 100);   /* 1..10 px */
+    lv_obj_set_style_bg_color(g_batt_fill,
+                              g_batt_soc < 20 ? lv_color_make(230, 60, 50)
+                                              : lv_color_make(90, 220, 120), 0);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%d", g_batt_soc);
+    lv_label_set_text(g_lbl_batt, buf);
+}
+
 static void refresh_scene(const fishing_status_t *st) {
     lv_img_set_src(g_bg, BG_IMG[st->spot]);
     lv_label_set_text(g_lbl_spot, fishing_spot_name(st->spot));
+    lv_obj_center(g_lbl_spot);        /* 「深海」比三字名窄 16px，重新居中 */
 
     char buf[160];
     snprintf(buf, sizeof(buf), "得分 %d", st->score);
     lv_label_set_text(g_lbl_score, buf);
     snprintf(buf, sizeof(buf), "最高 %d", st->high_score);
     lv_label_set_text(g_lbl_high, buf);
-    if (g_batt_soc >= 0) {
-        snprintf(buf, sizeof(buf), "电量 %d", g_batt_soc);
-        lv_label_set_text(g_lbl_batt, buf);
-    }
 
     lv_obj_add_flag(g_fish_scene, LV_OBJ_FLAG_HIDDEN);
     int bob_y = 96;
@@ -459,7 +551,7 @@ static void refresh_menu(const fishing_status_t *st) {
         lv_label_set_text(g_menu_rows[i], txt);
     }
     lv_obj_set_pos(g_menu_selbar, 6, 70 + g_menu_idx * 30);
-    lv_label_set_text(g_lbl_hint, g_menu_edit ? "上下改值·OK确认" : "上下选行·OK进入·长按返回");
+    lv_label_set_text(g_lbl_hint, g_menu_edit ? "上下改值·OK确认" : "上下选·OK进入·长按返回");
 }
 
 static void refresh_codex(const fishing_status_t *st) {
@@ -471,13 +563,13 @@ static void refresh_codex(const fishing_status_t *st) {
 
     lv_img_set_src(g_cdx_img, seen ? FISH_IMG[idx] : SIL_IMG[idx]);
     if (seen) {
-        snprintf(buf, sizeof(buf), "%d. %s", idx + 1, f->name);
-        lv_label_set_text(g_cdx_name, buf);
-        snprintf(buf, sizeof(buf), "%s · 最大 %d.%d 厘米 · 已钓 %d 条%s",
+        snprintf(buf, sizeof(buf), "%d. %s · %s%s", idx + 1, f->name,
                  fishing_rarity_name((rarity_t)f->rarity),
+                 fishing_codex_is_perfect(idx) ? " ✓" : "");
+        lv_label_set_text(g_cdx_name, buf);
+        snprintf(buf, sizeof(buf), "最长 %d.%d 厘米 · 钓 %d 条",
                  fishing_codex_best_len(idx) / 10, fishing_codex_best_len(idx) % 10,
-                 fishing_codex_count(idx),
-                 fishing_codex_is_perfect(idx) ? " · 完美✓" : "");
+                 fishing_codex_count(idx));
         lv_label_set_text(g_cdx_meta, buf);
         lv_label_set_text(g_cdx_desc, f->desc);
     } else {
@@ -492,12 +584,13 @@ static void refresh_codex(const fishing_status_t *st) {
     fishing_get_status(&s2);
     snprintf(buf, sizeof(buf), "收录 %d/%d   累计钓获 %d", s2.codex_total, FISH_SPECIES_COUNT, s2.total_catch);
     lv_label_set_text(g_cdx_prog, buf);
-    lv_label_set_text(g_lbl_hint, "上下翻页·OK详情·长按返回");
+    lv_label_set_text(g_lbl_hint, "上下翻·OK详情·长按返回");
 }
 
 static void refresh_ui(void) {
     fishing_status_t st;
     fishing_get_status(&st);
+    hud_batt_refresh();                    /* 顶栏电量：所有页面都刷新 */
     switch (st.state) {
         case STATE_MENU:                       show_only(3); refresh_menu(&st);        break;
         case STATE_CODEX:
