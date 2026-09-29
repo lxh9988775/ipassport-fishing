@@ -12,3 +12,11 @@ idf_component_register(
 target_sources(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../assets/fonts/fishing_cjk_16.c"
 )
+
+# 像素 sprite 资产（由 tools/gen_sprites.py 自动生成，勿手工编辑）。
+# 鱼(48x32 ARGB8888) + 未捕剪影 + 饵/竿/道具/图标 + 场景背景(RGB565)。
+target_sources(${COMPONENT_LIB} PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/fish_sprites.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/prop_sprites.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/bg_sprites.c"
+)

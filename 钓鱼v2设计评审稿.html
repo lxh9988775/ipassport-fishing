@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>竿影浮标 v2 · 设计评审稿</title>
+<style>
+  :root{
+    --deep:#0B3D5C; --teal:#1E88A8; --teal2:#2BB3C7; --coral:#FF6B5A;
+    --sand:#FBE9D0; --bg:#F2F7FA; --card:#FFFFFF; --ink:#17313E; --muted:#5C7480;
+    --line:#DCE7ED; --ok:#1FA971; --warn:#E8A33D;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.7;font-size:15px;}
+  .wrap{max-width:940px;margin:0 auto;padding:0 18px 64px;}
+  header{background:linear-gradient(135deg,#0B3D5C 0%,#1E88A8 60%,#2BB3C7 100%);
+    color:#fff;padding:34px 0 30px;margin-bottom:26px;box-shadow:0 6px 22px rgba(11,61,92,.25);}
+  header .wrap{padding-bottom:0;}
+  header h1{margin:0 0 8px;font-size:26px;letter-spacing:.5px;}
+  header .sub{opacity:.9;font-size:14px;}
+  header .meta{margin-top:14px;display:flex;flex-wrap:wrap;gap:8px;}
+  .pill{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);
+    border-radius:999px;padding:3px 12px;font-size:12.5px;}
+  h2{font-size:20px;margin:34px 0 12px;padding-left:12px;border-left:5px solid var(--coral);}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--deep);}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;
+    padding:18px 20px;margin:14px 0;box-shadow:0 2px 10px rgba(11,61,92,.05);}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13.5px;
+    background:#fff;border-radius:10px;overflow:hidden;}
+  th,td{padding:8px 10px;text-align:left;border-bottom:1px solid var(--line);}
+  th{background:#EAF4F8;color:var(--deep);font-weight:600;white-space:nowrap;}
+  tr:last-child td{border-bottom:none;}
+  tr:hover td{background:#F6FBFD;}
+  .tag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600;}
+  .t-c{background:#E3F2E9;color:#1B7A52;}
+  .t-u{background:#E4F0FB;color:#1F6FB2;}
+  .t-r{background:#FBEEDC;color:#B4791B;}
+  .t-l{background:#FCE4E1;color:#C0392B;}
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;font-size:13px;}
+  .node{background:#fff;border:1.5px solid var(--teal);color:var(--deep);
+    border-radius:8px;padding:6px 11px;font-weight:600;white-space:nowrap;}
+  .node.hot{background:var(--coral);border-color:var(--coral);color:#fff;}
+  .arrow{color:var(--teal2);font-weight:700;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;}
+  .mini{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px;}
+  .mini b{color:var(--deep);}
+  .kv{font-size:13.5px;color:var(--muted);}
+  .phase{border-left:4px solid var(--teal);background:#fff;border-radius:0 12px 12px 0;
+    padding:12px 16px;margin:10px 0;}
+  .phase b{color:var(--deep);}
+  .phase.now{border-left-color:var(--coral);background:#FFF6F4;}
+  ul.clean{margin:8px 0;padding-left:20px;}
+  ul.clean li{margin:5px 0;}
+  .callout{background:#FFF8EC;border:1px solid #F0DDB6;border-radius:12px;
+    padding:14px 18px;margin:14px 0;font-size:14px;}
+  .callout.info{background:#EDF6FB;border-color:#C9E3F2;}
+  .ok{color:var(--ok);font-weight:700;}
+  .warn{color:var(--warn);font-weight:700;}
+  footer{margin-top:38px;text-align:center;color:var(--muted);font-size:12.5px;}
+  .sign{background:#fff;border:2px dashed var(--teal);border-radius:14px;padding:18px 22px;margin-top:14px;}
+  .sign li{margin:9px 0;}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>竿影浮标 v2 · 设计评审稿</h1>
+    <div class="sub">AI Passport 钓鱼玩法 · 从逻辑层重做（机制 / 内容 / 美术）</div>
+    <div class="meta">
+      <span class="pill">ESP32-C3 · 240×320 · 三键</span>
+      <span class="pill">LVGL 9.5</span>
+      <span class="pill">2026-09-29 · Phase 0</span>
+      <span class="pill">待你签字</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="callout info">
+    <b>一句话结论：</b>现有代码「架构不糙」——逻辑/UI/音频三层分离、真状态机、20&nbsp;ms 主循环、按键队列、NVS 最高分、确定性 RNG、带单测。
+    糙的只有<span class="warn">画面</span>（矩形+一条线，无美术）和<span class="warn">玩法深度</span>（纯"窗口内按一下"的反应测试）。
+    所以重做策略 = <b>保留好架构，重做游戏设计</b>，不是推倒重来。
+  </div>
+
+  <h2>① 画面 & 美术方向</h2>
+  <div class="card">
+    <div class="kv">风格：<b>像素风（治愈系调性）</b>。为什么换：240×320 无 PSRAM 小屏上，扁平插画放大后边缘发虚、颜色发飘反而显糙；像素风硬边 + 有限调色板在低分辨率屏上天生"对的"，是刻意的复古精致而非"没画完"。复用仓库 offline-pokedex 的 48×48 像素 sprite 管线，封面与上架图也统一走像素风。</div>
+    <h3>sprite 方案（沿用仓库已验证的图鉴管线）</h3>
+    <ul class="clean">
+      <li>图鉴项目用 <b>48×48 预混合像素 sprite 嵌进固件</b>（脚本生成 C 数组、无白边）——我们所有鱼/竿/漂/气泡走同一条管线。</li>
+      <li>鱼 ≈ 28×18 像素，每鱼一套 ≤8 色调色板；生成方式：AI 出干净插画 → 缩放+调色板量化 → 导出 C 数组。</li>
+      <li>动效（纯 LVGL 属性动画，零成本）：水波高光线每帧偏移、浮漂咬钩下沉抖动、鱼摆尾、上鱼缩小淡出+得分弹字。</li>
+    </ul>
+    <h3>屏幕三区布局（240×320）</h3>
+    <div class="card" style="background:#F7FBFD;padding:14px 18px;">
+      <div style="font-family:monospace;font-size:12.5px;line-height:1.65;color:#2a4a5a;">
+      ┌────────────────────────┐<br>
+      │ 天空区 0–120　柔和渐变+远山+太阳 │<br>
+      │ 得分　最高　电量（HUD 顶栏）      │<br>
+      ├────────────────────────┤<br>
+      │ 中区 120–200　鱼竿弧线+鱼线+浮漂  │<br>
+      ├────────────────────────┤<br>
+      │ 水下区 200–320　水波+鱼 sprite   │<br>
+      │ ★收线绿条小游戏覆盖此区★          │<br>
+      └────────────────────────┘
+      </div>
+    </div>
+  </div>
+
+  <h2>② 核心玩法：星露谷绿条收线</h2>
+  <div class="card">
+    <div class="flow">
+      <span class="node">菜单</span><span class="arrow">→</span>
+      <span class="node">待机</span><span class="arrow">→</span>
+      <span class="node">抛竿</span><span class="arrow">→</span>
+      <span class="node">等咬钩</span><span class="arrow">→</span>
+      <span class="node hot">收线小游戏</span><span class="arrow">→</span>
+      <span class="node">上鱼 / 跑鱼</span><span class="arrow">→</span>
+      <span class="node">结算</span>
+    </div>
+    <h3>收线怎么做（把"无意义点击"换成真技巧）</h3>
+    <ul class="clean">
+      <li>水下区一条<b>竖直进度槽</b>，槽内有一个<b>绿色捕捉区</b>；一条<b>鱼</b>在槽内上下乱窜（每条鱼有独立速度/跳动幅度/节奏）。</li>
+      <li><b>按住 OK = 捕捉区上升；松开 = 下落。</b></li>
+      <li>鱼在捕捉区内 → 进度条上涨；鱼在区外 → 进度下跌。</li>
+      <li>涨到 100% = 钓上；跌到 0% = 跑鱼。<b>全程不脱区 = 完美钓获</b>，额外加分 + 图鉴标记。</li>
+    </ul>
+    <div class="callout">
+      这套机制把「反应测试」变成「手眼协调 + 读鱼节奏」的真技巧，且<b>单键长按/松开即核心操作</b>，与三键设备输入完全匹配。
+    </div>
+  </div>
+
+  <h2>③ 鱼竿 / 钓法（影响机制，不是摆设）</h2>
+  <table>
+    <tr><th>鱼竿</th><th>抛程</th><th>捕捉区速度</th><th>鱼速</th><th>提竿窗口</th><th>得分</th><th>定位</th></tr>
+    <tr><td>手竿</td><td>近（浅层）</td><td>慢而稳（易控）</td><td>×0.8</td><td>宽</td><td>×1.0</td><td>新手友好</td></tr>
+    <tr><td>路亚竿</td><td>中</td><td>中</td><td>×1.0</td><td>中</td><td>×1.3</td><td>配亮片，中大鱼</td></tr>
+    <tr><td>海竿</td><td>远（够深海）</td><td>快（难控）</td><td>×1.3</td><td>窄</td><td>×1.8</td><td>高手向，高回报</td></tr>
+  </table>
+  <div class="kv">抛程决定「能遇到哪些鱼」（深海鱼需海竿才抛得到），速度决定难度，得分系数给回报——三竿形成清晰取舍。</div>
+
+  <h2>④ 鱼种图鉴（24 种 · 3 场景 · 含尺寸/简介）</h2>
+
+  <h3>静水塘 POND（新手）</h3>
+  <table>
+    <tr><th>鱼</th><th>体长 cm</th><th>体重 kg</th><th>稀有度</th><th>偏好饵</th><th>基础分</th><th>简介</th></tr>
+    <tr><td>白条</td><td>8–15</td><td>0.01–0.05</td><td><span class="tag t-c">普通</span></td><td>蚯蚓</td><td>10</td><td>银白小精灵，成群抢食，新手第一目标。</td></tr>
+    <tr><td>鲫鱼</td><td>10–25</td><td>0.05–0.5</td><td><span class="tag t-c">普通</span></td><td>蚯蚓/面团</td><td>14</td><td>温顺常见，钓者最熟悉的邻居。</td></tr>
+    <tr><td>罗非鱼</td><td>15–30</td><td>0.2–1.0</td><td><span class="tag t-c">普通</span></td><td>面团</td><td>16</td><td>外来户，适应力强，什么都吃。</td></tr>
+    <tr><td>鳊鱼</td><td>15–30</td><td>0.2–0.8</td><td><span class="tag t-c">普通</span></td><td>蚯蚓</td><td>18</td><td>侧扁如刀，银光闪闪。</td></tr>
+    <tr><td>鲢鱼</td><td>25–50</td><td>1–4</td><td><span class="tag t-u">少见</span></td><td>面团</td><td>28</td><td>滤食上层，力大却温吞，遛鱼有成就感。</td></tr>
+    <tr><td>草鱼</td><td>30–70</td><td>1–6</td><td><span class="tag t-u">少见</span></td><td>面团</td><td>34</td><td>食草大块头，中钩猛冲，最考遛鱼。</td></tr>
+    <tr><td>鲤鱼</td><td>30–80</td><td>1–8</td><td><span class="tag t-r">稀有</span></td><td>面团/蚯蚓</td><td>50</td><td>锦鲤近亲，力沉皮实，红鲤更讨彩头。</td></tr>
+    <tr><td>青鱼</td><td>50–120</td><td>3–15</td><td><span class="tag t-l">传说</span></td><td>面团</td><td>90</td><td>底层巨物，十年难遇，钓上即成塘主传奇。</td></tr>
+  </table>
+
+  <h3>急流河 RIVER（进阶）</h3>
+  <table>
+    <tr><th>鱼</th><th>体长 cm</th><th>体重 kg</th><th>稀有度</th><th>偏好饵</th><th>基础分</th><th>简介</th></tr>
+    <tr><td>马口鱼</td><td>8–15</td><td>0.01–0.04</td><td><span class="tag t-c">普通</span></td><td>亮片</td><td>16</td><td>溪流小霸王，见亮片就咬，路亚入门鱼。</td></tr>
+    <tr><td>黄颡鱼</td><td>10–20</td><td>0.02–0.2</td><td><span class="tag t-c">普通</span></td><td>蚯蚓</td><td>18</td><td>黄辣丁，背刺有毒，提鱼要小心。</td></tr>
+    <tr><td>翘嘴</td><td>25–60</td><td>0.3–3</td><td><span class="tag t-u">少见</span></td><td>亮片</td><td>40</td><td>上层掠食者，红唇如刀，路亚易爆护。</td></tr>
+    <tr><td>鲈鱼</td><td>25–55</td><td>0.3–3.5</td><td><span class="tag t-u">少见</span></td><td>亮片</td><td>46</td><td>伏击高手，标点对了连竿到手软。</td></tr>
+    <tr><td>鳜鱼</td><td>25–50</td><td>0.4–3</td><td><span class="tag t-r">稀有</span></td><td>蚯蚓</td><td>60</td><td>「桃花流水鳜鱼肥」，刺少肉嫩。</td></tr>
+    <tr><td>鲶鱼</td><td>30–90</td><td>0.5–8</td><td><span class="tag t-r">稀有</span></td><td>蚯蚓</td><td>64</td><td>夜行大嘴，吞钩凶猛，拉力惊人。</td></tr>
+    <tr><td>军鱼</td><td>30–70</td><td>0.5–6</td><td><span class="tag t-r">稀有</span></td><td>亮片</td><td>70</td><td>硬鳞战士，中钩后跳出水面的空中飞鱼。</td></tr>
+    <tr><td>鳡鱼</td><td>60–150</td><td>3–20</td><td><span class="tag t-l">传说</span></td><td>亮片</td><td>110</td><td>水中箭鱼，专吃小鱼，巨物级追击者。</td></tr>
+  </table>
+
+  <h3>深海 SEA（高手 · 需海竿）</h3>
+  <table>
+    <tr><th>鱼</th><th>体长 cm</th><th>体重 kg</th><th>稀有度</th><th>偏好饵</th><th>基础分</th><th>简介</th></tr>
+    <tr><td>小黄鱼</td><td>15–25</td><td>0.05–0.3</td><td><span class="tag t-c">普通</span></td><td>面团</td><td>22</td><td>金灿灿的国民海鱼，清蒸最鲜。</td></tr>
+    <tr><td>带鱼</td><td>40–100</td><td>0.2–1.5</td><td><span class="tag t-c">普通</span></td><td>亮片</td><td>30</td><td>银带舞者，群游如刀光，夜钓常客。</td></tr>
+    <tr><td>鲅鱼</td><td>30–70</td><td>0.3–4</td><td><span class="tag t-u">少见</span></td><td>亮片</td><td>48</td><td>蓝背快刀，速度型掠食，拖钓最爽。</td></tr>
+    <tr><td>比目鱼</td><td>25–60</td><td>0.3–4</td><td><span class="tag t-u">少见</span></td><td>面团</td><td>52</td><td>扁平伪装大师，藏在沙里等你发现。</td></tr>
+    <tr><td>石斑鱼</td><td>30–80</td><td>1–10</td><td><span class="tag t-r">稀有</span></td><td>蚯蚓</td><td>78</td><td>礁区伏兵，底栖巨腭，海钓梦幻目标。</td></tr>
+    <tr><td>小鲨鱼</td><td>60–150</td><td>3–30</td><td><span class="tag t-r">稀有</span></td><td>亮片</td><td>120</td><td>礁边巡逻者，冷血猎手，拉力令人难忘。</td></tr>
+    <tr><td>金枪鱼</td><td>60–200</td><td>5–40</td><td><span class="tag t-l">传说</span></td><td>亮片</td><td>150</td><td>远洋速度机器，搏鱼如搏浪，终极挑战。</td></tr>
+    <tr><td>旗鱼</td><td>100–300</td><td>20–60</td><td><span class="tag t-l">传说</span></td><td>亮片</td><td>180</td><td>海中长剑，跃水奇观，海竿玩家的圣杯。</td></tr>
+  </table>
+  <div class="kv">尺寸/重量为玩法向常见范围，非学术精确（按你偏好"说人话，不堆硬数据"）。</div>
+
+  <h2>⑤ 关卡 / 多场景</h2>
+  <div class="grid">
+    <div class="mini"><b>L1 静水塘</b><br><span class="kv">默认解锁 · 目标：累计钓获 12 条 → 解锁 L2</span></div>
+    <div class="mini"><b>L2 急流河</b><br><span class="kv">目标：钓获 20 条（含 ≥2 稀有）→ 解锁 L3</span></div>
+    <div class="mini"><b>L3 深海</b><br><span class="kv">目标：钓获 30 条（含 ≥1 传说）→ 通关 · 解锁「钓鱼大师」</span></div>
+  </div>
+  <div class="kv">以「累计捕获数 + 稀有度门槛」做解锁 gate，数据驱动存 NVS；每关有专属水色/背景与可达鱼池。不做硬性限时（避免挫败），后期可加可选计时挑战。</div>
+
+  <h2>⑥ 图鉴系统</h2>
+  <div class="card">
+    <ul class="clean">
+      <li>NVS 存每鱼捕获计数 + 是否完美（24 种 → 每鱼 1 字节计数 + 1 bit，极省空间）。</li>
+      <li>三键浏览：UP/DOWN 单击上/下一条、双击跳 ±5、长按跳场景首条；OK 看详情；长按 OK 返回（沿用图鉴项目交互范式）。</li>
+      <li>详情页：sprite + 名称 + 体长 + 体重 + 稀有度 + 简介 + 已捕×N + 完美 ✓。</li>
+      <li>未捕获显示「？？？」剪影，保留探索感；顶部显示「已收集 X/24」。</li>
+    </ul>
+  </div>
+
+  <h2>⑦ 蓝牙联机（Phase 4 · PoC 门控）</h2>
+  <div class="card">
+    <div class="kv">ESP32-C3 原生 BLE 5.0 GATT（≤3 并发）。<b>仓库已有本项目实测过的双板 BLE 链路方案</b>（对称发现 + NimBLE + 可靠传输层，约 60&nbsp;KB 堆开销）。</div>
+    <ul class="clean">
+      <li><b>先做 PoC</b>：设备发现 + 配对 + 双方实时分数同步，验证 BLE 与游戏同跑的内存余量。</li>
+      <li><b>PoC 通过</b> → 完整联机：60 秒「同场竞钓」，比谁钓得多/分高。</li>
+      <li><b>PoC 失败</b> → 降级为纯单机，联机标注「实验性」。</li>
+    </ul>
+    <div class="callout">需两台设备真实验收（或用 Python 伪装机迭代协议），故排到最后阶段。</div>
+  </div>
+
+  <h2>⑧ 分阶段交付（每阶段给可玩/可看产物）</h2>
+  <div class="phase now"><b>Phase 0（本次）</b> · 设计定稿 + 美术方向 + 新封面 → <b>交你签字</b></div>
+  <div class="phase"><b>Phase 1</b> · 重做逻辑层（收线机制 + 鱼种/鱼竿/关卡数据 + 图鉴记录），单测通过</div>
+  <div class="phase"><b>Phase 2</b> · 画面 UI 重做 + sprite + 中文字库，Simulator/真机截图预览</div>
+  <div class="phase"><b>Phase 3</b> · 内容文案/音效/打磨 + 云端编译验收 + 用发布助手<b>更新</b>上架（project 700）</div>
+  <div class="phase"><b>Phase 4（挑战项）</b> · 蓝牙联机 PoC → 完整联机 或 降级</div>
+
+  <h2>⑨ 升级预设 / 前向兼容（为后续版本留好接口）</h2>
+  <div class="card">
+    <div class="kv">原则：v2 只做 24 鱼 / 3 竿 / 3 关 / 单机，但<b>数据结构与存档从第一行就按"以后会变大"来写</b>，避免 v3 加内容时改存档格式、丢老玩家进度、或重排 ID 把图鉴搞乱。这一节会写进 Phase 1 验收清单。</div>
+    <div class="grid">
+      <div class="mini"><b>① 存档版本化</b><br><span class="kv">整体 <code>save_blob_t</code> 含 magic + schema_ver；读档低版本走 migrate_save() 升级；损坏重置不崩。NVS 命名空间 <code>fishing_v2</code>（v3 自然隔离）。</span></div>
+      <div class="mini"><b>② ID 稳定 + 容量预留</b><br><span class="kv">每种鱼/竿/关有不可变 ID，新增只追加不重排；图鉴容量 <code>CODEX_CAP=64</code>（现用 24）。遍历全按 <code>*_COUNT</code>，不写死 24/3/3。</span></div>
+      <div class="mini"><b>③ 内容版本号</b><br><span class="kv"><code>CONTENT_VER</code> 与存档解耦：数值/简介微调只 bump 此号，不触发迁移；图鉴/关于页显示 <code>v2.CONTENT_VER</code>。</span></div>
+      <div class="mini"><b>④ 功能位掩码</b><br><span class="kv"><code>supported_features</code> 位：单机/图鉴/关卡/蓝牙联机/每日挑战… 当前置前三位；联机落地置位，旧对端自动识别"不支持"。</span></div>
+      <div class="mini"><b>⑤ 模式插件化</b><br><span class="kv">状态机保留 <code>MODE</code> 维度（现 MODE_SINGLE）；未来 <code>MODE_VS</code> / <code>MODE_DAILY</code> 并列挂 MENU 之后，不改动现有收线/结算。</span></div>
+      <div class="mini"><b>⑥ 生成脚本参数化</b><br><span class="kv">sprite/字库生成以内容清单（yaml）为输入，<b>加一种鱼 = 清单加一行 + 重跑脚本</b>，自动扩，不需手工改数组。</span></div>
+    </div>
+    <ul class="clean">
+      <li><b>⑦ 多语言接缝</b>：界面与简介走字符串表，content 表加 <code>name_en/desc_en</code>，未来加语言只加列。</li>
+      <li><b>⑧ 上架/版本位</b>：封面与「关于」页留版本位；更新走 project 700 的 <code>--auto</code> 流（不新建玩法）；changelog 独立字段，v3 起只补 changelog。</li>
+    </ul>
+    <div class="callout info">落地检查（Phase 1 验收）：save_blob 含版本且迁移可用 · 图鉴容量 ≥64 且 ID 不重排 · 遍历无魔法数字 · feature 位含联机/每日挑战预留 · 清单驱动生成。</div>
+  </div>
+
+  <h2>⑩ 请签字确认</h2>
+  <div class="sign">
+    <ul>
+      <li>☐ 核心玩法走 <b>星露谷绿条收线</b>（长按 OK 控区）</li>
+      <li>☐ 美术走 <b>像素风（治愈系调性）</b></li>
+      <li>☐ 内容体量：<b>24 鱼种 / 3 鱼竿 / 3 关卡</b>（可增减）</li>
+      <li>☐ 联机放 <b>Phase 4 挑战项</b>（可能降级）</li>
+      <li>☐ <b>升级预设 / 前向兼容方案（第 ⑨ 节）</b>：存档版本化 + ID 稳定不重排 + 图鉴容量预留 64 + 功能位掩码 + 模式插件化 + 生成脚本参数化</li>
+    </ul>
+  </div>
+
+  <footer>竿影浮标 v2 · 设计评审稿 · 生成于 2026-09-29 · 完整技术版见 docs/fishing-redesign/DESIGN.md</footer>
+</div>
+</body>
+</html>

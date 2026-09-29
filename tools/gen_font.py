@@ -31,6 +31,9 @@ OTF = os.path.join(ROOT, "assets", "fonts", "SourceHanSansCN-Normal.otf")
 OUT_C = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_16.c")
 SYMBOLS_TXT = os.path.join(ROOT, "tools", "font_symbols.txt")
 SRC_C = os.path.join(ROOT, "main", "fishing.c")
+# v2 起鱼名/简介/稀有度都放在纯逻辑层，字库必须一并扫描，否则图鉴页会出方框
+SRC_LOGIC = os.path.join(ROOT, "main", "fishing_logic.c")
+SRC_FILES = [SRC_C, SRC_LOGIC]
 NODE = r"C:/Users/8605464/.workbuddy/binaries/node/versions/22.22.2-3/node.exe"
 CONV = r"C:/Users/8605464/.workbuddy/binaries/node/workspace/node_modules/lv_font_conv/lv_font_conv.js"
 
@@ -49,15 +52,17 @@ def strip_comments(s):
 
 
 def build_symbols():
-    if not os.path.exists(SRC_C):
-        raise SystemExit("找不到 %s" % SRC_C)
-    with open(SRC_C, "r", encoding="utf-8") as f:
-        src = strip_comments(f.read())
+    for p in SRC_FILES:
+        if not os.path.exists(p):
+            raise SystemExit("找不到 %s" % p)
     s = set()
-    for lit in re.findall(r'"((?:[^"\\]|\\.)*)"', src):
-        for ch in lit:
-            if ord(ch) > 0x7F:          # 非 ASCII = 需要中文字库
-                s.add(ch)
+    for p in SRC_FILES:
+        with open(p, "r", encoding="utf-8") as f:
+            src = strip_comments(f.read())
+        for lit in re.findall(r'"((?:[^"\\]|\\.)*)"', src):
+            for ch in lit:
+                if ord(ch) > 0x7F:          # 非 ASCII = 需要中文字库
+                    s.add(ch)
     s |= set(EXTRA)
     # 可打印 ASCII 全量（"OK"、数字、%、括号等）
     s |= {chr(c) for c in range(0x20, 0x7F)}

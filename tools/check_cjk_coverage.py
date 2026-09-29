@@ -21,6 +21,9 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_C = os.path.join(ROOT, "main", "fishing.c")
+# v2：鱼名/简介放在纯逻辑层，缺字会让图鉴页出方框，必须一并校验
+SRC_LOGIC = os.path.join(ROOT, "main", "fishing_logic.c")
+SRC_FILES = [SRC_C, SRC_LOGIC]
 FONT_C = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_16.c")
 
 
@@ -31,9 +34,11 @@ def strip_comments(s):
 
 
 def needed_chars():
-    with open(SRC_C, "r", encoding="utf-8") as f:
-        src = strip_comments(f.read())
-    lits = re.findall(r'"((?:[^"\\]|\\.)*)"', src)
+    lits = []
+    for p in SRC_FILES:
+        with open(p, "r", encoding="utf-8") as f:
+            src = strip_comments(f.read())
+        lits += re.findall(r'"((?:[^"\\]|\\.)*)"', src)
     need = {}
     for lit in lits:
         for ch in lit:
@@ -50,8 +55,13 @@ def font_chars():
     return have
 
 
-def width_check(lits):
-    """文案宽度护栏：单行超过屏宽 240px 就会被裁掉，这类问题编译期发现不了。"""
+def width_check():
+    """文案宽度护栏：单行超过屏宽 240px 就会被裁掉，这类问题编译期发现不了。
+
+    注意：只对「不换行」的 UI 文案做校验 —— 也就是 main/fishing.c 里的 HUD/提示串。
+    逻辑层的鱼种简介在图鉴详情页是 WRAP 换行显示的，单行超宽属于正常行为，
+    若一并检查会误报一大堆。
+    """
     otf = os.path.join(ROOT, "assets", "fonts", "SourceHanSansCN-Normal.otf")
     if not os.path.exists(otf):
         print("\n[跳过] 宽度检查：本地没有源字体 assets/fonts/SourceHanSansCN-Normal.otf")
@@ -65,6 +75,9 @@ def width_check(lits):
     SCREEN_W = 240          # 屏宽
     MAX_W = SCREEN_W - 8    # 两侧各留 4px
     font = ImageFont.truetype(otf, 16)
+    with open(SRC_C, "r", encoding="utf-8") as f:
+        ui_src = strip_comments(f.read())
+    lits = re.findall(r'"((?:[^"\\]|\\.)*)"', ui_src)
     over = []
     for lit in lits:
         probe = lit.replace("\\n", "\n").replace("%d", "0").replace("%s", "X").replace("%%", "%")
@@ -104,7 +117,7 @@ def main():
     else:
         print("\n[PASS] 屏上所有中文文案，子集字库均覆盖，无缺字。")
 
-    if width_check(lits) != 0:
+    if width_check() != 0:
         rc = 1
     return rc
 
