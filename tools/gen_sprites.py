@@ -46,21 +46,25 @@ FISH_SHEETS = {
 }
 
 # 道具/饵/竿/图标：一张 4×4 拼图，行优先
+# 字段：(key, 中文, 行, 列, 横向跨格数, 输出宽, 输出高, 分类)
+#   —— 海竿那张图很宽，横跨了 (1,1)(1,2) 两格，所以要 colspan=2；
+#      浮漂在 (1,3)，(1,2) 是空的（之前错填成 (1,2)，导致整列错位：
+#      浮漂变成空图、鱼钩拿到浮漂、图鉴拿到水波……）
 PROPS_SHEET = "props_sheet.png"
 PROPS = [
-    ("bait_worm",     "蚯蚓",   0, 0, 16, 16, "bait"),
-    ("bait_dough",    "面团",   0, 1, 16, 16, "bait"),
-    ("bait_spinner",  "亮片",   0, 2, 16, 16, "bait"),
-    ("rod_hand",      "手竿",   0, 3, 24, 24, "rod"),
-    ("rod_lure",      "路亚竿", 1, 0, 24, 24, "rod"),
-    ("rod_sea",       "海竿",   1, 1, 24, 24, "rod"),
-    ("prop_float",    "浮漂",   1, 2, 12, 16, "prop"),
-    ("prop_hook",     "鱼钩",   1, 3, 12, 12, "prop"),
-    ("prop_bubble",   "气泡",   2, 0,  8,  8, "prop"),
-    ("prop_wave",     "水波",   2, 1, 24,  4, "prop"),
-    ("icon_codex",    "图鉴",   2, 2, 16, 16, "icon"),
-    ("icon_star",     "稀有",   2, 3,  8,  8, "icon"),
-    ("icon_perfect",  "完美",   3, 0, 12, 12, "icon"),
+    ("bait_worm",     "蚯蚓",   0, 0, 1, 16, 16, "bait"),
+    ("bait_dough",    "面团",   0, 1, 1, 16, 16, "bait"),
+    ("bait_spinner",  "亮片",   0, 2, 1, 16, 16, "bait"),
+    ("rod_hand",      "手竿",   0, 3, 1, 24, 24, "rod"),
+    ("rod_lure",      "路亚竿", 1, 0, 1, 24, 24, "rod"),
+    ("rod_sea",       "海竿",   1, 1, 2, 24, 24, "rod"),
+    ("prop_float",    "浮漂",   1, 3, 1, 12, 16, "prop"),
+    ("prop_hook",     "鱼钩",   2, 0, 1, 12, 12, "prop"),
+    ("prop_bubble",   "气泡",   2, 1, 1,  8,  8, "prop"),
+    ("prop_wave",     "水波",   2, 2, 1, 24,  4, "prop"),
+    ("icon_codex",    "图鉴",   2, 3, 1, 16, 16, "icon"),
+    ("icon_star",     "稀有",   3, 0, 1,  8,  8, "icon"),
+    ("icon_perfect",  "完美",   3, 1, 1, 12, 12, "icon"),
 ]
 
 # 场景背景：全屏 240×320（RGB565 不透明，省一半空间）
@@ -94,10 +98,24 @@ def key_out_magenta(img, tol=95):
     return Image.fromarray(out, "RGBA"), bg
 
 
-def slice_cell(img, rows, cols, r, c):
+def slice_cell(img, rows, cols, r, c, cspan=1):
     w, h = img.size
     cw, ch = w // cols, h // rows
-    return img.crop((c * cw, r * ch, (c + 1) * cw, (r + 1) * ch))
+    return img.crop((c * cw, r * ch, (c + cspan) * cw, (r + 1) * ch))
+
+
+def blank_corner_watermark(img, x_frac=0.82, y_frac=0.90):
+    """把右下角水印区涂成背景色（不改尺寸，格子仍按原始网格对齐）。
+
+    裁掉底部一条会让每格高度变短、整列内容错位，所以这里改成"原地抹掉"。
+    """
+    w, h = img.size
+    bg = img.convert("RGB").getpixel((3, 3))
+    img = img.copy()
+    box = (int(w * x_frac), int(h * y_frac), w, h)
+    region = Image.new("RGBA", (box[2] - box[0], box[3] - box[1]), bg + (255,))
+    img.paste(region, box[:2])
+    return img
 
 
 def quantize_rgba(img, colors=QUANT_COLORS):
@@ -284,11 +302,12 @@ def main():
             fish_hdr.append("sil_%s" % key)
 
     # ---- 道具/饵/竿/图标 ----
+    # 注意：水印用"原地抹掉"而不是裁掉底部，否则 4x4 格子高度变短、整列错位。
     psrc = os.path.join(raw, PROPS_SHEET)
-    psheet = crop_watermark(Image.open(psrc).convert("RGBA"))
+    psheet = blank_corner_watermark(Image.open(psrc).convert("RGBA"))
     psheet, _ = key_out_magenta(psheet)
-    for (key, zh, r, c, w, h, cat) in PROPS:
-        cell = slice_cell(psheet, 4, 4, r, c)
+    for (key, zh, r, c, cspan, w, h, cat) in PROPS:
+        cell = slice_cell(psheet, 4, 4, r, c, cspan)
         spr = extract_sprite(cell, w, h)
         if spr is None:
             print("  !! empty cell: %s (%s r%d c%d)" % (key, cat, r, c))
