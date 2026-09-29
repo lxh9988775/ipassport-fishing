@@ -1,0 +1,9 @@
+This update fixes on-screen layout only. Gameplay, difficulty, levels and the fish codex are unchanged; unlocked records and high scores carry over.
+
+1. Fixed the overlapping text in the top bar. It used to squeeze four labels (Score, Best, Battery, Spot) into one row, which could not fit next to the screen's rounded corners. The bar now shows three items: Score on the left, Best in the middle, and a battery icon with a percentage on the right. The word "Battery" is gone — the icon already says it, and the freed space goes to the score.
+2. The current fishing spot name moved into its own small tag at the top-right of the scene, so it no longer competes with the numbers. It hides together with the scene when you open the menu or codex.
+3. Battery level now refreshes on every screen (it used to update only on the fishing screen, so the number froze while reeling or in the menu). Below 20% the whole battery icon turns red, so a low charge is obvious at a glance.
+4. Codex entries are re-laid out: the fish name line now also shows its rarity, and the line below it only shows "Longest X cm - Caught N". Overly long text is trimmed automatically instead of running off the screen edge.
+5. The bottom hint line is centred and two overly long hints were shortened, so the rounded corners no longer clip the text.
+
+An automated layout check was also added: every future change is scanned with the firmware's real font metrics plus the rounded-corner area, flagging anything that runs off screen, gets cut by the corner mask, or overlaps another element.
