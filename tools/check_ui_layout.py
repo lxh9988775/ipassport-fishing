@@ -441,6 +441,25 @@ def main() -> int:
 
     problems = []
 
+    # ---- 收线方向契约（屏幕坐标）
+    # fishing.c 用 top = TRK_Y + pos * TRK_H / 1000 把逻辑坐标映射到屏幕 y，
+    # 也就是 pos 越大越靠屏幕下方。逻辑层 reel_update() 里「按住 = 抬竿」因此
+    # 必须是 bar_pos 变小（tests/test_fishing_reel_hold.c 钉住逻辑侧）。
+    # 渲染侧一旦被改回反向（例如 TRK_Y + (REEL_TRACK - pos) * ...），按住就会
+    # 变成往下钻 —— v2 正是这么错的，玩起来像「按了没反应 / 上不上下不下」。
+    # 两边各钉一半，缺一不可。
+    flat = re.sub(r"\s+", "", open(SRC_C, encoding="utf-8").read())
+    for expr, why in (
+            ("TRK_Y+st->reel_bar_pos*TRK_H/1000",
+             "捕捉区必须按 reel_bar_pos 递增映射到屏幕 y（数值越大越靠下）"),
+            ("TRK_Y+st->reel_fish_pos*TRK_H/1000",
+             "鱼标必须与捕捉区共用同一条映射，否则区跟鱼会对不上"),
+    ):
+        if expr not in flat:
+            problems.append("[收线方向] fishing.c 里找不到 `%s` —— %s"
+                            % (expr.replace("*", " * ").replace("->", "->"), why))
+
+
     # ---- 出屏 + 圆角涂黑
     for name, (x, y, w, h) in boxes.items():
         if x < -0.01 or y < -0.01 or x + w > SCR_W + 0.01 or y + h > SCR_H + 0.01:

@@ -420,8 +420,15 @@ static int reel_update(int dt_ms) {
         }
     }
 
-    /* --- 4) 捕捉区移动：带惯性，会过冲，所以必须预判 --- */
-    int tgt_v = g_holding ? (int)r->rise_spd : -(int)r->fall_spd;
+    /* --- 4) 捕捉区移动：带惯性，会过冲，所以必须预判 ---
+     * 坐标约定（别改）：bar_pos 越大 = 越靠屏幕下方。
+     *   fishing.c: top = TRK_Y + bar_pos * TRK_H / 1000
+     * 所以「按住 = 抬竿 = 往屏幕上方走」必须是 bar_pos 减小。
+     * 原先写的是 +rise_spd / -fall_spd，方向正好反了：按下去捕捉区往下钻、
+     * 松手反而往上飘，跟屏幕提示「按住 OK 抬竿 · 松开落下」和设计稿里的
+     * 「按住 OK = 捕捉区上升」全相反 —— 玩起来就是「按了没反应、上不上下不下」。
+     * tests/test_fishing_reel_hold.c 里钉死了屏幕方向，改坏会立刻红。 */
+    int tgt_v = g_holding ? -(int)r->rise_spd : (int)r->fall_spd;
     int dv = REEL_BAR_ACCEL * dt_ms / 1000;
     if (dv < 1) dv = 1;
     if (g_bar_vel < tgt_v) g_bar_vel += (tgt_v - g_bar_vel > dv ? dv : tgt_v - g_bar_vel);

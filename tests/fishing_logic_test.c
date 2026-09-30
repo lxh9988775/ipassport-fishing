@@ -39,18 +39,23 @@ static int advance_to_bite(void) {
 }
 
 /*
- * 模拟一个手不错的玩家：把捕捉区往鱼身上带。
- * 鱼在捕捉区偏上方就按住抬区，偏下方就松手放区（中间留一段死区防抖）。
- * 返回 1=上鱼 0=跑鱼/超时。
+ * 模拟一个手不错的玩家：把捕捉区中线带到鱼身上。
+ * 方向必须是【按住 = 抬竿 = 捕捉区往屏幕上方走】：reel_bar_pos 越大越靠屏幕
+ * 下方，所以鱼在捕捉区中线以上（pos 更小）就按住，以下就松手。
+ * 中间留死区避免来回抽搐。返回 1=上鱼 0=跑鱼/超时。
  */
 static int play_reel(int max_frames) {
+    int holding_now = 0;
     for (int i = 0; i < max_frames; i++) {
         fishing_status_t s = snap();
         if (s.state != STATE_REELING) {
             return (s.state == STATE_CATCH) ? 1 : 0;
         }
-        const int dead = s.reel_bar_h * 2 / 5;   /* 死区：避免来回抽搐 */
-        fishing_reel_hold(s.reel_fish_pos > s.reel_bar_pos + dead);
+        const int center = s.reel_bar_pos + s.reel_bar_h / 2;
+        const int dead   = s.reel_bar_h / 5;   /* 死区：避免来回抽搐 */
+        if (s.reel_fish_pos < center - dead)      holding_now = 1;  /* 鱼在上方 → 抬竿 */
+        else if (s.reel_fish_pos > center + dead) holding_now = 0;  /* 鱼在下方 → 落竿 */
+        fishing_reel_hold(holding_now);
         g_now += FRAME_MS;
         fishing_tick(g_now);
     }

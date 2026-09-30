@@ -10,6 +10,11 @@
  *   现在改成【每帧喂电平】fishing_reel_hold_sample()，去抖逻辑一旦被改坏，
  *   那个「下不来」的 bug 会原样复活 —— 所以必须钉住。
  *
+ * 另一条被钉死的东西是【方向】：按住 = 抬竿 = 捕捉区往屏幕上方走。
+ *   reel_update() 里那对符号（+rise_spd / -fall_spd）在 v2 里是反的，
+ *   按下去捕捉区往下钻、松手反而往上飘，与屏幕提示和设计稿全相反。
+ *   用例 7/8 用 bar_top_y() 比【屏幕 y】，而不是比 bar_pos —— 符号再反一次就红。
+ *
  * 编译运行（需 cc）：
  *   cc -std=c11 -Wall -Wextra -Werror \
  *      tests/test_fishing_reel_hold.c main/fishing_logic.c -o /tmp/reel_hold
@@ -65,6 +70,17 @@ static int bar_pos(void) {
     return st.reel_bar_pos;
 }
 
+/* 屏幕坐标：与 main/fishing.c 的轨道几何一致 ——
+ *     top = TRK_Y + reel_bar_pos * TRK_H / 1000
+ * 所以 bar_pos 越大 = 越靠屏幕下方。
+ * 方向判据一律走这个函数，别直接比 bar_pos：这个映射被写反过一次，
+ * 表现就是「按住反而往下钻」，光看 bar_pos 是看不出来的。 */
+#define TRK_Y 46
+#define TRK_H 224
+static int bar_top_y(void) {
+    return TRK_Y + bar_pos() * TRK_H / 1000;
+}
+
 int main(void) {
     fishing_status_t st;
 
@@ -103,34 +119,39 @@ int main(void) {
     assert(holding() == false);
     printf("[OK] 双击序列结束是松开\n");
 
-    /* 7) 长按 1000ms 后松手，捕捉区真的往下走 —— 这是原来那个 bug 的主路径。
-     *    1000ms 已经逼近 button 组件的 1500ms 长按阈值，是玩家的常态操作。 */
+    /* 7) 长按 1000ms 后松手，捕捉区真的能落下来 —— 这是原来那个 bug 的主路径。
+     *    1000ms 已经逼近 button 组件的 1500ms 长按阈值，是玩家的常态操作。
+     *    同时钉死方向：按住 = 抬竿（屏幕 y 变小）、松手 = 落下（y 变大）。
+     *    v2 里这一对符号写反过，按下去往下钻，玩起来就是「按了没反应 / 上不上下不下」。 */
     enter_reeling();
-    const int pos0 = bar_pos();
+    const int y0 = bar_top_y();
     for (int i = 0; i < 50; i++) frame(true);      /* 按住 1000ms 往上抬 */
-    const int top = bar_pos();
-    assert(top > pos0);
+    const int y_hold = bar_top_y();
+    assert(y_hold < y0);                            /* 抬竿：上沿 y 必须变小 */
+    assert(holding() == true);
     frame(false);
     frame(false);                                   /* 松手（2 帧去抖 = 40ms） */
     assert(holding() == false);
     for (int i = 0; i < 10; i++) frame(false);      /* 再 200ms */
     fishing_get_status(&st);
     assert(st.state == STATE_REELING);
-    assert(bar_pos() < top);
-    printf("[OK] 长按 1000ms 后松手能落下: %d -> %d -> %d\n", pos0, top, bar_pos());
+    assert(bar_top_y() > y_hold);                   /* 落下：上沿 y 必须变大 */
+    printf("[OK] 按住 1000ms 抬竿 y %d -> %d，松手回落到 y %d\n",
+           y0, y_hold, bar_top_y());
 
-    /* 8) 一直按住不会倒退：捕捉区单调上升，顶到轨道上限就停在那，不许掉头 */
+    /* 8) 一直按住不会倒退：捕捉区单调上抬（y 单调不增），顶到轨道上端就停住 */
     enter_reeling();
-    int prev = bar_pos();
+    int prev_y = bar_top_y();
     for (int i = 0; i < 30; i++) {
         frame(true);
-        const int cur = bar_pos();
-        assert(cur >= prev);
-        prev = cur;
+        const int cur = bar_top_y();
+        assert(cur <= prev_y);
+        prev_y = cur;
     }
     fishing_get_status(&st);
     assert(st.state == STATE_REELING);
-    printf("[OK] 持续按住 600ms 捕捉区单调上升至 %d\n", prev);
+    assert(prev_y <= TRK_Y + 1);                    /* 30 帧足够顶到轨道上端 */
+    printf("[OK] 持续按住 600ms 捕捉区单调上抬至 y=%d（已到顶）\n", prev_y);
 
     /* 9) 跨局：上一局停在「按住」状态，新一局进来必须是没按住，
      *    且第一帧按下立即生效（去抖计数不能跨局残留） */

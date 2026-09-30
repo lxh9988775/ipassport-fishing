@@ -1,9 +1,8 @@
-This update fixes on-screen layout only. Gameplay, difficulty, levels and the fish codex are unchanged; unlocked records and high scores carry over.
+This version reworks how reeling feels and makes the whole game run smoother. Gameplay, fish species, levels and codex content are unchanged; unlocked records and high scores carry over.
 
-1. Fixed the overlapping text in the top bar. It used to squeeze four labels (Score, Best, Battery, Spot) into one row, which could not fit next to the screen's rounded corners. The bar now shows three items: Score on the left, Best in the middle, and a battery icon with a percentage on the right. The word "Battery" is gone — the icon already says it, and the freed space goes to the score.
-2. The current fishing spot name moved into its own small tag at the top-right of the scene, so it no longer competes with the numbers. It hides together with the scene when you open the menu or codex.
-3. Battery level now refreshes on every screen (it used to update only on the fishing screen, so the number froze while reeling or in the menu). Below 20% the whole battery icon turns red, so a low charge is obvious at a glance.
-4. Codex entries are re-laid out: the fish name line now also shows its rarity, and the line below it only shows "Longest X cm - Caught N". Overly long text is trimmed automatically instead of running off the screen edge.
-5. The bottom hint line is centred and two overly long hints were shortened, so the rounded corners no longer clip the text.
-
-An automated layout check was also added: every future change is scanned with the firmware's real font metrics plus the rounded-corner area, flagging anything that runs off screen, gets cut by the corner mask, or overlaps another element.
+1. Fixed the catch bar sinking when you hold OK: holding OK used to move the bar down the track, the opposite of the on-screen hint "hold OK to lift, release to drop", so pressing felt like it did nothing. Now holding lifts the bar and releasing drops it, exactly as the hint says.
+2. Fixed the catch bar getting stuck: after holding OK for a second or two on a big fish, releasing often left the bar pinned at the top until you tapped again. Now it rises the instant you press and drops the instant you let go, no matter how long you hold.
+3. Fixed holding OK doing nothing right after the strike: the press that triggers the strike used to be swallowed, so keeping the button held did not raise the bar until you released and pressed again. Now you can hold straight through the strike.
+4. OK responds faster: input no longer waits for a full "single click" to be recognised, and quick double taps no longer swallow the release.
+5. Smoother rendering: the background, text labels and the reel progress bar are only redrawn when they actually change. Previously the whole screen was repainted every frame, which was most visible while reeling and in the codex.
+6. Fixed the sailfish weight in the codex: it was shown as a number smaller than its own minimum, making weight appear to drop as the fish grew longer.
