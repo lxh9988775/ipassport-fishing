@@ -122,8 +122,11 @@ typedef struct {
     uint8_t  bait_mask;    /* 偏好饵料位掩码：bit0 蚯蚓 bit1 面团 bit2 亮片 */
     uint16_t len_min_mm;   /* 体长下限（毫米，定点存方便显示） */
     uint16_t len_max_mm;
-    uint16_t wgt_min_g;    /* 体重下限（克） */
-    uint16_t wgt_max_g;
+    /* 体重用 32 位：旗鱼上限 80000g 超过 uint16_t 的 65535，
+     * 用 16 位会被截断成 14464g —— 反而比下限 20000g 还小，
+     * 图鉴里会出现"鱼越大体重越轻"。这个坑踩过，别改回 16 位。 */
+    uint32_t wgt_min_g;    /* 体重下限（克） */
+    uint32_t wgt_max_g;
     uint16_t base_score;   /* 基础分（未乘倍率） */
     uint8_t  dart;         /* 乱窜程度 0..100：越高越难跟 */
     uint8_t  power;        /* 挣扎力度 0..100：越高进度掉得越快 */
@@ -205,7 +208,12 @@ fishing_event_t fishing_tick(int now_ms);
 const catch_result_t *fishing_strike(void);
 const catch_result_t *fishing_last_catch(void);
 
-/* 收线：按住 OK / 松开 OK（对照组 fischer 手感的核心输入） */
+/* 收线：每帧喂入 OK 键的当前电平（主循环 20ms 调一次）。
+ * down = 这一帧 OK 是否仍被按住。按下立即生效，松开需连续 2 帧去抖。
+ * 为什么必须是电平而不是按键事件：见 fishing_logic.c 的实现注释。 */
+void fishing_reel_hold_sample(bool down);
+
+/* 收线：直接落值（不去抖）。仅供按键电压读不到时的事件兜底路径与单元测试使用。 */
 void fishing_reel_hold(bool down);
 
 /* 状态查询 */

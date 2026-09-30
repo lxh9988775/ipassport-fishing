@@ -27,6 +27,7 @@
 #include "lvgl.h"
 #include "bsp_display.h"
 #include "bsp_button.h"
+#include "bsp_pins.h"     /* BSP_BTN_MV_TABLE：收线时直接读电压判"手指还在不在" */
 #include "bsp_battery.h"
 #include "bsp_audio.h"
 #include "fishing_logic.h"
@@ -181,6 +182,31 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *txt, int x, int y, lv_
     use_cjk(l);
     lv_obj_set_style_text_color(l, color, 0);
     return l;
+}
+
+/* ===================== 只在"真的变了"才写给 LVGL =====================
+ * 主循环 20ms/帧，原来各 refresh_* 是无条件写的，代价很大：
+ *   - lv_label_set_text() 每次都会重新排字形（16px 中文子集，最贵的一项）；
+ *   - lv_image_set_src() 没有"src 相同就返回"的短路（LVGL 9.5 的
+ *     lv_image_set_src 首尾各一次无条件 invalidate），240x320 背景图
+ *     每帧就是 153,600 字节的重绘 —— 场景页因此一直在整屏重画。
+ * 用控件现值比较而不是影子变量：g_lbl_score 会被场景/收线/结算三处写，
+ * 影子变量容易失同步，跟 LVGL 自己的值比一定不会漏画。 */
+static bool set_text_cached(lv_obj_t *lbl, const char *txt) {
+    if (!lbl || !txt) return false;
+    const char *cur = lv_label_get_text(lbl);
+    if (cur && strcmp(cur, txt) == 0) return false;   /* 没变：一个 LVGL API 都不调 */
+    lv_label_set_text(lbl, txt);
+    return true;
+}
+
+/* 图片按【业务键】缓存（钓点/鱼种/是否已收录），不依赖 lv_img_get_src()。
+ * 每个 key 配一个 static int 影子（-99 = 还没画过）。 */
+static bool set_img_by_key(lv_obj_t *img, int *cache, int key, const lv_image_dsc_t *dsc) {
+    if (!img || !dsc || !cache || *cache == key) return false;
+    *cache = key;
+    lv_img_set_src(img, dsc);
+    return true;
 }
 
 /* ===================== UI 构造 ===================== */
@@ -411,8 +437,15 @@ static void build_ui(void) {
     g_cdx_prog = make_label(g_codex, "", 8, 250, lv_color_make(190, 210, 240));
 }
 
-/* 面板互斥显示 */
+/* 面板互斥显示。
+ * 加门闸 + 把面板级【固定】提示放在这里：这两句跟帧数据无关，切面板时写一次就够，
+ * 原先塞在每帧的 refresh_reel / refresh_codex 里，等于每帧重排一次中文字形。 */
+static int s_cur_panel = -1;   /* 当前显示的面板编号；-1 = 还没显示过 */
+
 static void show_only(int which) {
+    if (s_cur_panel == which) return;   /* 面板没变：连 5 次 flag 操作都省掉 */
+    s_cur_panel = which;
+
     lv_obj_add_flag(g_scene,  LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_reel,   LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_result, LV_OBJ_FLAG_HIDDEN);
@@ -423,14 +456,29 @@ static void show_only(int which) {
     if (which == 2) lv_obj_clear_flag(g_result, LV_OBJ_FLAG_HIDDEN);
     if (which == 3) lv_obj_clear_flag(g_menu,   LV_OBJ_FLAG_HIDDEN);
     if (which == 4) lv_obj_clear_flag(g_codex,  LV_OBJ_FLAG_HIDDEN);
+
+    const char *hint = NULL;
+    switch (which) {
+        case 1: hint = "按住 OK 抬竿 · 松开落下"; break;   /* 收线：原 refresh_reel 里每帧重设 */
+        case 4: hint = "上下翻·OK详情·长按返回";  break;   /* 图鉴：原 refresh_codex 里每帧重设 */
+        default: break;   /* 场景/结算/菜单的提示随状态或选中项变化，仍留在各自 refresh（已带缓存） */
+    }
+    if (hint) set_text_cached(g_lbl_hint, hint);
 }
 
 /* ===================== 各面板刷新 ===================== */
 
 /* 电量：图形 + 数字。
  * 刻意不写在 refresh_scene 里 —— 它是常驻顶栏的一部分，收线/菜单/图鉴页也得刷新，
- * 否则在那些页面里电量会冻在上一次的值。 */
+ * 否则在那些页面里电量会冻在上一次的值。
+ * 门闸：SoC 本来就只有 500ms 才更新一次，值没变时一个 LVGL API 都别调
+ * （原来每帧无条件写 2 次样式 + 1 次中文标签重排）。 */
+static int s_batt_drawn = -2;      /* 上一次真正画到屏上的 SoC；-2 = 从来没画过 */
+
 static void hud_batt_refresh(void) {
+    if (s_batt_drawn == g_batt_soc) return;
+    s_batt_drawn = g_batt_soc;
+
     if (g_batt_soc < 0) {                      /* 电量计不应答就优雅降级 */
         lv_label_set_text(g_lbl_batt, "--");
         lv_obj_add_flag(g_batt_fill, LV_OBJ_FLAG_HIDDEN);
@@ -451,16 +499,25 @@ static void hud_batt_refresh(void) {
     lv_label_set_text(g_lbl_batt, buf);
 }
 
+/* 已画到控件上的"业务键"，用来跳过重复写入（-98 是取不到的哨兵值，避免撞上真实键 0/1） */
+static int s_bg_spot    = -98;
+static int s_fish_scene = -98;
+
 static void refresh_scene(const fishing_status_t *st) {
-    lv_img_set_src(g_bg, BG_IMG[st->spot]);
-    lv_label_set_text(g_lbl_spot, fishing_spot_name(st->spot));
-    lv_obj_center(g_lbl_spot);        /* 「深海」比三字名窄 16px，重新居中 */
+    /* 背景图只在钓点真的换了才重设 —— 这是原来的头号开销源：
+     * lv_image_set_src 没有"同源短路"，每帧都会 invalidate 整张 240x320（153,600 字节）。 */
+    set_img_by_key(g_bg, &s_bg_spot, (int)st->spot, BG_IMG[st->spot]);
+
+    /* 钓点名只在文案变化时写；宽度变了才需要重新居中（「深海」比三字名窄 16px） */
+    if (set_text_cached(g_lbl_spot, fishing_spot_name(st->spot))) {
+        lv_obj_center(g_lbl_spot);
+    }
 
     char buf[160];
     snprintf(buf, sizeof(buf), "得分 %d", st->score);
-    lv_label_set_text(g_lbl_score, buf);
+    set_text_cached(g_lbl_score, buf);
     snprintf(buf, sizeof(buf), "最高 %d", st->high_score);
-    lv_label_set_text(g_lbl_high, buf);
+    set_text_cached(g_lbl_high, buf);
 
     lv_obj_add_flag(g_fish_scene, LV_OBJ_FLAG_HIDDEN);
     int bob_y = 96;
@@ -473,61 +530,84 @@ static void refresh_scene(const fishing_status_t *st) {
             hint = "咬钩了！按 OK 提竿";
             bob_y = 116;
             lv_obj_clear_flag(g_fish_scene, LV_OBJ_FLAG_HIDDEN);
-            if (st->cur_species >= 0) lv_img_set_src(g_fish_scene, SIL_IMG[st->cur_species]);
+            if (st->cur_species >= 0) {
+                set_img_by_key(g_fish_scene, &s_fish_scene, st->cur_species, SIL_IMG[st->cur_species]);
+            }
             break;
         default: hint = ""; break;
     }
-    lv_obj_set_pos(g_floatbob, 110, bob_y);
-    lv_label_set_text(g_lbl_hint, hint);
+    lv_obj_set_pos(g_floatbob, 110, bob_y);   /* 值没变时 LVGL 自己会短路 */
+    set_text_cached(g_lbl_hint, hint);
 }
+
+/* 收线页控件的"已画值"门闸：像素坐标没变就不调 set_size/set_pos，
+ * 少一次失效区就少一次重绘（收线页每帧有 9 个分散的失效区）。 */
+static int s_zone_h = -1;
+static int s_zone_y = -1;
+static int s_mark_y = -1;
+static int s_prg_h  = -1;
 
 static void refresh_reel(const fishing_status_t *st) {
     char buf[160];
     snprintf(buf, sizeof(buf), "得分 %d", st->score);
-    lv_label_set_text(g_lbl_score, buf);
+    set_text_cached(g_lbl_score, buf);
 
     /* 捕捉区：把 0..1000 定点换算成像素 */
     int zh = st->reel_bar_h * TRK_H / 1000;
     int top = TRK_Y + st->reel_bar_pos * TRK_H / 1000;
     if (zh < 8) zh = 8;
-    lv_obj_set_size(g_zone, TRK_W - 4, zh);
-    lv_obj_set_pos(g_zone, TRK_X + 2, top);
+    if (zh != s_zone_h || top != s_zone_y) {
+        s_zone_h = zh;
+        s_zone_y = top;
+        lv_obj_set_size(g_zone, TRK_W - 4, zh);
+        lv_obj_set_pos(g_zone, TRK_X + 2, top);
+    }
 
     int fy = TRK_Y + st->reel_fish_pos * TRK_H / 1000;
-    lv_obj_set_pos(g_fishmark, TRK_X + 3, fy - 5);
+    if (fy != s_mark_y) {
+        s_mark_y = fy;
+        lv_obj_set_pos(g_fishmark, TRK_X + 3, fy - 5);
+    }
 
     int ph = st->reel_progress * PRG_H / 1000;
-    lv_obj_set_size(g_prg_fill, PRG_W, ph);
-    lv_obj_set_pos(g_prg_fill, PRG_X, PRG_Y + PRG_H - ph);
+    if (ph != s_prg_h) {          /* 高度与 y 一一对应，一起更新 */
+        s_prg_h = ph;
+        lv_obj_set_size(g_prg_fill, PRG_W, ph);
+        lv_obj_set_pos(g_prg_fill, PRG_X, PRG_Y + PRG_H - ph);
+    }
 
     const fish_species_t *f = fishing_species_info(st->cur_species);
     snprintf(buf, sizeof(buf), "收线 %d%%\n%s", st->reel_progress / 10,
              f ? f->name : "");
-    lv_label_set_text(g_lbl_reel, buf);
-    lv_label_set_text(g_lbl_hint, "按住 OK 抬竿 · 松开落下");
+    set_text_cached(g_lbl_reel, buf);
+    /* 「按住 OK 抬竿 · 松开落下」是面板固定文案，已移到 show_only(1) 里只在切面板时写一次 */
 }
+
+/* 结算页要停 2.2 秒（约 110 帧），全部走缓存收益最明显。
+ * key：>=0 = 鱼种，-1 = 跑鱼的默认剪影。 */
+static int s_res_img = -99;
 
 static void refresh_result(const fishing_status_t *st) {
     const catch_result_t *res = fishing_last_catch();
     char buf[192];
     if (st->state == STATE_CATCH && res && res->species >= 0) {
         const fish_species_t *f = fishing_species_info(res->species);
-        lv_img_set_src(g_res_img, FISH_IMG[res->species]);
+        set_img_by_key(g_res_img, &s_res_img, res->species, FISH_IMG[res->species]);
         snprintf(buf, sizeof(buf), "%s  %s", f->name, fishing_rarity_name((rarity_t)f->rarity));
-        lv_label_set_text(g_res_name, buf);
+        set_text_cached(g_res_name, buf);
         snprintf(buf, sizeof(buf), "%d.%d 厘米 · %d 克\n本次 +%d 分%s",
                  res->len_mm / 10, res->len_mm % 10, res->wgt_g, res->score,
                  res->perfect ? "\n完美钓获！" : "");
-        lv_label_set_text(g_res_info, buf);
-        lv_label_set_text(g_lbl_hint, res->first_catch ? "新收录！加入图鉴" : "已放入图鉴");
+        set_text_cached(g_res_info, buf);
+        set_text_cached(g_lbl_hint, res->first_catch ? "新收录！加入图鉴" : "已放入图鉴");
     } else {
-        lv_img_set_src(g_res_img, SIL_IMG[0]);
-        lv_label_set_text(g_res_name, "跑鱼了…");
-        lv_label_set_text(g_res_info, "再试一次，注意提前跟竿");
-        lv_label_set_text(g_lbl_hint, "别灰心");
+        set_img_by_key(g_res_img, &s_res_img, -1, SIL_IMG[0]);
+        set_text_cached(g_res_name, "跑鱼了…");
+        set_text_cached(g_res_info, "再试一次，注意提前跟竿");
+        set_text_cached(g_lbl_hint, "别灰心");
     }
     snprintf(buf, sizeof(buf), "得分 %d", st->score);
-    lv_label_set_text(g_lbl_score, buf);
+    set_text_cached(g_lbl_score, buf);
 }
 
 static void refresh_menu(const fishing_status_t *st) {
@@ -548,11 +628,14 @@ static void refresh_menu(const fishing_status_t *st) {
             case 4: snprintf(buf, sizeof(buf), "图鉴   %d/%d", st->codex_total, FISH_SPECIES_COUNT); txt = buf; break;
             default: break;
         }
-        lv_label_set_text(g_menu_rows[i], txt);
+        set_text_cached(g_menu_rows[i], txt);
     }
-    lv_obj_set_pos(g_menu_selbar, 6, 70 + g_menu_idx * 30);
-    lv_label_set_text(g_lbl_hint, g_menu_edit ? "上下改值·OK确认" : "上下选·OK进入·长按返回");
+    lv_obj_set_pos(g_menu_selbar, 6, 70 + g_menu_idx * 30);   /* 值没变时 LVGL 自己会短路 */
+    set_text_cached(g_lbl_hint, g_menu_edit ? "上下改值·OK确认" : "上下选·OK进入·长按返回");
 }
+
+/* key：>=0 = 已收录（用鱼种序号），否则 = -(idx+1) 表示未收录剪影 */
+static int s_cdx_img = -9999;
 
 static void refresh_codex(const fishing_status_t *st) {
     (void)st;
@@ -561,30 +644,31 @@ static void refresh_codex(const fishing_status_t *st) {
     bool seen = fishing_codex_is_seen(idx);
     char buf[192];
 
-    lv_img_set_src(g_cdx_img, seen ? FISH_IMG[idx] : SIL_IMG[idx]);
+    set_img_by_key(g_cdx_img, &s_cdx_img, seen ? idx : -(idx + 1),
+                   seen ? FISH_IMG[idx] : SIL_IMG[idx]);
     if (seen) {
         snprintf(buf, sizeof(buf), "%d. %s · %s%s", idx + 1, f->name,
                  fishing_rarity_name((rarity_t)f->rarity),
                  fishing_codex_is_perfect(idx) ? " ✓" : "");
-        lv_label_set_text(g_cdx_name, buf);
+        set_text_cached(g_cdx_name, buf);
         snprintf(buf, sizeof(buf), "最长 %d.%d 厘米 · 钓 %d 条",
                  fishing_codex_best_len(idx) / 10, fishing_codex_best_len(idx) % 10,
                  fishing_codex_count(idx));
-        lv_label_set_text(g_cdx_meta, buf);
-        lv_label_set_text(g_cdx_desc, f->desc);
+        set_text_cached(g_cdx_meta, buf);
+        set_text_cached(g_cdx_desc, f->desc);
     } else {
         snprintf(buf, sizeof(buf), "%d. ???", idx + 1);
-        lv_label_set_text(g_cdx_name, buf);
+        set_text_cached(g_cdx_name, buf);
         snprintf(buf, sizeof(buf), "%s · 栖息于%s", fishing_rarity_name((rarity_t)f->rarity),
                  fishing_spot_name((spot_t)f->spot));
-        lv_label_set_text(g_cdx_meta, buf);
-        lv_label_set_text(g_cdx_desc, "还没有见过它，钓上来就能解锁");
+        set_text_cached(g_cdx_meta, buf);
+        set_text_cached(g_cdx_desc, "还没有见过它，钓上来就能解锁");
     }
     fishing_status_t s2;
     fishing_get_status(&s2);
     snprintf(buf, sizeof(buf), "收录 %d/%d   累计钓获 %d", s2.codex_total, FISH_SPECIES_COUNT, s2.total_catch);
-    lv_label_set_text(g_cdx_prog, buf);
-    lv_label_set_text(g_lbl_hint, "上下翻·OK详情·长按返回");
+    set_text_cached(g_cdx_prog, buf);
+    /* 「上下翻·OK详情·长按返回」是面板固定文案，已移到 show_only(4) 里只在切面板时写一次 */
 }
 
 static void refresh_ui(void) {
@@ -621,14 +705,81 @@ static void menu_change_value(int dir) {
     }
 }
 
+/* ===================== 收线：直接读按键电压判"按住" =====================
+ *
+ * 为什么不靠按键事件：BSP 只注册了 PRESS_DOWN / SINGLE_CLICK / DOUBLE_CLICK /
+ * LONG_PRESS_START（components/bsp/src/bsp_button.c:118-124），**没有松手事件**。
+ * button 组件在按住满 1500ms 后松手走 PRESS_LONG_PRESS_UP_CHECK 分支，只发
+ * PRESS_UP / LONG_PRESS_UP / PRESS_END —— 应用层一个都收不到，于是捕捉区贴顶下不来；
+ * 就算正常触发，SINGLE_CLICK 也要松手后再等 short_press_time(180ms) 才有。
+ * 收线恰好就是要按住一两秒的玩法，所以这里改成每帧读一次 ADC 电压问"手指在不在"。
+ *
+ * 电压表复用 bsp_pins.h，与 button_level()（bsp_button.c:40-65）同源，
+ * 换了分压电阻只要改 bsp_pins.h 一处，不会出现第二套窗口。
+ * 命名不带 g_/s_ 前缀：tools/check_c_sanity.py 只对 g_* / s_* 做声明校验，
+ * 这条带 const 的数组声明不匹配它的正则（与 bsp_button.c:14 保持同一写法）。 */
+static const uint16_t BTN_MV[BSP_BTN_COUNT][2] = BSP_BTN_MV_TABLE;
+
+#define REEL_ADC_FAIL_MAX 10      /* 连续读失败这么多帧（200ms）就退回事件路径 */
+
+static bool g_adc_live        = false;  /* 本局收线里 ADC 是否已确认过一次"按下" */
+static int  g_adc_fail        = 0;      /* 连续读失败帧数 */
+static bool g_reel_seen_press = false;  /* 本局收线是否见过一次 PRESS */
+
+/* 0 = 松开，1 = 按住，-1 = 读数不可用 */
+static int ok_key_state(void) {
+    const int mv = bsp_button_read_mv();
+    if (mv < 0) return -1;
+    return (mv >= BTN_MV[BSP_BTN_OK][0] && mv < BTN_MV[BSP_BTN_OK][1]) ? 1 : 0;
+}
+
+/* 每帧（20ms）喂一次 OK 电平，只在 STATE_REELING 调用。
+ *
+ * g_adc_live 这道闸门解决三件事：
+ *   1) 模拟器（FoloToy Passport Simulator 在 ADC 层注入电压，OK=595mV/松开=3300mV）
+ *      物理按住要满 300ms 才把 ADC 置成 595，头 300ms 仍是 3300；
+ *      没有这道闸门，进收线时会被误判成"松手"让捕捉区先掉一下。
+ *   2) 真机第一帧就能读到按下，之后全程走电平，不吃任何事件延迟。
+ *   3) 读不出来时自动退回原来的事件路径，且不会被锁死在降级模式。 */
+static void reel_poll_hold(void) {
+    const int s = ok_key_state();
+    if (s < 0) {
+        /* 读失败这一帧【不喂】：把"不知道"当成"松手"，一次读取抖动就会误落一次。 */
+        if (++g_adc_fail >= REEL_ADC_FAIL_MAX) g_adc_live = false;
+        return;
+    }
+    g_adc_fail = 0;
+    if (s == 1) {
+        g_adc_live = true;
+        fishing_reel_hold_sample(true);
+        return;
+    }
+    if (g_adc_live) fishing_reel_hold_sample(false);   /* 只有确认过按下，才允许判松手 */
+}
+
 static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
     fishing_status_t st;
     fishing_get_status(&st);
 
-    /* ---- 收线中：按下按住 / 抬起松开（用 CLICK 代表"按下并抬起"） ---- */
+    /* ---- 收线中：按住 / 松开 ----
+     * 松手判定已改由 game_task 每帧轮询 ADC（reel_poll_hold → fishing_reel_hold_sample），
+     * 这里只保留两件事：让按下再快一点，以及 ADC 读不出来时的兜底。 */
     if (st.state == STATE_REELING) {
-        if (btn == BSP_BTN_OK && ev == BSP_BTN_PRESS) fishing_reel_hold(true);
-        if (btn == BSP_BTN_OK && ev == BSP_BTN_CLICK) fishing_reel_hold(false);
+        if (btn != BSP_BTN_OK) return;
+        if (ev == BSP_BTN_PRESS) {
+            /* 按下立即生效（比等下一帧轮询快 <=20ms）。
+             * 万一这是进收线前残留的旧事件，轮询会在两帧内用真实电压纠正回来。 */
+            g_reel_seen_press = true;
+            if (!g_adc_live) fishing_reel_hold_sample(true);
+            return;
+        }
+        /* 只有 ADC 不可用、且本次收线确实见过按下时，才用事件判松手。
+         * g_reel_seen_press 挡掉"从菜单/图鉴进收线时队列里残留的 CLICK"——
+         * 那些事件对应的按下根本不在这次收线里。 */
+        if (!g_adc_live && g_reel_seen_press &&
+            (ev == BSP_BTN_CLICK || ev == BSP_BTN_DOUBLE)) {
+            fishing_reel_hold_sample(false);
+        }
         return;
     }
 
@@ -685,6 +836,18 @@ static void game_task(void *arg) {
     for (;;) {
         btn_ev_t e;
         while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
+
+        /* 收线期间：先喂本帧的 OK 电平，再推进物理 —— 顺序反了这一帧用的就是上一帧的按键状态。
+         * 离开收线时复位，下次进收线从干净状态开始（否则会带着上一次的降级标记）。 */
+        fishing_status_t cur;
+        fishing_get_status(&cur);
+        if (cur.state == STATE_REELING) {
+            reel_poll_hold();
+        } else {
+            g_adc_live        = false;
+            g_adc_fail        = 0;
+            g_reel_seen_press = false;
+        }
 
         int now = (int)now_ms();
         fishing_event_t evt = fishing_tick(now);

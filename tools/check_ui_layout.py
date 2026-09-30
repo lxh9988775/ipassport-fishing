@@ -284,7 +284,9 @@ def parse_source():
             events.append((m.start(), "lit", m.group(1), m.group(2)))
         for m in re.finditer(r"\b(\w+)\s*=\s*([A-Za-z_]\w*)\s*;", body):
             events.append((m.start(), "alias", m.group(1), m.group(2)))
-        for m in re.finditer(r"lv_label_set_text\(\s*([\w\[\]]+)\s*,\s*([^;]+?)\)\s*;", body):
+        # set_text_cached() 是 fishing.c 里的"只在变了才写"包装（内部才调 lv_label_set_text），
+        # 主循环里的文案现在都走它；漏掉这个别名等于把这些标签静默移出布局检查。
+        for m in re.finditer(r"(?:lv_label_set_text|set_text_cached)\(\s*([\w\[\]]+)\s*,\s*([^;]+?)\)\s*;", body):
             events.append((m.start(), "set", m.group(1), m.group(2).strip()))
         events.sort(key=lambda e: e[0])
 
@@ -306,7 +308,7 @@ def parse_source():
             elif kind == "alias":
                 ident_sets.setdefault(a, set()).update(buf_set.get(b, set()))
             else:
-                if a in ("l", "hud"):
+                if a in ("l", "hud", "lbl"):
                     continue
                 if a not in objs:
                     note("未纳入检查的元素：%s（数组元素或坐标是动态表达式，建议人工过一眼）" % a)
@@ -332,14 +334,17 @@ def parse_source():
                     o["texts"].add("?\x00")
 
     elems = {n: o for n, o in objs.items()
-             if n not in ("hud", "l", "parent")
+             if n not in ("hud", "l", "lbl", "parent")
              and o["x"] is not None and o["y"] is not None
              and (o["kind"] != "label" or o["texts"] or o["long_text"])}
 
-    # 覆盖率防线：源码里有几处 lv_label_set_text，就得解析出几处。
+    # 覆盖率防线：源码里有几处设置文案，就得解析出几处。
     # 少解析=漏检，必须报出来，不能"解析不出来就当没这回事"。
-    total = len(re.findall(r"lv_label_set_text\(", src))
-    parsed = len(re.findall(r"lv_label_set_text\(\s*[\w\[\]]+\s*,\s*[^;]+?\)\s*;", src))
+    # 注意 total 只数【调用点】：set_text_cached 的【函数定义】也长成
+    # "set_text_cached(...) {"，但它不是调用点，数进去会天天误报一条。
+    call = r"(?:lv_label_set_text|set_text_cached)"
+    total = len(re.findall(call + r"\([^;{]*\)\s*;", src))
+    parsed = len(re.findall(call + r"\(\s*[\w\[\]]+\s*,\s*[^;]+?\)\s*;", src))
     if parsed < total:
         note("源码有 %d 处 lv_label_set_text，只解析出 %d 处 —— 其余被跳过了，检查不完整"
              % (total, parsed))

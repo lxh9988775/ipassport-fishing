@@ -22,6 +22,10 @@
 #define REEL_TIMEOUT_MS   20000  /* 拉锯上限，避免无限僵持 */
 #define REEL_PERFECT_MULT 150    /* 完美钓获 1.5x */
 
+/* 松手去抖：主循环 20ms 喂一帧电平，连续这么多帧都读到"松开"才认定松手（<=40ms）。
+ * 按下不走去抖（0 帧生效）——手感最敏感的是抬手那一下，不能延迟。 */
+#define REEL_RELEASE_FRAMES 2
+
 /*
  * 难度模型的三个关键设计（数值由 tools/tune_balance.py 扫参得出，改之前先跑一遍）：
  *
@@ -180,6 +184,7 @@ static int  g_bar_vel    = 0;    /* 捕捉区当前速度（带惯性） */
 static int  g_bar_h      = 340;
 static int  g_progress   = REEL_PROGRESS_0;
 static bool g_holding    = false;
+static int  g_rel_cnt    = 0;       /* 连续读到"松开"的帧数（去抖计数器） */
 static bool g_contacted  = false;   /* 是否全程贴住（完美判定） */
 static bool g_ever_out   = false;
 static int  g_think_ms   = 0;       /* 下次换目标的时刻（绝对毫秒） */
@@ -290,7 +295,44 @@ int fishing_cast(void) {
     return g_wait_target_ms;
 }
 
-void fishing_reel_hold(bool down) { g_holding = down; }
+/*
+ * 收线"按住"状态：由【每帧电平】驱动，而不是按键事件。
+ *
+ * 为什么必须换掉事件驱动（三条都在实机上必然触发）：
+ *   1) 长按后松手收不到事件 —— BSP 只注册了 PRESS_DOWN / SINGLE_CLICK /
+ *      DOUBLE_CLICK / LONG_PRESS_START（components/bsp/src/bsp_button.c:118-124）。
+ *      button 组件在按住满 1500ms 后松手走的是 PRESS_LONG_PRESS_UP_CHECK 分支，
+ *      只发 PRESS_UP / LONG_PRESS_UP / PRESS_END，应用层一个都收不到 →
+ *      g_holding 永远停在 true，捕捉区贴顶再也下不来。
+ *      而单根竿扫完整条轨道要 1.0~1.6 秒，长按 1.5 秒是常态玩法。
+ *   2) 松手延迟 —— SINGLE_CLICK 要松手后再等 short_press_time(默认 180ms)
+ *      加释放去抖 ~10ms 才发出来，手感上是"松开半拍"。
+ *   3) 双击吞事件 —— 间隔 <180ms 的两次按只发 DOUBLE_CLICK，同样拿不到松手。
+ *   4) 提竿那一下的 PRESS 被 fishing_strike() 吃掉（UI 层按当前状态分发），
+ *      所以提竿后按住不放时这一下 never 会调用到 hold(true) → 捕捉区根本不抬。
+ *
+ * 改成电平驱动后四条一起消失：UI 层每帧直接把"OK 现在是否被按住"喂进来，
+ * 长按多久都不影响松手判定（<=REEL_RELEASE_FRAMES 帧），也不依赖任何事件。
+ *
+ * 去抖为什么不对称：
+ *   按下立即生效（抬手/落手是手感最敏感的一环）；松开要连续 2 帧，
+ *   用来滤掉 bsp_button_read_mv() 单次采样的野值。
+ */
+void fishing_reel_hold_sample(bool down) {
+    if (down) {
+        g_holding = true;
+        g_rel_cnt = 0;
+        return;
+    }
+    if (g_rel_cnt < REEL_RELEASE_FRAMES) g_rel_cnt++;
+    if (g_rel_cnt >= REEL_RELEASE_FRAMES) g_holding = false;
+}
+
+/* 直接落值（不去抖）：ADC 不可用时的兜底路径与单元测试走这里。 */
+void fishing_reel_hold(bool down) {
+    g_holding = down;
+    g_rel_cnt = down ? 0 : REEL_RELEASE_FRAMES;
+}
 
 /* ===================== 收线小游戏 ===================== */
 static void reel_enter_impl(void) {
@@ -304,6 +346,7 @@ static void reel_enter_impl(void) {
     g_bar_vel  = 0;
     g_progress = REEL_PROGRESS_0;
     g_holding  = false;
+    g_rel_cnt  = 0;                   /* ★ 不复位会把上一局的去抖计数带进来 */
     g_ever_out = false;
     g_contacted = true;
     g_burst_until = 0;

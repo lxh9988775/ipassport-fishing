@@ -59,6 +59,16 @@ run_static_checks() {
             -o "${test_dir}/test_demo_${demo}_runtime"
         "${test_dir}/test_demo_${demo}_runtime"
     done
+    # 收线"按住/松手"去抖：改坏这几行会直接复现"捕捉区上不去下不来"
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_fishing_reel_hold.c main/fishing_logic.c \
+        -o "${test_dir}/test_fishing_reel_hold"
+    "${test_dir}/test_fishing_reel_hold"
+    # 钓鱼逻辑层全套（确定性/咬钩/计分/图鉴/平衡）
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/fishing_logic_test.c main/fishing_logic.c \
+        -o "${test_dir}/fishing_logic_test"
+    "${test_dir}/fishing_logic_test"
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_deep_sleep_contract.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_check_repo.py
     PYTHONDONTWRITEBYTECODE=1 python3 tests/test_verify_firmware.py
