@@ -785,7 +785,8 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
 
     /* ---- 图鉴 ---- */
     if (st.state == STATE_CODEX || st.state == STATE_CODEX_INFO) {
-        if (ev == BSP_BTN_LONG && btn == BSP_BTN_OK) { fishing_codex_close(); return; }
+        /* 「长按返回」不在这里做：BSP 的 LONG 事件要按满 1500ms，改由
+         * ok_poll_long()/handle_long_press() 用按键电平判定（700ms）。 */
         if (ev != BSP_BTN_CLICK) return;
         if (btn == BSP_BTN_UP)        fishing_codex_move(-1);
         else if (btn == BSP_BTN_DOWN) fishing_codex_move(1);
@@ -796,10 +797,6 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
 
     /* ---- 菜单 ---- */
     if (st.state == STATE_MENU) {
-        if (ev == BSP_BTN_LONG && btn == BSP_BTN_OK) {
-            fishing_exit_menu(); g_menu_edit = 0; fishing_audio_play(SFX_CLICK);
-            return;
-        }
         if (ev != BSP_BTN_CLICK) return;
         if (btn == BSP_BTN_UP)   { if (g_menu_edit) menu_change_value(-1); else g_menu_idx = (g_menu_idx + 4) % 5; }
         else if (btn == BSP_BTN_DOWN) { if (g_menu_edit) menu_change_value(1); else g_menu_idx = (g_menu_idx + 1) % 5; }
@@ -817,10 +814,7 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
         return;
     }
 
-    /* ---- 场景：OK 抛竿 / 提竿，长按开菜单 ---- */
-    if (ev == BSP_BTN_LONG && btn == BSP_BTN_OK && st.state == STATE_IDLE) {
-        fishing_enter_menu(); fishing_audio_play(SFX_CLICK); return;
-    }
+    /* ---- 场景：OK 抛竿 / 提竿（长按开菜单走 handle_long_press） ---- */
     if (ev == BSP_BTN_PRESS && btn == BSP_BTN_OK) {
         if (st.state == STATE_IDLE) { fishing_cast(); fishing_audio_play(SFX_CLICK); }
         else if (st.state == STATE_BITE) {
@@ -828,6 +822,55 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
             fishing_audio_play(SFX_CLICK);
         }
     }
+}
+
+/* ===================== 长按 OK：电平驱动（收线之外的所有页面） =====================
+ *
+ * 为什么另起一套而不是继续等 BSP 的 BSP_BTN_LONG 事件：
+ *   按下 OK 的那一瞬间 BSP_BTN_PRESS 先到，IDLE 下 fishing_cast() 已经把状态推成
+ *   CASTING；1.5 秒后 LONG_PRESS_START 才来，调用点的 st.state == STATE_IDLE
+ *   守卫必然为假 → 长按只会抛竿，菜单永远打不开（社区审核据此打回）。
+ *   就算把守卫放开，1.5 秒的等待也远不如自己定阈值跟手。
+ *
+ * 现在每帧读一次 OK 电平喂给 fishing_hold_sample()（阈值 700ms），到点后按页面分发。
+ * 读数和收线共用同一次 bsp_button_read_mv()，不存在第二套按键窗口。
+ * BSP 那一侧的 BSP_BTN_LONG 仍然会发，但应用层已经一律忽略（各分支只认
+ * CLICK / PRESS），所以不会出现"菜单刚开出来又被 1.5 秒的长按关掉"。 */
+static void handle_long_press(void) {
+    fishing_status_t st;
+    fishing_get_status(&st);
+    switch (st.state) {
+        /* 钓场三态都开菜单：长按是"从按下开始算"的，按下那一刻顺手抛的竿
+         * 到判定时已经跑进 CASTING/WAITING 了，不放行这三态就等于又打不开。 */
+        case STATE_IDLE:
+        case STATE_CASTING:
+        case STATE_WAITING:
+        case STATE_BITE:
+            fishing_enter_menu();
+            g_menu_edit = 0;          /* 避免把上次的编辑态带进新开的菜单 */
+            fishing_audio_play(SFX_CLICK);
+            break;
+        case STATE_MENU:
+            fishing_exit_menu();
+            g_menu_edit = 0;
+            fishing_audio_play(SFX_CLICK);
+            break;
+        case STATE_CODEX:
+        case STATE_CODEX_INFO:
+            fishing_codex_close();
+            fishing_audio_play(SFX_CLICK);
+            break;
+        default:
+            break;                     /* 收线 / 结算：长按另有含义或不参与 */
+    }
+}
+
+/* 非收线页面的每帧长按采样。读失败时【不喂】：把"读不出来"当成"松手"会把
+ * 已经按住的时间清零，手指明明按着却永远到不了 700ms。 */
+static void ok_poll_long(int now) {
+    const int s = ok_key_state();
+    if (s < 0) return;
+    if (fishing_hold_sample(s == 1, now)) handle_long_press();
 }
 
 /* ===================== 主任务 ===================== */
@@ -849,20 +892,27 @@ static void game_task(void *arg) {
         btn_ev_t e;
         while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
 
-        /* 收线期间：先喂本帧的 OK 电平，再推进物理 —— 顺序反了这一帧用的就是上一帧的按键状态。
-         * 离开收线时复位，下次进收线从干净状态开始（否则会带着上一次的降级标记）。 */
+        /* 时间戳先取：输入采样和后面的 tick 必须用同一个 now，
+         * 否则长按阈值会被两次采样之间的耗时额外拉长。 */
+        int now = (int)now_ms();
+
+        /* 输入采样：每帧读一次 OK 电平 —— 收线的"按住/松开"和所有页面的
+         * "长按"共用这次读数（两者互斥，收线期间长按一律不参与）。
+         * 顺序必须在 fishing_tick() 之前：反了这一帧用的就是上一帧的按键状态。 */
         fishing_status_t cur;
         fishing_get_status(&cur);
         const bool reeling = (cur.state == STATE_REELING);
         if (reeling) {
             reel_poll_hold();
+            /* 收线时按住 OK 是玩法本身，别把"拉鱼那两秒"攒成一次长按。 */
+            fishing_hold_reset();
         } else {
             g_adc_live        = false;
             g_adc_fail        = 0;
             g_reel_seen_press = false;
+            ok_poll_long(now);
         }
 
-        int now = (int)now_ms();
         fishing_event_t evt = fishing_tick(now);
         if (evt == EVT_BITE_START)        fishing_audio_play(SFX_BITE);
         else if (evt == EVT_BITE_TIMEOUT) fishing_audio_play(SFX_MISS);

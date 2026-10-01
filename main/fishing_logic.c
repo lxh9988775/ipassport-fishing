@@ -289,7 +289,21 @@ void fishing_set_rod(rod_t r)   { if (r >= 0 && r < ROD_COUNT)  g_rod  = r; }
 void fishing_set_spot(spot_t s) { if (s >= 0 && s < SPOT_COUNT && fishing_spot_unlocked(s)) g_spot = s; }
 
 void fishing_enter_menu(void) {
-    if (g_state == STATE_IDLE) g_state = STATE_MENU;
+    /* 除了 IDLE，CASTING/WAITING/BITE 也放进来 —— 这三态是"长按开始抛竿、
+     * 还没上鱼"的中途状态：玩家想开菜单时，按下 OK 的那一瞬间就已经抛竿了
+     * （抛竿是按下即生效），等长按判定到点时状态早就不是 IDLE。
+     * 撤回这三态不亏任何东西（还没进收线，图鉴和成绩都不受影响）。
+     * 收线 / 结算中不给进：那是正在进行的对局，中途开菜单等于白送一条鱼。 */
+    switch (g_state) {
+        case STATE_IDLE:
+        case STATE_CASTING:
+        case STATE_WAITING:
+        case STATE_BITE:
+            g_state = STATE_MENU;
+            break;
+        default:
+            break;
+    }
 }
 void fishing_exit_menu(void) {
     if (g_state == STATE_MENU) g_state = STATE_IDLE;
@@ -341,6 +355,55 @@ void fishing_reel_hold_sample(bool down) {
 void fishing_reel_hold(bool down) {
     g_holding = down;
     g_rel_cnt = down ? 0 : REEL_RELEASE_FRAMES;
+}
+
+/* ===================== 长按 OK（电平驱动，全状态共用） =====================
+ *
+ * 阈值：明显长于一次正常点按（几百毫秒以内，而且长按计时会随按下沿重新开始），
+ * 又远短于 button 组件默认的 long_press_time（bsp_button.c 用默认值，
+ * 按满约 1.5 秒才发 LONG_PRESS_START）—— 玩家按下去到菜单出来不该干等一秒半。 */
+#define HOLD_LONG_MS 700
+
+/*
+ * 原来"长按开菜单"是等 BSP 的 BSP_BTN_LONG 事件，这条路在 IDLE 下必然走不到：
+ *   - OK 按下那一瞬间 BSP_BTN_PRESS 先到，fishing_cast() 已经把状态推成 CASTING；
+ *   - 1.5 秒后 LONG_PRESS_START 才来，此时状态早已不是 IDLE，而调用点的守卫
+ *     正是 st.state == STATE_IDLE → 直接 return；fishing_enter_menu() 原先也
+ *     只认 STATE_IDLE。⇒ 长按只会抛竿，菜单永远打不开（社区审核据此打回）。
+ *
+ * 现在改成和收线同源的【每帧电平】判定，好处有三：
+ *   1) 不依赖组件发什么事件，也不受 long_press_time 影响，阈值自己说了算；
+ *   2) 不占用 fishing_cast()，抛竿仍然按下即生效，手感一点没变；
+ *   3) 报一次就锁住（g_hold_fired），手指不松不会再报 —— 所以不会出现
+ *      "菜单刚开出来又被同一次长按关掉"的闪一下。
+ * UI 层负责按页面分发（钓场开菜单 / 菜单返回 / 图鉴返回），逻辑层只管计时。
+ */
+static bool g_hold_down;
+static bool g_hold_fired;
+static int  g_hold_start_ms;
+
+void fishing_hold_reset(void) {
+    g_hold_down     = false;
+    g_hold_fired    = false;
+    g_hold_start_ms = 0;
+}
+
+bool fishing_hold_sample(bool down, int now_ms) {
+    if (!down) {                       /* 松手：本次按住作废，下次按下重新计时 */
+        g_hold_down  = false;
+        g_hold_fired = false;
+        return false;
+    }
+    if (!g_hold_down) {                /* 这一帧是本次按住的起点 */
+        g_hold_down     = true;
+        g_hold_fired    = false;
+        g_hold_start_ms = now_ms;
+        return false;
+    }
+    if (g_hold_fired) return false;    /* 已经报过，松手前不再报 */
+    if (now_ms - g_hold_start_ms < HOLD_LONG_MS) return false;
+    g_hold_fired = true;
+    return true;
 }
 
 /* ===================== 收线小游戏 ===================== */

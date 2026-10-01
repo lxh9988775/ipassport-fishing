@@ -64,6 +64,12 @@ run_static_checks() {
         tests/test_fishing_reel_hold.c main/fishing_logic.c \
         -o "${test_dir}/test_fishing_reel_hold"
     "${test_dir}/test_fishing_reel_hold"
+    # 长按 OK 开菜单：平台审核就是因为"长按菜单没实现"打回过一次。
+    # 改回事件驱动、或把 enter_menu 收回只认 IDLE，这里立刻红。
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_fishing_hold_menu.c main/fishing_logic.c \
+        -o "${test_dir}/test_fishing_hold_menu"
+    "${test_dir}/test_fishing_hold_menu"
     # 钓鱼逻辑层全套（确定性/咬钩/计分/图鉴/平衡）
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/fishing_logic_test.c main/fishing_logic.c \

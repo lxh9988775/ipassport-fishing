@@ -216,6 +216,18 @@ void fishing_reel_hold_sample(bool down);
 /* 收线：直接落值（不去抖）。仅供按键电压读不到时的事件兜底路径与单元测试使用。 */
 void fishing_reel_hold(bool down);
 
+/* 长按 OK：全状态共用一套电平驱动判定（和收线共用同一路 ADC 读数）。
+ * down = 这一帧 OK 是否被按住，now_ms = 单调毫秒。
+ * 返回值 true 表示【本次按住刚刚跨过长按阈值】，只在跨过的那一帧报一次，
+ * 手指不松就永远不会重复报 —— 所以"长按开菜单"不会开了又被自己的长按关掉。
+ * UI 层拿到 true 后再按当前页面分发（钓场开菜单 / 菜单返回 / 图鉴返回）。
+ * 为什么不用 BSP 的 LONG_PRESS_START 事件：见 fishing_logic.c 的实现注释。 */
+bool fishing_hold_sample(bool down, int now_ms);
+
+/* 停止长按计时（收线等"长按另有含义"的页面每帧调用），避免把别的页面里
+ * 按住的时间带过来凑成一次长按。 */
+void fishing_hold_reset(void);
+
 /* 状态查询 */
 void fishing_get_status(fishing_status_t *out);
 
