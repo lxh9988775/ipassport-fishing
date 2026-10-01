@@ -228,6 +228,12 @@ bool fishing_hold_sample(bool down, int now_ms);
  * 按住的时间带过来凑成一次长按。 */
 void fishing_hold_reset(void);
 
+/* 取用"这次单击是不是长按补发的"：返回 true = 应当丢弃这次单击。
+ * iot_button 在按满 1.5 秒之前松手会补发一个 SINGLE_CLICK，长按刚开出来的
+ * 菜单会被这个迟到的单击当成「OK 确认」而在第 0 项上生效（菜单一闪即关）。
+ * 只吞一次：取用后自动复位，玩家后续真实的点按不受影响。 */
+bool fishing_hold_take_stale_click(void);
+
 /* 状态查询 */
 void fishing_get_status(fishing_status_t *out);
 

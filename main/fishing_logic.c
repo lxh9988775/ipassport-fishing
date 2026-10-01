@@ -389,12 +389,14 @@ void fishing_hold_reset(void) {
 }
 
 bool fishing_hold_sample(bool down, int now_ms) {
-    if (!down) {                       /* 松手：本次按住作废，下次按下重新计时 */
-        g_hold_down  = false;
-        g_hold_fired = false;
+    if (!down) {
+        /* 只清"正在计时"。【不清 g_hold_fired】—— 松手之后 iot_button 还会
+         * 补发一个 SINGLE_CLICK，UI 层要靠这个标记把它认出来吞掉，
+         * 详见 fishing_hold_fired() 的注释。 */
+        g_hold_down = false;
         return false;
     }
-    if (!g_hold_down) {                /* 这一帧是本次按住的起点 */
+    if (!g_hold_down) {                /* 这一帧是本次按住的起点，重新计时 */
         g_hold_down     = true;
         g_hold_fired    = false;
         g_hold_start_ms = now_ms;
@@ -403,6 +405,23 @@ bool fishing_hold_sample(bool down, int now_ms) {
     if (g_hold_fired) return false;    /* 已经报过，松手前不再报 */
     if (now_ms - g_hold_start_ms < HOLD_LONG_MS) return false;
     g_hold_fired = true;
+    return true;
+}
+
+/* 取用"这次单击是不是长按补发的"。
+ *
+ * 为什么要留到松手之后：
+ *   iot_button 只在按满 long_press_time(1.5s) 时才发 LONG_PRESS_START；
+ *   而我们的阈值是 0.7s —— 玩家按 0.7~1.5 秒松手时，组件眼里这只是一次
+ *   "普通点击"，于是松手后又补发一个 SINGLE_CLICK。菜单刚被长按开出来，
+ *   这个迟到的单击就会被当成「OK 确认」，正好落在第 0 项「开始钓鱼」上：
+ *   菜单一闪即关，还顺手抛了一竿。模拟器实测复现，真机同理。
+ *
+ * 返回 true 表示"这次单击要丢掉"（并且顺手复位，只吞一次）；
+ * 返回 false 表示是玩家真实的一次点按，正常处理。 */
+bool fishing_hold_take_stale_click(void) {
+    if (!g_hold_fired) return false;
+    g_hold_fired = false;
     return true;
 }
 

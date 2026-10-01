@@ -11,10 +11,13 @@
  *   现在改成【每帧喂电平】的 fishing_hold_sample()（阈值 700ms），
  *   fishing_enter_menu() 放开 CASTING/WAITING/BITE 三态。
  *
- * 这个文件钉住三件事，任何一条被改回去都会红：
+ * 这个文件钉住四件事，任何一条被改回去都会红：
  *   A. 抛竿之后（状态已经是 CASTING/WAITING）长按仍然能进菜单 —— 用例 1/2；
  *   B. 长按到点只报一次，手指不松不会"开了又被自己关掉" —— 用例 4；
- *   C. 收线中 fishing_enter_menu() 不生效（正在对局，不能白送一条鱼）—— 用例 7。
+ *   C. 收线中 fishing_enter_menu() 不生效（正在对局，不能白送一条鱼）—— 用例 7；
+ *   D. 判定为长按之后，fishing_hold_fired() 必须活到松手之后 —— 用例 9~11。
+ *      否则 iot_button 在 0.7~1.5 秒区间补发的 SINGLE_CLICK 会被菜单当成
+ *      「OK 确认」，菜单一闪即关还顺手抛竿（模拟器实测抓到的第二个 bug）。
  *
  * 帧长跟主循环走：非收线页面 20ms 一帧（见 fishing.c 的 LOOP_IDLE_MS），
  * 阈值与帧长的组合关系改了就重算这里的期望值。
@@ -213,6 +216,50 @@ static void case_menu_long_press_exits(void) {
     check("长按后退出菜单回到钓场", state_now() == STATE_IDLE);
 }
 
+/* ============ 9. 松手后标记仍为 true —— 供 UI 吞掉迟到的单击 ============
+ *
+ * 这是模拟器实测抓到的第二个 bug：iot_button 只在按满 1.5 秒时才走长按分支，
+ * 玩家按 0.7~1.5 秒松手时，组件眼里是一次"普通点击"，于是补发 SINGLE_CLICK。
+ * 长按刚开出来的菜单会把这个迟到的单击当成「OK 确认」，落在第 0 项
+ * 「开始钓鱼」上 —— 菜单一闪即关还顺手抛竿。
+ * 所以判定为长按之后，标记必须【活到松手之后】，让 UI 有机会认出并吞掉它。 */
+static void case_fired_latches_until_next_press(void) {
+    reset_world();
+    check("初始：没有待吞掉的单击", !fishing_hold_take_stale_click());
+
+    int fired = hold_for(LONG_MS + 100, true);
+    check("长按触发一次", fired == 1);
+
+    frame(false);                                            /* 松手 */
+    check("松手后那个迟到的单击会被吞掉（标记活过了松手）",
+          fishing_hold_take_stale_click());
+    check("只吞一次，紧接着的单击正常放行", !fishing_hold_take_stale_click());
+
+    /* 没有单击补发的情况：下一次按下要自动复位 */
+    hold_for(LONG_MS + 100, true);
+    frame(false);
+    frame(true);                                             /* 下一次按下 */
+    check("下一次按下之后不再误吞（玩家真实点按不受影响）",
+          !fishing_hold_take_stale_click());
+}
+
+/* ============ 10. 短按不能留下"待吞掉的单击" ============ */
+static void case_short_tap_leaves_no_pending_click(void) {
+    reset_world();
+    hold_for(400, true);
+    frame(false);
+    check("短按松手后没有待吞掉的单击（普通点按不受影响）",
+          !fishing_hold_take_stale_click());
+}
+
+/* ============ 11. fishing_hold_reset() 也要清掉待吞标记 ============ */
+static void case_reset_clears_pending_click(void) {
+    reset_world();
+    hold_for(LONG_MS + 100, true);
+    fishing_hold_reset();
+    check("reset 后待吞标记一并清掉", !fishing_hold_take_stale_click());
+}
+
 int main(void) {
     case_cast_then_hold_opens_menu();
     case_waiting_then_hold_opens_menu();
@@ -222,6 +269,9 @@ int main(void) {
     case_reset_clears_timer();
     case_reeling_rejects_menu();
     case_menu_long_press_exits();
+    case_fired_latches_until_next_press();
+    case_short_tap_leaves_no_pending_click();
+    case_reset_clears_pending_click();
 
     if (g_fail) {
         printf("\n%d CHECK(S) FAILED\n", g_fail);

@@ -761,6 +761,16 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
     fishing_status_t st;
     fishing_get_status(&st);
 
+    /* ---- 先吞掉"长按补发的那个单击" ----
+     * iot_button 只在按满 long_press_time(1.5s) 时才走长按分支；我们的长按阈值
+     * 是 0.7s，玩家按 0.7~1.5 秒松手时组件会再补发一个 SINGLE_CLICK。长按刚把
+     * 菜单开出来，这个迟到的单击就会被当成「OK 确认」落在第 0 项「开始钓鱼」上
+     * —— 菜单一闪即关还顺手抛竿（模拟器实测复现过）。
+     * 必须放在所有状态分支之前，否则菜单/图鉴会先把它吃掉。 */
+    if (ev == BSP_BTN_CLICK && btn == BSP_BTN_OK && fishing_hold_take_stale_click()) {
+        return;
+    }
+
     /* ---- 收线中：按住 / 松开 ----
      * 松手判定已改由 game_task 每帧轮询 ADC（reel_poll_hold → fishing_reel_hold_sample），
      * 这里只保留两件事：让按下再快一点，以及 ADC 读不出来时的兜底。 */
