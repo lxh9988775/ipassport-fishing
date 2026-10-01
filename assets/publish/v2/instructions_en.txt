@@ -5,5 +5,5 @@ Controls: UP / DOWN to move, OK to confirm or act, long-press OK to go back.
 1. The play opens straight on the fishing spot. Press OK to cast, then wait for a bite.
 2. When the screen says "Bite! Press OK", press OK immediately.
 3. Reeling screen: hold OK to raise the catch bar, release to let it fall. Keep the green bar over the fish until the progress bar fills to land it. Never let the fish slip out for a Perfect catch.
-4. Long-press OK to open the menu: switch rod, bait or spot, or open the Codex to browse what you have caught (UP / DOWN to page, OK for details).
+4. Hold OK for about 0.7 s to open the menu: switch rod, bait or spot, or open the Codex to browse what you have caught (UP / DOWN to page, OK for details).
 5. Landing enough fish unlocks the next spot. Score and codex progress save automatically, so you can pick up where you left off.
