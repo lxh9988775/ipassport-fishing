@@ -13,7 +13,10 @@
  * 另一条被钉死的东西是【方向】：按住 = 抬竿 = 捕捉区往屏幕上方走。
  *   reel_update() 里那对符号（+rise_spd / -fall_spd）在 v2 里是反的，
  *   按下去捕捉区往下钻、松手反而往上飘，与屏幕提示和设计稿全相反。
- *   用例 7/8 用 bar_top_y() 比【屏幕 y】，而不是比 bar_pos —— 符号再反一次就红。
+ *   用例 6/7 用 bar_top_y() 比【屏幕 y】，而不是比 bar_pos —— 符号再反一次就红。
+ *
+ * 帧长跟主循环走（收线期间 10ms，见 fishing.c 的 LOOP_REELING_MS），
+ * 去抖帧数与帧长是绑在一起的：改帧长就要重算这里的期望值。
  *
  * 编译运行（需 cc）：
  *   cc -std=c11 -Wall -Wextra -Werror \
@@ -25,11 +28,11 @@
 #include <assert.h>
 #include "fishing_logic.h"
 
-#define FRAME_MS 20   /* 主循环一帧 20ms，与 fishing.c 的 game_task 保持一致 */
+#define FRAME_MS 10   /* 主循环在收线期间是 10ms 一帧，与 fishing.c 的 LOOP_REELING_MS 一致 */
 
 static int g_now = 0;
 
-/* 喂一帧：先给电平，再推进 20ms（顺序与 game_task 里一致） */
+/* 喂一帧：先给电平，再推进一个主循环周期（顺序与 game_task 里一致） */
 static void frame(bool ok_down) {
     fishing_reel_hold_sample(ok_down);
     g_now += FRAME_MS;
@@ -94,55 +97,51 @@ int main(void) {
     assert(holding() == true);
     printf("[OK] 按下同帧生效（0 帧去抖）\n");
 
-    /* 3) 单帧假松开不算：ADC 采到一次野值不能把竿子掉下去 */
-    fishing_reel_hold_sample(false);
-    assert(holding() == true);
-
-    /* 4) 连续第二帧松开才真的松手 */
+    /* 3) 松手【1 帧】即生效（去抖已从 2 帧降到 1 帧）。
+     *    为什么敢只留 1 帧：判电平的 ok_key_state() 用的是电压窗口，
+     *    OK 是 447..1900mV、松开约 3300mV，中间隔着 1400mV 的空白带，
+     *    而 bsp_button_read_mv() 是单次采样、噪声只有几十 mV —— 跨不过窗口边界，
+     *    不存在"抖一帧就误判"。多留一帧只是把松手延迟翻倍（原来 2x20ms=40ms）。 */
     fishing_reel_hold_sample(false);
     assert(holding() == false);
-    printf("[OK] 松手需连续 2 帧（单帧野值被滤掉，<=40ms）\n");
 
-    /* 5) 按住过程中插一帧假松开，不能掉链 */
-    fishing_reel_hold_sample(true);
-    fishing_reel_hold_sample(false);
+    /* 4) 松手后立刻按回，同帧生效：两个方向都 0 延迟，手感才对称 */
     fishing_reel_hold_sample(true);
     assert(holding() == true);
-    printf("[OK] 按住中插一帧假松开仍保持按住\n");
+    printf("[OK] 松手 1 帧（10ms）即生效，按回同样 0 延迟\n");
 
-    /* 6) 双击序列（按下-松开-按下-松开）结束必须是松开 ——
+    /* 5) 双击序列（按下-松开-按下-松开）结束必须是松开 ——
      *    事件驱动时代这一串会被 DOUBLE_CLICK 吞掉，捕捉区贴顶下不来 */
-    fishing_reel_hold_sample(false);
     fishing_reel_hold_sample(true);
     fishing_reel_hold_sample(false);
+    fishing_reel_hold_sample(true);
     fishing_reel_hold_sample(false);
     assert(holding() == false);
     printf("[OK] 双击序列结束是松开\n");
 
-    /* 7) 长按 1000ms 后松手，捕捉区真的能落下来 —— 这是原来那个 bug 的主路径。
+    /* 6) 长按 1000ms 后松手，捕捉区真的能落下来 —— 这是原来那个 bug 的主路径。
      *    1000ms 已经逼近 button 组件的 1500ms 长按阈值，是玩家的常态操作。
      *    同时钉死方向：按住 = 抬竿（屏幕 y 变小）、松手 = 落下（y 变大）。
      *    v2 里这一对符号写反过，按下去往下钻，玩起来就是「按了没反应 / 上不上下不下」。 */
     enter_reeling();
     const int y0 = bar_top_y();
-    for (int i = 0; i < 50; i++) frame(true);      /* 按住 1000ms 往上抬 */
+    for (int i = 0; i < 100; i++) frame(true);      /* 按住 1000ms 往上抬 */
     const int y_hold = bar_top_y();
     assert(y_hold < y0);                            /* 抬竿：上沿 y 必须变小 */
     assert(holding() == true);
-    frame(false);
-    frame(false);                                   /* 松手（2 帧去抖 = 40ms） */
+    frame(false);                                   /* 松手：1 帧去抖 */
     assert(holding() == false);
-    for (int i = 0; i < 10; i++) frame(false);      /* 再 200ms */
+    for (int i = 0; i < 20; i++) frame(false);      /* 再 200ms */
     fishing_get_status(&st);
     assert(st.state == STATE_REELING);
     assert(bar_top_y() > y_hold);                   /* 落下：上沿 y 必须变大 */
     printf("[OK] 按住 1000ms 抬竿 y %d -> %d，松手回落到 y %d\n",
            y0, y_hold, bar_top_y());
 
-    /* 8) 一直按住不会倒退：捕捉区单调上抬（y 单调不增），顶到轨道上端就停住 */
+    /* 7) 一直按住不会倒退：捕捉区单调上抬（y 单调不增），顶到轨道上端就停住 */
     enter_reeling();
     int prev_y = bar_top_y();
-    for (int i = 0; i < 30; i++) {
+    for (int i = 0; i < 100; i++) {
         frame(true);
         const int cur = bar_top_y();
         assert(cur <= prev_y);
@@ -150,13 +149,13 @@ int main(void) {
     }
     fishing_get_status(&st);
     assert(st.state == STATE_REELING);
-    assert(prev_y <= TRK_Y + 1);                    /* 30 帧足够顶到轨道上端 */
-    printf("[OK] 持续按住 600ms 捕捉区单调上抬至 y=%d（已到顶）\n", prev_y);
+    assert(prev_y <= TRK_Y + 1);                    /* 1000ms 足够顶到轨道上端 */
+    printf("[OK] 持续按住 1000ms 捕捉区单调上抬至 y=%d（已到顶）\n", prev_y);
 
-    /* 9) 跨局：上一局停在「按住」状态，新一局进来必须是没按住，
+    /* 8) 跨局：上一局停在「按住」状态，新一局进来必须是没按住，
      *    且第一帧按下立即生效（去抖计数不能跨局残留） */
     enter_reeling();
-    for (int i = 0; i < 20; i++) frame(true);
+    for (int i = 0; i < 50; i++) frame(true);
     assert(holding() == true);
     enter_reeling();
     assert(holding() == false);

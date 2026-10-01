@@ -17,25 +17,25 @@ verify_logic.py - 钓鱼 v2 逻辑层参考实现校验（无需 gcc / 无需硬
 
 MASK = 0xFFFFFFFF
 
-# ---------- 平衡参数（与 C 层一致） ----------
+# ---------- 平衡参数（与 C 层一致，改这里必须同步改 main/fishing_logic.c） ----------
 REEL_TRACK = 1000
 REEL_PROGRESS_MAX = 1000
-REEL_PROGRESS_0 = 300
+REEL_PROGRESS_0 = 340           # 起手留的容错余量
 REEL_GAIN = 210
 REEL_DECAY_BASE = 120
 REEL_DECAY_POWER = 180
-REEL_FISH_SPD_BASE = 320
-REEL_FISH_SPD_PER_DIFF = 3
-REEL_THINK_MIN = 260
-REEL_THINK_VAR = 360
+REEL_FISH_SPD_BASE = 310        # 峰值鱼速 620 -> 510/s
+REEL_FISH_SPD_PER_DIFF = 2
+REEL_THINK_MIN = 300            # 换目标别太勤，不然看着像乱窜
+REEL_THINK_VAR = 380
 REEL_TIMEOUT_MS = 20000
 REEL_PERFECT_MULT = 150
 # 鱼的"突发冲刺"：稀有度越高，冲刺越频繁、越猛 —— 难度梯度主要来源
 REEL_DART_CHANCE_BASE = 12      # % + rarity*10
-REEL_BURST_MULT_BASE = 155      # % + rarity*REEL_BURST_MULT_STEP
-REEL_BURST_MULT_STEP = 22
+REEL_BURST_MULT_BASE = 135      # % + rarity*REEL_BURST_MULT_STEP
+REEL_BURST_MULT_STEP = 12
 REEL_BURST_MS_BASE = 170        # ms + rarity*REEL_BURST_MS_STEP
-REEL_BURST_MS_STEP = 90
+REEL_BURST_MS_STEP = 70
 # 每条魚派生一个「挣扎强度」d(0..100)，游速 = BASE + d*PER_DIFF。
 # 关键：上限刻意压在鱼竿最高speed附近，保证再猛的鱼也"追得上"，
 # 难度来自容错余量而不是"追不上"，这样难度曲线天然平滑、不会出现断崖。
@@ -82,16 +82,16 @@ SPECIES = [
 
 # (name, bar_h, rise, fall, mult100)
 RODS = [
-    ("手竿",   260, 680, 600, 100),
-    ("路亚竿", 215, 840, 740, 150),
-    ("海竿",   300, 480, 420, 115),
+    ("手竿",   280, 680, 600, 100),
+    ("路亚竿", 235, 840, 740, 150),
+    ("海竿",   320, 480, 420, 115),
 ]
 
 # (name, wait_min, wait_max, bite_window, mult100, unlock_catch)
 SPOTS = [
-    ("静水塘", 1200, 3500, 1200, 100,  0),
-    ("急流河", 1800, 5000, 1000, 150,  8),
-    ("深海",   2500, 7000,  800, 220, 20),
+    ("静水塘", 1200, 3500, 1300, 100,  0),
+    ("急流河", 1800, 5000, 1150, 150,  8),
+    ("深海",   2500, 7000, 1000, 220, 20),
 ]
 
 SPOT_RARITY_W = [
@@ -272,8 +272,12 @@ class Fishing:
                     self.fish_pos -= min(-diff, step)
                 self.fish_pos = clampi(self.fish_pos, 0, REEL_TRACK)
 
-        # 捕捉区带惯性：加速/减速都要时间，所以会过冲 —— 这是操作手感的来源
-        tgt_v = r[2] if self.holding else -r[3]
+        # 捕捉区带惯性：加速/减速都要时间，所以会过冲 —— 这是操作手感的来源。
+        # 坐标约定与 fishing_logic.c 一致：bar_pos 越大越靠屏幕下方，
+        # 所以「按住 = 抬竿 = 往上方走」必须是 bar_pos 减小（取负号）。
+        # 这里曾与 C 层一起写反过，tune_balance.py 的胜率矩阵也跟着反着算，
+        # 已同步；改动方向前后都请重跑一次调参台。
+        tgt_v = -r[2] if self.holding else r[3]
         dv = REEL_BAR_ACCEL * dt // 1000
         if dv < 1:
             dv = 1
@@ -476,17 +480,22 @@ def simulate_reel(f, policy, now, step=20, cap_ms=30000):
     return f.state
 
 
+# ⚠ 下面三个策略的不等号方向必须与 reel_update() 的 tgt_v 符号一致。
+#   坐标约定：bar_pos 越大越靠屏幕下方，"按住 = 抬竿 = bar_pos 减小"，
+#   所以「鱼在捕捉区中心上方就按住」= fish_pos <= center。
+#   这几个不等号曾经跟着写反的物理一起反过（两边同时反，所以当年的胜率看着正常），
+#   物理一修正就立刻退化成"全 0%" —— tune_balance.py 里的 selftest() 就是拦这个的。
 def chase_policy(f):
-    """普通操作：看到鱼在捕捉区中心上方就按住抬起 —— 纯反应型"""
+    """普通操作：看到鱼在捕捉区中心【上方】就按住抬起 —— 纯反应型"""
     center = f.bar_pos + f.bar_h // 2
-    return f.fish_pos >= center
+    return f.fish_pos <= center
 
 
 def predict_policy(f):
     """高手操作：预判鱼的去向（朝目标点提前移动），而不是跟着当前位置追"""
     aim = (f.fish_pos + f.fish_target) // 2
     center = f.bar_pos + f.bar_h // 2
-    return aim >= center
+    return aim <= center
 
 
 def main():
@@ -569,15 +578,21 @@ def main():
                 wins += 1
         return wins / trials
 
-    def laggy_policy_factory(lag_ticks=6):
-        """迟钝玩家：用若干 tick 之前的鱼位置做判断（模拟人的反应延迟）"""
+    def laggy_policy_factory(lag_ticks=10):
+        """迟钝玩家：用若干 tick 之前的鱼位置做判断（模拟人的反应延迟）。
+
+        10 tick = 200ms。原先取 6 tick(120ms) 对"迟钝"过于乐观：单键 + 小屏
+        + 要连续跟竿，200ms 才是手慢玩家的真实量级。调高之后，难度梯度落在
+        "有反应延迟的玩家"身上，而不是落在 0 延迟的机器策略上 —— 0 延迟都
+        钓不上说明物理上追不上，那是 bug 而不是难度（由"最难鱼竿下仍可上
+        全部鱼种"这条单独守着）。"""
         hist = []
 
         def p(f):
             hist.append(f.fish_pos)
             old = hist[-lag_ticks] if len(hist) >= lag_ticks else hist[0]
             center = f.bar_pos + f.bar_h // 2
-            return old >= center
+            return old <= center
         return p
 
     print("      --- 各稀有度平均胜率（手竿）：预判型 / 反应型 / 迟钝型 ---")
@@ -595,8 +610,12 @@ def main():
     check("预判操作能钓上常见鱼", r_common_pred >= 0.9, f"({r_common_pred:.0%})")
     check("预判操作能挑战传说鱼", r_legend_pred >= 0.75, f"({r_legend_pred:.0%})")
     check("反应型玩家够得着常见鱼", r_common_chase >= 0.6, f"({r_common_chase:.0%})")
-    check("难度梯度: 传说明显比常见难", r_legend_chase <= r_common_chase - 0.15,
-          f"(传说反应={r_legend_chase:.0%} 常见反应={r_common_chase:.0%})")
+    # 难度梯度要用"有反应延迟的玩家"来量，不能用 0 延迟的机器策略：
+    # 机器在常见和传说上都是 100%，差值恒为 0，这条会天天误报。
+    # 至于"0 延迟也钓不上"，那属于物理上追不上，是 bug 不是难度 ——
+    # 由下面第 8 组"最难鱼竿下仍可上全部鱼种"单独守着。
+    check("难度梯度: 迟钝操作下传说明显比常见难", r_legend_laggy <= r_common_laggy - 0.15,
+          f"(传说迟钝={r_legend_laggy:.0%} 常见迟钝={r_common_laggy:.0%})")
     # 设计取舍：常见鱼要让玩家稳上手（范围是一片鱼），技巧考核放在稀有/传说身上
     check("迟钝操作不能稳赢传说鱼", r_legend_laggy <= 0.35, f"({r_legend_laggy:.0%})")
     check("迟钝操作能稳钓常见鱼", r_common_laggy >= 0.8, f"({r_common_laggy:.0%})")

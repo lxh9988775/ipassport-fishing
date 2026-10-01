@@ -13,18 +13,22 @@
 /* ===================== 收线小游戏平衡参数（定点 0..1000） ===================== */
 #define REEL_TRACK        1000   /* 轨道总长 */
 #define REEL_PROGRESS_MAX 1000
-#define REEL_PROGRESS_0   300    /* 起始进度 */
+#define REEL_PROGRESS_0   340    /* 起始进度（原 300：多留一截容错，别一失误就归零） */
 #define REEL_GAIN         210    /* 鱼在区内时每秒涨的进度 */
 #define REEL_DECAY_BASE   120    /* 区外时每秒掉的基础进度 */
 #define REEL_DECAY_POWER  180    /* 掉速 = BASE + power * POWER / 100 */
-#define REEL_THINK_MIN    260    /* 换目标的最短间隔 ms */
-#define REEL_THINK_VAR    360
+#define REEL_THINK_MIN    300    /* 换目标的最短间隔 ms（原 260：换太勤看着像乱窜） */
+#define REEL_THINK_VAR    380
 #define REEL_TIMEOUT_MS   20000  /* 拉锯上限，避免无限僵持 */
 #define REEL_PERFECT_MULT 150    /* 完美钓获 1.5x */
 
-/* 松手去抖：主循环 20ms 喂一帧电平，连续这么多帧都读到"松开"才认定松手（<=40ms）。
- * 按下不走去抖（0 帧生效）——手感最敏感的是抬手那一下，不能延迟。 */
-#define REEL_RELEASE_FRAMES 2
+/* 松手去抖：主循环喂一帧电平，连续这么多帧都读到"松开"才认定松手（1 帧 = 10ms）。
+ * 按下不走去抖（0 帧生效）——手感最敏感的是抬手那一下，不能延迟。
+ *
+ * 只用 1 帧就够：OK 窗口是 447..1900mV，松开态约 3300mV，中间隔着 1400mV，
+ * 而 bsp_button_read_mv() 单次采样噪声只有几十 mV，跨不过窗口边界。
+ * 原来 2 帧 × 20ms 主循环 = 40ms 松手延迟，是"抬手发钝"的主观来源之一。 */
+#define REEL_RELEASE_FRAMES 1
 
 /*
  * 难度模型的三个关键设计（数值由 tools/tune_balance.py 扫参得出，改之前先跑一遍）：
@@ -37,17 +41,17 @@
  *    也是"手快/手慢"能拉开差距的原因。
  * 3) 鱼到达目标点会歇一小会儿，稀有度越高越不肯歇 —— 给玩家的喘息节奏。
  */
-#define REEL_FISH_SPD_BASE      320
-#define REEL_FISH_SPD_PER_DIFF  3
+#define REEL_FISH_SPD_BASE      310     /* 原 320；配合 PER_DIFF 下调，峰值鱼速 620→510/s */
+#define REEL_FISH_SPD_PER_DIFF  2       /* 原 3 */
 #define REEL_DIFF_BASE          20
 #define REEL_DIFF_PER_RARITY    20
 #define REEL_DIFF_DART          25      /* /100 * dart */
 #define REEL_BAR_ACCEL          10000   /* 捕捉区加减速（单位/秒^2） */
 #define REEL_DART_CHANCE_BASE   12      /* 冲刺概率 % + rarity*10 */
-#define REEL_BURST_MULT_BASE    155     /* 冲刺倍率 % + rarity*STEP */
-#define REEL_BURST_MULT_STEP    22
+#define REEL_BURST_MULT_BASE    135     /* 原 155 */
+#define REEL_BURST_MULT_STEP    12      /* 原 22 —— 传说鱼原本冲到 1370/s，捕捉区最快 680/s，纯追不上 */
 #define REEL_BURST_MS_BASE      170     /* 冲刺时长 ms + rarity*STEP */
-#define REEL_BURST_MS_STEP      90
+#define REEL_BURST_MS_STEP      70      /* 原 90 */
 #define REST_CHANCE_BASE        48      /* 歇息概率 % - rarity*STEP */
 #define REST_CHANCE_STEP        11
 
@@ -120,16 +124,21 @@ static const fish_species_t SPECIES[FISH_SPECIES_COUNT] = {
  *   海竿   —— 捕捉区最大、最稳（钓传说首选），但竿沉起落慢，得分系数一般
  * 数值由 tools/tune_balance.py 按「不同反应延迟 × 不同稀有度」胜率矩阵标定。
  */
+/* bar_h 是捕捉区高度（轨道 0..1000 的占比）。
+ * 比首版整体放大一档（+20）：区太薄时"看得见鱼却罩不住"，玩家会把
+ * "手不够快"误读成"这游戏钓不上来"。放大后仍保留三根竿的取舍关系。 */
 static const rod_cfg_t RODS[FISH_ROD_COUNT] = {
-    {"手竿",   "轻便均衡，新手最好上手",    260, 680, 600, 100},
-    {"路亚竿", "区小难控，但起落最快分最高", 215, 840, 740, 150},
-    {"海竿",   "区大容错高，竿沉但最稳",    300, 480, 420, 115},
+    {"手竿",   "轻便均衡，新手最好上手",    280, 680, 600, 100},
+    {"路亚竿", "区小难控，但起落最快分最高", 235, 840, 740, 150},
+    {"海竿",   "区大容错高，竿沉但最稳",    320, 480, 420, 115},
 };
 
+/* bite_window_ms 是提竿窗口。深海原为 800ms，反应慢一点就错过，
+ * 对着小屏单手玩太苛刻，统一放宽一档（最短仍有 1.0s）。 */
 static const spot_cfg_t SPOTS[FISH_SPOT_COUNT] = {
-    {"静水塘", 1200, 3500, 1200, 100,   0},
-    {"急流河", 1800, 5000, 1000, 150,   8},
-    {"深海",   2500, 7000,  800, 220,  20},
+    {"静水塘", 1200, 3500, 1300, 100,   0},
+    {"急流河", 1800, 5000, 1150, 150,   8},
+    {"深海",   2500, 7000, 1000, 220,  20},
 };
 
 static const char *const RARITY_NAMES[FISH_RARITY_COUNT] = {

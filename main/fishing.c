@@ -831,8 +831,20 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
 }
 
 /* ===================== 主任务 ===================== */
+
+/* 主循环节奏。收线是这个应用里唯一对"手到屏幕上"敏感的界面：
+ * 按键电平靠主循环采样，循环慢一倍、感知延迟就慢一倍，
+ * 所以收线期间把周期压到 10ms（100Hz），其他状态没必要快、保持 20ms 省电。
+ * 画面单独节流到 20ms：物理可以跑 100Hz，但 240x320 局部重绘翻倍后仍会
+ * 拖长循环周期，反过来把采样频率吃回去 —— 手感和流畅度要分开调。 */
+#define LOOP_IDLE_MS     20
+#define LOOP_REELING_MS  10
+#define UI_REFRESH_MS    20
+
 static void game_task(void *arg) {
     (void)arg;
+    int last_ui_ms = 0;
+    int last_state = -1;
     for (;;) {
         btn_ev_t e;
         while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
@@ -841,7 +853,8 @@ static void game_task(void *arg) {
          * 离开收线时复位，下次进收线从干净状态开始（否则会带着上一次的降级标记）。 */
         fishing_status_t cur;
         fishing_get_status(&cur);
-        if (cur.state == STATE_REELING) {
+        const bool reeling = (cur.state == STATE_REELING);
+        if (reeling) {
             reel_poll_hold();
         } else {
             g_adc_live        = false;
@@ -861,8 +874,14 @@ static void game_task(void *arg) {
         /* 每 30 秒兜底存一次（钓到鱼时也会存），避免频繁擦写 flash */
         if (now - g_last_save_ms > 30000) { nvs_save_now(); g_last_save_ms = now; }
 
-        if (bsp_lvgl_lock(100)) { refresh_ui(); bsp_lvgl_unlock(); }
-        vTaskDelay(pdMS_TO_TICKS(20));
+        /* 状态切换立刻出画面（否则切页要看 20ms 的节流脸色）；同一画面内才节流。 */
+        if (cur.state != last_state || now - last_ui_ms >= UI_REFRESH_MS) {
+            last_ui_ms = now;
+            last_state = cur.state;
+            if (bsp_lvgl_lock(100)) { refresh_ui(); bsp_lvgl_unlock(); }
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(reeling ? LOOP_REELING_MS : LOOP_IDLE_MS));
     }
 }
 
