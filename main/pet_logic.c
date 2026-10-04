@@ -14,6 +14,7 @@
  *   - 存档 schema_ver=2，旧 v1 存档自动迁移（只搬基础四维）
  */
 
+#include <stddef.h>
 #include <string.h>
 #include "pet_logic.h"
 
@@ -288,9 +289,24 @@ int pet_save_serialize(uint8_t *buf, int cap) {
 }
 
 int pet_save_apply(const uint8_t *buf, int len) {
-    if (!buf || len < (int)sizeof(pet_save_t)) return -2;
+    /* 注意：不能直接用 len < sizeof(pet_save_t) 拒绝。
+       v1 存档的结构比现在短（没有 v2 追加的分动作计数与贴纸位图），
+       若按当前结构体长度卡，旧档会被判为非法而**静默丢弃**（玩家进度清零）。
+       因为存档字段历来只追加、从不搬家，前段布局完全一致，所以允许"短读"：
+       按 min(len, sizeof) 拷贝，剩余部分置 0，再由下面的版本分支迁移。 */
+    if (!buf || len <= 0) return -2;
+
     pet_save_t s;
-    memcpy(&s, buf, sizeof(s));
+    memset(&s, 0, sizeof(s));
+
+    size_t n = sizeof(s);
+    if ((size_t)len < n) n = (size_t)len;
+
+    /* magic + schema_ver 必须完整读到，否则无从判断版本 */
+    size_t need = offsetof(pet_save_t, schema_ver) + sizeof(s.schema_ver);
+    if (n < need) return -2;
+
+    memcpy(&s, buf, n);
     if (s.magic != PET_SAVE_MAGIC) return -1;
 
     if (!S.inited) pet_init();

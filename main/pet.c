@@ -666,7 +666,7 @@ static void refresh_batt(void) {
     lv_obj_set_style_border_color(g_batt_body, g_batt_soc<20?BAR_R:GRAYTX, 0);
     lv_obj_set_width(g_batt_fill, 1 + g_batt_soc * 9 / 100);
     lv_obj_set_style_bg_color(g_batt_fill, g_batt_soc<20?BAR_R:BAR_G, 0);
-    char b[8]; snprintf(b, sizeof(b), "%d", g_batt_soc);
+    char b[16]; snprintf(b, sizeof(b), "%d", g_batt_soc);
     lv_label_set_text(g_lbl_batt, b);
 }
 
@@ -753,7 +753,7 @@ static void refresh_menu(void) {
 
 /* ===================== 刷新：护照 ===================== */
 static void refresh_passport(void) {
-    char buf[16]; snprintf(buf, sizeof(buf), "贴纸 %d/12", pet_sticker_count());
+    char buf[32]; snprintf(buf, sizeof(buf), "贴纸 %d/12", pet_sticker_count());
     set_text_cached(g_pass_count, buf);
     for (int i = 0; i < 12; ++i) {
         bool got = pet_sticker_has((unsigned)i);
@@ -785,14 +785,14 @@ static void refresh_game(int now, int dt) {
             }
             lv_obj_set_pos(g_g_obj[0], g_g.pos, 240);
             lv_obj_set_pos(g_g_obj[1], g_g.obj_x, g_g.obj_y);
-            char b[24]; snprintf(b, sizeof(b), "接到 %d/8", g_g.score);
+            char b[40]; snprintf(b, sizeof(b), "接到 %d/8", g_g.score);
             set_text_cached(g_g_msg, b);
             break;
         }
         case 1: { /* 颜色配对：高亮选中 */
             for (int i = 0; i < 3; ++i)
                 lv_obj_set_style_border_width(g_g_obj[1 + i], (i == g_g.sel) ? 4 : 0, 0);
-            char b[24]; snprintf(b, sizeof(b), "对 %d/5", g_g.score);
+            char b[40]; snprintf(b, sizeof(b), "对 %d/5", g_g.score);
             set_text_cached(g_g_msg, b);
             break;
         }
@@ -810,7 +810,7 @@ static void refresh_game(int now, int dt) {
             } else {
                 for (int i = 0; i < 4; ++i)
                     lv_obj_set_style_border_width(g_g_obj[i], (i == g_g.sel) ? 4 : 0, 0);
-                char b[24]; snprintf(b, sizeof(b), "第 %d 关 对 %d", g_g.score+1, g_g.input_idx);
+                char b[40]; snprintf(b, sizeof(b), "第 %d 关 对 %d", g_g.score+1, g_g.input_idx);
                 set_text_cached(g_g_msg, b);
             }
             break;
@@ -830,7 +830,7 @@ static void refresh_game(int now, int dt) {
             } else {
                 for (int i = 0; i < 3; ++i)
                     lv_obj_set_style_border_width(g_g_obj[i], (i == g_g.sel) ? 4 : 0, 0);
-                char b[24]; snprintf(b, sizeof(b), "对 %d/5", g_g.score);
+                char b[40]; snprintf(b, sizeof(b), "对 %d/5", g_g.score);
                 set_text_cached(g_g_msg, b);
             }
             break;
@@ -840,7 +840,7 @@ static void refresh_game(int now, int dt) {
             if (g_g.pos <= 20) { g_g.pos = 20; g_g.dir = 1; }
             if (g_g.pos >= 210) { g_g.pos = 210; g_g.dir = -1; }
             lv_obj_set_pos(g_g_obj[1], g_g.pos, 150);
-            char b[24]; snprintf(b, sizeof(b), "拍 %d/8 中 %d", g_g.beats, g_g.score);
+            char b[40]; snprintf(b, sizeof(b), "拍 %d/8 中 %d", g_g.beats, g_g.score);
             set_text_cached(g_g_msg, b);
             break;
         }
