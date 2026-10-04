@@ -870,12 +870,18 @@ static void refresh_game(int now, int dt) {
 
 /* ===================== 按键分发 ===================== */
 static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
-    if (ev != BSP_BTN_CLICK && ev != BSP_BTN_PRESS) return;
+    /* LONG 只给小游戏用（长按 OK 退出）；列表页若也收 LONG，
+       一次长按会在 PRESS/LONG/CLICK 里连触发多次动作。 */
+    if (ev != BSP_BTN_CLICK && ev != BSP_BTN_PRESS && ev != BSP_BTN_LONG) return;
     switch (g_scr) {
-        case SCR_HOME:     home_input(btn, ev); break;
-        case SCR_MENU:     menu_input(btn, ev); break;
-        case SCR_PASSPORT: passport_input(btn, ev); break;
-        case SCR_GAME:     game_input(btn, ev); break;
+        case SCR_HOME:
+            if (ev != BSP_BTN_LONG) home_input(btn, ev); break;
+        case SCR_MENU:
+            if (ev != BSP_BTN_LONG) menu_input(btn, ev); break;
+        case SCR_PASSPORT:
+            if (ev != BSP_BTN_LONG) passport_input(btn, ev); break;
+        case SCR_GAME:
+            game_input(btn, ev); break;
     }
 }
 
