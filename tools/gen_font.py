@@ -33,7 +33,11 @@ SYMBOLS_TXT = os.path.join(ROOT, "tools", "font_symbols.txt")
 SRC_C = os.path.join(ROOT, "main", "fishing.c")
 # v2 起鱼名/简介/稀有度都放在纯逻辑层，字库必须一并扫描，否则图鉴页会出方框
 SRC_LOGIC = os.path.join(ROOT, "main", "fishing_logic.c")
-SRC_FILES = [SRC_C, SRC_LOGIC]
+# 电子宠物应用的文案共用同一份子集字库（省 Flash），启动器文案也要扫描
+SRC_PET = os.path.join(ROOT, "main", "pet.c")
+SRC_PET_LOGIC = os.path.join(ROOT, "main", "pet_logic.c")
+SRC_MAIN = os.path.join(ROOT, "main", "main.c")
+SRC_FILES = [SRC_C, SRC_LOGIC, SRC_PET, SRC_PET_LOGIC, SRC_MAIN]
 NODE = r"C:/Users/8605464/.workbuddy/binaries/node/versions/22.22.2-3/node.exe"
 CONV = r"C:/Users/8605464/.workbuddy/binaries/node/workspace/node_modules/lv_font_conv/lv_font_conv.js"
 

@@ -3,6 +3,8 @@ idf_component_register(
          "fishing_logic.c"
          "fishing_audio.c"
          "fishing.c"
+         "pet_logic.c"
+         "pet.c"
     INCLUDE_DIRS "."
     REQUIRES bsp nvs_flash lvgl freertos
 )
@@ -19,4 +21,5 @@ target_sources(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/fish_sprites.c"
     "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/prop_sprites.c"
     "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/bg_sprites.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/pet_sprites.c"
 )
