@@ -333,7 +333,7 @@ static void build_home(void) {
     }
 
     /* 照顾列表（6 项） */
-    g_home_cap = make_capsule(g_home, 6, 167, 74, 22);
+    g_home_cap = make_capsule(g_home, 6, 167, 208, 22);
     int ly0 = 168, ldy = 25;
     for (int i = 0; i < 6; ++i) {
         g_home_lbl[i] = make_label(g_home, HOME_ITEMS[i], 18, ly0 + i * ldy, BROWN);
