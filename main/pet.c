@@ -525,7 +525,7 @@ static void game_init(int id) {
 
     const char *names[5] = { "接胡萝卜", "颜色配对", "记忆翻牌", "躲猫猫", "节奏蹦蹦" };
     if (g_g_title) set_text_cached(g_g_title, names[id]);
-    if (g_g_msg) set_text_cached(g_g_msg, "按 OK 开始");
+    if (g_g_msg) set_text_cached(g_g_msg, "按 OK 开始 · 长按 OK 返回");
 
     if (id == 0) { /* 接胡萝卜 */
         g_g_obj[0] = lv_img_create(g_layer);
@@ -563,6 +563,14 @@ static void game_init(int id) {
 
 /* ===================== 小游戏：输入 ===================== */
 static void game_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    /* 长按 OK 随时退出：硬件只有三个键，游戏里没有专门的“返回”，
+       不留退路孩子会被困在小游戏里、打不完出不来（违背“零挫败”适龄铁律）。 */
+    if (ev == BSP_BTN_LONG && btn == BSP_BTN_OK) {
+        g_scr = SCR_MENU; g_menu_sel = 0; g_rebuild = 1;
+        show_feedback("先玩到这儿，回头再来！");
+        fishing_audio_play(SFX_CLICK);
+        return;
+    }
     if (ev != BSP_BTN_CLICK) return;
 
     if (g_g.phase == G_INTRO) {
