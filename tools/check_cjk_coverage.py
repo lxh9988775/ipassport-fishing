@@ -23,7 +23,11 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_C = os.path.join(ROOT, "main", "fishing.c")
 # v2：鱼名/简介放在纯逻辑层，缺字会让图鉴页出方框，必须一并校验
 SRC_LOGIC = os.path.join(ROOT, "main", "fishing_logic.c")
-SRC_FILES = [SRC_C, SRC_LOGIC]
+# 电子宠物应用（与钓鱼共用同一份子集字库）的屏上文案也要校验，否则宠物的中文会出方框
+SRC_PET = os.path.join(ROOT, "main", "pet.c")
+SRC_PET_LOGIC = os.path.join(ROOT, "main", "pet_logic.c")
+SRC_MAIN = os.path.join(ROOT, "main", "main.c")
+SRC_FILES = [SRC_C, SRC_LOGIC, SRC_PET, SRC_PET_LOGIC, SRC_MAIN]
 FONT_C = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_16.c")
 
 

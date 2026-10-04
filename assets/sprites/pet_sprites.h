@@ -7,9 +7,13 @@ extern "C" {
 #endif
 
 extern const lv_image_dsc_t rabbit_front;
-extern const lv_image_dsc_t rabbit_back;
-extern const lv_image_dsc_t rabbit_side;
-extern const lv_image_dsc_t rabbit_side_r;
+extern const lv_image_dsc_t rabbit_front_r;
+extern const lv_image_dsc_t rabbit_front_walk;
+extern const lv_image_dsc_t rabbit_front_walk_r;
+extern const lv_image_dsc_t rabbit_eat;
+extern const lv_image_dsc_t rabbit_bath;
+extern const lv_image_dsc_t rabbit_play;
+extern const lv_image_dsc_t rabbit_sleep;
 
 #ifdef __cplusplus
 }

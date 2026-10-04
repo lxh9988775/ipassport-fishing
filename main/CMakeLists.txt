@@ -1,8 +1,6 @@
 idf_component_register(
     SRCS "main.c"
-         "fishing_logic.c"
          "fishing_audio.c"
-         "fishing.c"
          "pet_logic.c"
          "pet.c"
     INCLUDE_DIRS "."
@@ -16,10 +14,7 @@ target_sources(${COMPONENT_LIB} PRIVATE
 )
 
 # 像素 sprite 资产（由 tools/gen_sprites.py 自动生成，勿手工编辑）。
-# 鱼(48x32 ARGB8888) + 未捕剪影 + 饵/竿/道具/图标 + 场景背景(RGB565)。
+# 宠物固件只打包兔子精灵；钓鱼的鱼/道具/场景已按用户要求移出构建。
 target_sources(${COMPONENT_LIB} PRIVATE
-    "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/fish_sprites.c"
-    "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/prop_sprites.c"
-    "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/bg_sprites.c"
     "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/pet_sprites.c"
 )

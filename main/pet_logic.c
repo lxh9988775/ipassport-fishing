@@ -1,10 +1,17 @@
 /*
- * pet_logic.c - 电子宠物「小白兔」纯逻辑层实现
+ * pet_logic.c - 电子宠物「口袋兔」纯逻辑层实现（v2）
  *
  * 设计要点（对齐 fishing_logic.c 的工程约定）：
  *   - 零动态分配、零浮点：全部整数毫秒/点数
  *   - 衰减用"每点耗时"累加器实现，跨长 dt 也不会一次性跳变
  *   - 存档带 magic + schema_ver，字段只追加不搬家
+ *   - 贴纸簿 12 枚用 uint16 位图持久化（NVS 复用同一份存档 blob）
+ *
+ * v2（2026-10-04）：
+ *   - 分动作照顾计数（feed/clean/play/sleep_count）用于贴纸里程碑
+ *   - 12 枚贴纸位图 + 跨会话持久化
+ *   - 小游戏奖励接口 pet_add_fun()
+ *   - 存档 schema_ver=2，旧 v1 存档自动迁移（只搬基础四维）
  */
 
 #include <string.h>
@@ -36,11 +43,18 @@
 #define XP_PER_PLAY  8
 #define XP_PER_LEVEL 60
 
+/* 贴纸里程碑阈值 */
+#define FEED5_N  5
+#define CLEAN5_N 5
+#define PLAY5_N  5
+
 /* ===================== 内部状态 ===================== */
 typedef struct {
     int hunger, clean, fun, energy;
     bool sleeping;
     int xp, care_count;
+    int feed_count, clean_count, play_count, sleep_count;  /* v2 分动作计数 */
+    uint16_t sticker_mask;                                 /* v2 12 枚贴纸位图 */
     int last_ms;
     bool inited;
     /* 衰减累加器（毫秒） */
@@ -60,6 +74,8 @@ void pet_init(void) {
     S.last_ms = 0;
     S.inited = true;
     acc_reset_all();
+    /* 初次见面贴纸（仅当尚未记录过，避免每局重开后反复发） */
+    pet_sticker_grant(PST_FIRST);
 }
 
 static int clamp100(int v) { return v < 0 ? 0 : (v > 100 ? 100 : v); }
@@ -83,6 +99,34 @@ static void decay(int *val, uint32_t *acc, uint32_t dt, uint32_t rate_ms) {
     if (*val <= 0) *acc = 0;
 }
 
+/* ===================== 贴纸 ===================== */
+void pet_sticker_grant(unsigned id) {
+    if (id >= PET_STICKER_MAX) return;
+    S.sticker_mask |= (uint16_t)(1u << id);
+}
+
+bool pet_sticker_has(unsigned id) {
+    if (id >= PET_STICKER_MAX) return false;
+    return (S.sticker_mask & (uint16_t)(1u << id)) != 0;
+}
+
+int pet_sticker_count(void) {
+    int c = 0;
+    for (int i = 0; i < PET_STICKER_MAX; ++i)
+        if (S.sticker_mask & (uint16_t)(1u << i)) c++;
+    return c;
+}
+
+/* 照顾类里程碑：在动作计数变化后调用 */
+static void check_care_stickers(void) {
+    if (S.feed_count  >= FEED5_N)  pet_sticker_grant(PST_FEED5);
+    if (S.clean_count >= CLEAN5_N) pet_sticker_grant(PST_CLEAN5);
+    if (S.play_count  >= PLAY5_N)  pet_sticker_grant(PST_PLAY5);
+    int lvl = S.xp / XP_PER_LEVEL + 1;
+    if (lvl >= 2) pet_sticker_grant(PST_LVL2);
+    if (lvl >= 3) pet_sticker_grant(PST_LVL3);
+}
+
 pet_event_t pet_tick(int now_ms) {
     pet_event_t ev = PET_EVT_NONE;
     if (!S.inited) pet_init();
@@ -103,6 +147,8 @@ pet_event_t pet_tick(int now_ms) {
         if (S.energy >= 100) {
             S.sleeping = false;
             acc_reset_all();
+            S.sleep_count++;
+            pet_sticker_grant(PST_SLEEP1);
             ev = PET_EVT_SLEEP_FULL;    /* 睡饱自动醒 */
         }
         decay(&S.hunger, &S.acc_hunger, udt, HUNGER_MS_PER_POINT * 2u);
@@ -123,8 +169,10 @@ pet_event_t pet_feed(void) {
     S.hunger = clamp100(S.hunger + FEED_GAIN);
     S.fun = clamp100(S.fun + 2);
     S.care_count++;
+    S.feed_count++;
     pet_event_t ev = PET_EVT_ACTION_OK;
     grant_xp(XP_PER_CARE, &ev);
+    check_care_stickers();
     return ev;
 }
 
@@ -133,8 +181,10 @@ pet_event_t pet_clean(void) {
     if (S.clean >= 98) return PET_EVT_ACTION_FULL;
     S.clean = clamp100(S.clean + CLEAN_GAIN);
     S.care_count++;
+    S.clean_count++;
     pet_event_t ev = PET_EVT_ACTION_OK;
     grant_xp(XP_PER_CARE, &ev);
+    check_care_stickers();
     return ev;
 }
 
@@ -145,8 +195,10 @@ pet_event_t pet_play(void) {
     S.energy = clamp100(S.energy - PLAY_COST_E);
     S.hunger = clamp100(S.hunger - PLAY_COST_H);
     S.care_count++;
+    S.play_count++;
     pet_event_t ev = PET_EVT_ACTION_OK;
     grant_xp(XP_PER_PLAY, &ev);
+    check_care_stickers();
     return ev;
 }
 
@@ -162,6 +214,12 @@ pet_event_t pet_toggle_sleep(void) {
     return PET_EVT_SLEEP_START;
 }
 
+/* ===================== 小游戏奖励（只涨不扣） ===================== */
+void pet_add_fun(int delta) {
+    if (!S.inited) pet_init();
+    S.fun = clamp100(S.fun + delta);
+}
+
 /* ===================== 查询 ===================== */
 void pet_get_status(pet_status_t *out) {
     if (!out) return;
@@ -174,6 +232,10 @@ void pet_get_status(pet_status_t *out) {
     out->xp = S.xp;
     out->level = S.xp / XP_PER_LEVEL + 1;
     out->care_count = S.care_count;
+    out->feed_count = S.feed_count;
+    out->clean_count = S.clean_count;
+    out->play_count = S.play_count;
+    out->sleep_count = S.sleep_count;
 }
 
 const char *pet_mood_name(const pet_status_t *st) {
@@ -188,7 +250,7 @@ const char *pet_mood_name(const pet_status_t *st) {
     return "开心";
 }
 
-/* ===================== 存档 ===================== */
+/* ===================== 存档（v2，含 v1 迁移） ===================== */
 typedef struct {
     uint32_t magic;
     uint8_t  schema_ver;
@@ -196,6 +258,9 @@ typedef struct {
     uint8_t  sleeping;
     uint16_t xp;
     uint16_t care_count;
+    /* v2 追加字段 */
+    uint16_t feed_count, clean_count, play_count, sleep_count;
+    uint16_t sticker_mask;
 } pet_save_t;
 
 int pet_save_size(void) { return (int)sizeof(pet_save_t); }
@@ -213,6 +278,11 @@ int pet_save_serialize(uint8_t *buf, int cap) {
     s.sleeping = S.sleeping ? 1 : 0;
     s.xp = (uint16_t)S.xp;
     s.care_count = (uint16_t)S.care_count;
+    s.feed_count = (uint16_t)S.feed_count;
+    s.clean_count = (uint16_t)S.clean_count;
+    s.play_count = (uint16_t)S.play_count;
+    s.sleep_count = (uint16_t)S.sleep_count;
+    s.sticker_mask = S.sticker_mask;
     memcpy(buf, &s, sizeof(s));
     return (int)sizeof(s);
 }
@@ -222,17 +292,45 @@ int pet_save_apply(const uint8_t *buf, int len) {
     pet_save_t s;
     memcpy(&s, buf, sizeof(s));
     if (s.magic != PET_SAVE_MAGIC) return -1;
-    if (s.schema_ver != PET_SCHEMA_VER) return 1;   /* 未来版本：先当新号 */
+
     if (!S.inited) pet_init();
-    S.hunger = clamp100(s.hunger);
-    S.clean = clamp100(s.clean);
-    S.fun = clamp100(s.fun);
-    S.energy = clamp100(s.energy);
-    S.sleeping = s.sleeping != 0;
-    S.xp = s.xp;
-    S.care_count = s.care_count;
-    acc_reset_all();
-    return 0;
+
+    if (s.schema_ver == PET_SCHEMA_VER) {
+        /* 同版本：全量恢复 */
+        S.hunger = clamp100(s.hunger);
+        S.clean = clamp100(s.clean);
+        S.fun = clamp100(s.fun);
+        S.energy = clamp100(s.energy);
+        S.sleeping = s.sleeping != 0;
+        S.xp = s.xp;
+        S.care_count = s.care_count;
+        S.feed_count = s.feed_count;
+        S.clean_count = s.clean_count;
+        S.play_count = s.play_count;
+        S.sleep_count = s.sleep_count;
+        S.sticker_mask = s.sticker_mask;
+        acc_reset_all();
+        return 0;
+    }
+
+    if (s.schema_ver == 1) {
+        /* v1 → v2 迁移：只搬基础四维，新字段归零（旧档没这些数据） */
+        S.hunger = clamp100(s.hunger);
+        S.clean = clamp100(s.clean);
+        S.fun = clamp100(s.fun);
+        S.energy = clamp100(s.energy);
+        S.sleeping = s.sleeping != 0;
+        S.xp = s.xp;
+        S.care_count = s.care_count;
+        S.feed_count = S.clean_count = S.play_count = S.sleep_count = 0;
+        /* 保留 v1 已发的初次见面贴纸，其余归零 */
+        S.sticker_mask = (uint16_t)(1u << PST_FIRST);
+        acc_reset_all();
+        return 0;   /* 迁移成功 */
+    }
+
+    /* 比当前更新的版本：结构未知，当新号处理 */
+    return 1;
 }
 
 void pet_test_set_stats(int hunger, int clean, int fun, int energy) {
