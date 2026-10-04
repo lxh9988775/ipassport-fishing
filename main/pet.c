@@ -449,20 +449,21 @@ static void pet_task(void *arg) {
             last_save_ms = now;
         }
 
-        /* 兔子呼吸：每 600ms 上下浮 2px */
-        if (now - last_bob_ms > BOB_MS) {
-            last_bob_ms = now;
-            bob_up = !bob_up;
-            int y = PET_Y + (bob_up ? 0 : 2);
-            if (y != s_rabbit_y) {
-                s_rabbit_y = y;
-                lv_obj_set_pos(g_rabbit, PET_X, y);
-            }
-        }
-
         if (now - last_ui_ms >= UI_REFRESH_MS) {
             last_ui_ms = now;
+            /* 兔子呼吸：每 600ms 上下浮 2px。必须在 bsp_lvgl_lock 内碰 LVGL ——
+             * 裸调 lv_obj_set_pos 会和渲染任务赛跑，实测（模拟器 10-04）会冻结
+             * 整个 LVGL 任务：屏幕定格、后续刷新全部拿不到锁。 */
+            if (now - last_bob_ms > BOB_MS) {
+                last_bob_ms = now;
+                bob_up = !bob_up;
+            }
             if (bsp_lvgl_lock(100)) {
+                int y = PET_Y + (bob_up ? 0 : 2);
+                if (y != s_rabbit_y) {
+                    s_rabbit_y = y;
+                    lv_obj_set_pos(g_rabbit, PET_X, y);
+                }
                 refresh_ui(now);
                 bsp_lvgl_unlock();
             }
