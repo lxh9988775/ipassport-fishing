@@ -52,6 +52,7 @@ static void use_cjk(lv_obj_t *o) {
 #define RED_TXT lv_color_make(153, 0, 58)
 #define BROWN   lv_color_make(96, 64, 44)
 #define GRAYTX  lv_color_make(120, 100, 90)
+#define WHITE   lv_color_make(255, 255, 255)
 #define BAR_G   lv_color_make(120, 210, 130)
 #define BAR_O   lv_color_make(245, 180, 70)
 #define BAR_R   lv_color_make(235, 90, 80)
@@ -705,6 +706,12 @@ static void refresh_home(int now) {
     if (g_home_sel != s_sel) {
         s_sel = g_home_sel;
         lv_obj_set_pos(g_home_cap, 6, 167 + g_home_sel * 25);
+        /* 选中项文字翻白，否则棕色字压在红色胶囊上看不清（模拟器实测发现） */
+        for (int i = 0; i < 6; ++i) {
+            if (!g_home_lbl[i]) continue;
+            lv_obj_set_style_text_color(g_home_lbl[i],
+                                        (i == g_home_sel) ? WHITE : BROWN, 0);
+        }
     }
 
     /* 睡觉态：Zzz + 背对世界 + 背光调暗 */
@@ -756,6 +763,12 @@ static void refresh_menu(void) {
     if (g_menu_sel != s_sel) {
         s_sel = g_menu_sel;
         lv_obj_set_pos(g_menu_cap, 16, 63 + g_menu_sel * 30);
+        /* 同主屏：选中项文字翻白，保证红底上可读 */
+        for (int i = 0; i < 6; ++i) {
+            if (!g_menu_lbl[i]) continue;
+            lv_obj_set_style_text_color(g_menu_lbl[i],
+                                        (i == g_menu_sel) ? WHITE : BROWN, 0);
+        }
     }
 }
 
