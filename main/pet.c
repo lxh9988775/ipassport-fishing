@@ -56,12 +56,19 @@ static void use_cjk(lv_obj_t *o) {
 #define BAR_O   lv_color_make(245, 180, 70)
 #define BAR_R   lv_color_make(235, 90, 80)
 
-static const lv_color_t COLORS[4] = {
-    lv_color_make(214, 40, 92),
-    lv_color_make(40, 110, 210),
-    lv_color_make(240, 200, 50),
-    lv_color_make(80, 190, 110),
+/* LVGL9 的 lv_color_make() 是内联函数，不是常量表达式，不能直接用于
+   文件作用域静态初始化器（编译会报 "initializer element is not constant"）。
+   因此这里只存 RGB 分量，运行时再通过 gc() 转换成 lv_color_t。 */
+static const uint8_t COLORS_RGB[4][3] = {
+    {214, 40,  92},
+    {40,  110, 210},
+    {240, 200, 50},
+    {80,  190, 110},
 };
+static lv_color_t gc(int i) {
+    i = ((i % 4) + 4) % 4;
+    return lv_color_make(COLORS_RGB[i][0], COLORS_RGB[i][1], COLORS_RGB[i][2]);
+}
 
 /* ===================== 场景模式 ===================== */
 enum { SCR_HOME = 0, SCR_MENU, SCR_PASSPORT, SCR_GAME };
@@ -228,6 +235,7 @@ typedef struct {
     int score;
     int sel;         /* 当前选中项 */
     int target;      /* 正确答案 */
+    int correct;     /* 正确答案所在选项下标（颜色配对用） */
     int timer;       /* 计时累加（ms） */
     int sub;         /* 子步骤 / 闪烁序号 */
     int input_idx;   /* 序列复现进度 */
@@ -347,10 +355,24 @@ static void build_menu(void) {
 }
 
 /* ===================== 护照（贴纸墙） ===================== */
-static char sticker_name(int id) {
-    /* 用单字/符号代表，避免过多中文字库依赖；收集后显示序号+底色 */
-    static const char names[12] = "初喂洗玩睡二三四接色记躲节";
-    if (id < 0 || id >= 12) return '?';
+static const char *sticker_name(int id) {
+    /* 每个贴纸一个代表汉字（UTF-8 一个汉字 3 字节，不能用 char 数组按字节取）。
+       字库由 tools/gen_font.py 扫描本文件自动生成，新增汉字会被自动收录。 */
+    static const char *const names[12] = {
+        "见", /* PST_FIRST  初次见面   */
+        "食", /* PST_FEED5  喂食 5 次  */
+        "澡", /* PST_CLEAN5 洗澡 5 次  */
+        "玩", /* PST_PLAY5  陪玩 5 次  */
+        "睡", /* PST_SLEEP1 睡一次     */
+        "二", /* PST_LVL2   升到 2 级  */
+        "三", /* PST_LVL3   升到 3 级  */
+        "萝", /* PST_GAME_CATCH  接胡萝卜 */
+        "色", /* PST_GAME_COLOR  颜色配对 */
+        "忆", /* PST_GAME_MEMORY 记忆翻牌 */
+        "猫", /* PST_GAME_PEEK   躲猫猫   */
+        "跳", /* PST_GAME_RHYTHM 节奏蹦蹦 */
+    };
+    if (id < 0 || id >= 12) return "?";
     return names[id];
 }
 
@@ -471,6 +493,22 @@ static void passport_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     g_scr = SCR_HOME; g_rebuild = 1;
 }
 
+/* 出一道新题：题目色一定出现在三个选项里，正确位置随机。
+   init=true 时创建对象，false 时只改色（新一题复用已有对象）。*/
+static void color_new_round(bool init) {
+    static const int OX[3] = { 16, 92, 168 };
+    g_g.target  = rnd(4);
+    g_g.correct = rnd(3);
+    int other[3], n = 0;
+    for (int c = 0; c < 4; ++c) if (c != g_g.target) other[n++] = c;
+    int oi = 0;
+    for (int i = 0; i < 3; ++i) {
+        lv_color_t col = (i == g_g.correct) ? gc(g_g.target) : gc(other[oi++]);
+        if (init) g_g_obj[1 + i] = make_panel(g_layer, OX[i], 140, 56, 56, col);
+        else      lv_obj_set_style_bg_color(g_g_obj[1 + i], col, 0);
+    }
+}
+
 /* ===================== 小游戏：初始化 ===================== */
 static void game_init(int id) {
     g_g.id = id;
@@ -494,13 +532,10 @@ static void game_init(int id) {
         lv_img_set_src(g_g_obj[0], &rabbit_front);
         lv_obj_set_pos(g_g_obj[0], 80, 240);
         g_g.obj_x = 110; g_g.obj_y = 70; g_g.pos = 80;
-        g_g_obj[1] = make_panel(g_layer, g_g.obj_x, g_g.obj_y, 22, 22, COLORS[2]);
+        g_g_obj[1] = make_panel(g_layer, g_g.obj_x, g_g.obj_y, 22, 22, gc(2));
     } else if (id == 1) { /* 颜色配对 */
-        g_g.target = rnd(4);
-        g_g_obj[0] = make_panel(g_layer, 70, 56, 100, 46, COLORS[g_g.target]);
-        int ox[3] = { 16, 92, 168 };
-        for (int i = 0; i < 3; ++i)
-            g_g_obj[1 + i] = make_panel(g_layer, ox[i], 140, 56, 56, COLORS[(g_g.target + 1 + i) % 4]);
+        color_new_round(true);
+        g_g_obj[0] = make_panel(g_layer, 70, 56, 100, 46, gc(g_g.target));
     } else if (id == 2) { /* 记忆翻牌 */
         int px[4] = { 40, 140, 40, 140 };
         int py[4] = { 70, 70, 150, 150 };
@@ -557,13 +592,12 @@ static void game_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
             if (btn == BSP_BTN_UP)   g_g.sel = (g_g.sel + 2) % 3;
             else if (btn == BSP_BTN_DOWN) g_g.sel = (g_g.sel + 1) % 3;
             else if (btn == BSP_BTN_OK && g_g.id == 1) {
-                if (g_g.sel == g_g.target) { g_g.score++; fishing_audio_play(SFX_CATCH); }
+                if (g_g.sel == g_g.correct) { g_g.score++; fishing_audio_play(SFX_CATCH); }
                 else { fishing_audio_play(SFX_MISS); }
                 if (g_g.score >= 5) game_finish();
-                else { /* 下一题 */ g_g.target = rnd(4);
-                       lv_obj_set_style_bg_color(g_g_obj[0], COLORS[g_g.target], 0);
-                       int ox[3] = { 16, 92, 168 };
-                       for (int i=0;i<3;i++) lv_obj_set_style_bg_color(g_g_obj[1+i], COLORS[(g_g.target+1+i)%4],0);
+                else { /* 下一题：重新出题并重刷颜色 */
+                       color_new_round(false);
+                       lv_obj_set_style_bg_color(g_g_obj[0], gc(g_g.target), 0);
                        g_g.sel = 0; }
             } else if (btn == BSP_BTN_OK && g_g.id == 4) {
                 g_g.beats++;
@@ -724,9 +758,8 @@ static void refresh_passport(void) {
     for (int i = 0; i < 12; ++i) {
         bool got = pet_sticker_has((unsigned)i);
         if (got) {
-            lv_obj_set_style_bg_color(g_pass_cell[i], COLORS[i % 4], 0);
-            char c[2] = { sticker_name(i), 0 };
-            set_text_cached(g_pass_icon[i], c);
+            lv_obj_set_style_bg_color(g_pass_cell[i], gc(i), 0);
+            set_text_cached(g_pass_icon[i], sticker_name(i));
             lv_obj_set_style_text_color(g_pass_icon[i], lv_color_make(255,255,255), 0);
         } else {
             lv_obj_set_style_bg_color(g_pass_cell[i], PINK, 0);
@@ -769,7 +802,7 @@ static void refresh_game(int now, int dt) {
                 for (int i = 0; i < 4; ++i)
                     lv_obj_set_style_bg_color(g_g_obj[i], lv_color_make(220,220,220), 0);
                 int cur = g_g.seq[g_g.sub];
-                lv_obj_set_style_bg_color(g_g_obj[cur], COLORS[cur], 0);
+                lv_obj_set_style_bg_color(g_g_obj[cur], gc(cur), 0);
                 if (g_g.timer > 500) { g_g.timer = 0; g_g.sub++;
                     if (g_g.sub >= g_g.seq_len) { g_g.flash_done = 1; g_g.sel = 0;
                         for (int i=0;i<4;i++) lv_obj_set_style_bg_color(g_g_obj[i], lv_color_make(220,220,220),0);
@@ -844,30 +877,40 @@ static void pet_task(void *arg) {
     int prev_last = (int)now_ms();
 
     for (;;) {
-        btn_ev_t e;
-        while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
-
         int now = (int)now_ms();
         int dt = now - prev_last; if (dt < 0) dt = 0; prev_last = now;
 
         pet_event_t ev = pet_tick(now);
-        if (ev == PET_EVT_SLEEP_FULL) { fishing_audio_play(SFX_CATCH); show_feedback("睡饱啦，精神满满！"); g_action_frame = &rabbit_front; g_action_until = 0; }
-        else if (ev == PET_EVT_LEVEL_UP) { fishing_audio_play(SFX_CATCH); show_feedback("照顾升级啦！"); }
+        /* 音频不涉及 LVGL，放在锁外播放，避免播放耗时长时间占用显示锁 */
+        if (ev == PET_EVT_SLEEP_FULL || ev == PET_EVT_LEVEL_UP) fishing_audio_play(SFX_CATCH);
 
         if (now - last_batt > BATT_MS) { g_batt_soc = bsp_battery_soc(); last_batt = now; }
-
         if (now - last_save > SAVE_MS) { nvs_save_now(); last_save = now; }
 
-        if (now - last_ui >= UI_REFRESH_MS) {
-            last_ui = now;
-            if (bsp_lvgl_lock(100)) {
-                if (g_rebuild) { rebuild_current(); g_rebuild = 0; }
+        /* 注意：按键分发链路（handle_btn → page_input）以及 show_feedback 都会
+           调用 lv_obj_* / lv_label_*，LVGL 不是线程安全的，因此必须整套放进
+           bsp_lvgl_lock 内执行，不能在锁外摸界面（历史 Bug：UI 任务被冻结）。 */
+        const bool due_ui   = (now - last_ui >= UI_REFRESH_MS);
+        const bool has_key  = (uxQueueMessagesWaiting(s_btn_q) > 0);
+        const bool has_evt  = (ev != PET_EVT_NONE);
+        if ((due_ui || has_key || has_evt) && bsp_lvgl_lock(100)) {
+            if (due_ui) last_ui = now;
+
+            btn_ev_t e;
+            while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
+
+            if (ev == PET_EVT_SLEEP_FULL) { show_feedback("睡饱啦，精神满满！"); g_action_frame = &rabbit_front; g_action_until = 0; }
+            else if (ev == PET_EVT_LEVEL_UP) { show_feedback("照顾升级啦！"); }
+
+            if (g_rebuild) { rebuild_current(); g_rebuild = 0; }
+
+            if (due_ui) {
                 if (g_scr == SCR_HOME) refresh_home(now);
                 else if (g_scr == SCR_MENU) refresh_menu();
                 else if (g_scr == SCR_PASSPORT) refresh_passport();
                 else if (g_scr == SCR_GAME) refresh_game(now, dt);
-                bsp_lvgl_unlock();
             }
+            bsp_lvgl_unlock();
         }
 
         vTaskDelay(pdMS_TO_TICKS(LOOP_MS));
