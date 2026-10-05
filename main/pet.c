@@ -875,13 +875,23 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
     if (ev != BSP_BTN_CLICK && ev != BSP_BTN_PRESS && ev != BSP_BTN_LONG) return;
     switch (g_scr) {
         case SCR_HOME:
-            if (ev != BSP_BTN_LONG) home_input(btn, ev); break;
+            if (ev != BSP_BTN_LONG) {
+                home_input(btn, ev);
+            }
+            break;
         case SCR_MENU:
-            if (ev != BSP_BTN_LONG) menu_input(btn, ev); break;
+            if (ev != BSP_BTN_LONG) {
+                menu_input(btn, ev);
+            }
+            break;
         case SCR_PASSPORT:
-            if (ev != BSP_BTN_LONG) passport_input(btn, ev); break;
+            if (ev != BSP_BTN_LONG) {
+                passport_input(btn, ev);
+            }
+            break;
         case SCR_GAME:
-            game_input(btn, ev); break;
+            game_input(btn, ev);
+            break;
     }
 }
 
