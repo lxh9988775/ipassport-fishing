@@ -1,0 +1,8 @@
+Plays offline — no network setup, just power on. One device holds two plays, Fishing and Bunny; pick one at startup.
+Controls: UP / DOWN to choose, OK to confirm or act.
+
+1. At startup, move the highlight to "Bunny" with UP / DOWN and press OK.
+2. A bunny gently breathing appears; four green bars below show Food, Clean, Fun and Energy.
+3. Pick Feed / Wash / Play / Sleep with UP / DOWN, then press OK to care for it.
+4. Good care earns a level-up celebration; bars fall slowly, so a few days away is fine.
+5. Progress saves automatically; restart to switch back to Fishing.

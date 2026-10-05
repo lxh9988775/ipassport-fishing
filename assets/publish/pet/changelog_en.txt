@@ -1,0 +1,7 @@
+Major update — Pocket Bunny v2:
+
+1. The bunny is alive: breathing and walking animations replace the static frame.
+2. Five new kid-friendly mini-games: Carrot Catch, Color Match, Memory Pairs, Peek-a-Boo and Rhythm Hop. Long-press OK inside a game to exit anytime.
+3. New "Passport" sticker wall: caring for the bunny and playing games earn 12 collectible stickers.
+4. UI polish: unified menu styling, better text contrast, no more screen flicker on rapid button presses.
+5. Existing save data carries over automatically.
