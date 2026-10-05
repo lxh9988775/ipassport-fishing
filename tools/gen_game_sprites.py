@@ -249,9 +249,8 @@ def emit_c(path, entries):
         parts.append("    .header.stride = %d," % (w * 4))
         parts.append("    .data_size = sizeof(%s_map)," % name)
         parts.append("    .data = %s_map," % name)
+        parts.append("};")
         parts.append("")
-    parts.pop()
-    parts.append("")
     with open(path, "w", encoding="utf-8", newline="\n") as f:
         f.write("\n".join(parts) + "\n")
 

@@ -459,6 +459,7 @@ static void build_passport(void) {
 /* ===================== 小游戏构建 ===================== */
 static void game_init(int id);
 static void game_finish(void);
+static void build_dress(void);   /* 定义在 passport_input 之后，rebuild_current 要用 */
 
 static void build_game(void) {
     lv_obj_clean(g_layer);

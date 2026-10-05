@@ -1309,6 +1309,7 @@ const lv_image_dsc_t costume_hat = {
     .header.stride = 288,
     .data_size = sizeof(costume_hat_map),
     .data = costume_hat_map,
+};
 
 static const uint8_t costume_crown_map[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -2617,6 +2618,7 @@ const lv_image_dsc_t costume_crown = {
     .header.stride = 288,
     .data_size = sizeof(costume_crown_map),
     .data = costume_crown_map,
+};
 
 static const uint8_t costume_glasses_map[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -3925,6 +3927,7 @@ const lv_image_dsc_t costume_glasses = {
     .header.stride = 288,
     .data_size = sizeof(costume_glasses_map),
     .data = costume_glasses_map,
+};
 
 static const uint8_t costume_scarf_map[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -5233,6 +5236,7 @@ const lv_image_dsc_t costume_scarf = {
     .header.stride = 288,
     .data_size = sizeof(costume_scarf_map),
     .data = costume_scarf_map,
+};
 
 static const uint8_t costume_flower_map[] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -6541,4 +6545,5 @@ const lv_image_dsc_t costume_flower = {
     .header.stride = 288,
     .data_size = sizeof(costume_flower_map),
     .data = costume_flower_map,
+};
 
