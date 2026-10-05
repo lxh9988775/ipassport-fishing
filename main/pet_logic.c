@@ -12,6 +12,10 @@
  *   - 12 枚贴纸位图 + 跨会话持久化
  *   - 小游戏奖励接口 pet_add_fun()
  *   - 存档 schema_ver=2，旧 v1 存档自动迁移（只搬基础四维）
+ *
+ * v3（2026-10-05）：
+ *   - 换装系统：costume 字段（0=不穿，1..5=草帽/皇冠/眼镜/围巾/花环）
+ *   - 存档 schema_ver=3，v1/v2 旧档自动迁移（v2 保留计数与贴纸）
  */
 
 #include <stddef.h>
@@ -56,6 +60,7 @@ typedef struct {
     int xp, care_count;
     int feed_count, clean_count, play_count, sleep_count;  /* v2 分动作计数 */
     uint16_t sticker_mask;                                 /* v2 12 枚贴纸位图 */
+    int costume;                                           /* v3 当前装扮 0..5 */
     int last_ms;
     bool inited;
     /* 衰减累加器（毫秒） */
@@ -221,6 +226,18 @@ void pet_add_fun(int delta) {
     S.fun = clamp100(S.fun + delta);
 }
 
+/* ===================== 换装（v3） ===================== */
+void pet_set_costume(int id) {
+    if (!S.inited) pet_init();
+    if (id < 0 || id > PET_COSTUME_MAX) id = 0;
+    S.costume = id;
+}
+
+int pet_get_costume(void) {
+    if (!S.inited) pet_init();
+    return S.costume;
+}
+
 /* ===================== 查询 ===================== */
 void pet_get_status(pet_status_t *out) {
     if (!out) return;
@@ -251,7 +268,7 @@ const char *pet_mood_name(const pet_status_t *st) {
     return "开心";
 }
 
-/* ===================== 存档（v2，含 v1 迁移） ===================== */
+/* ===================== 存档（v3，含 v1/v2 迁移） ===================== */
 typedef struct {
     uint32_t magic;
     uint8_t  schema_ver;
@@ -262,6 +279,8 @@ typedef struct {
     /* v2 追加字段 */
     uint16_t feed_count, clean_count, play_count, sleep_count;
     uint16_t sticker_mask;
+    /* v3 追加字段 */
+    uint8_t  costume;
 } pet_save_t;
 
 int pet_save_size(void) { return (int)sizeof(pet_save_t); }
@@ -284,6 +303,7 @@ int pet_save_serialize(uint8_t *buf, int cap) {
     s.play_count = (uint16_t)S.play_count;
     s.sleep_count = (uint16_t)S.sleep_count;
     s.sticker_mask = S.sticker_mask;
+    s.costume = (uint8_t)S.costume;
     memcpy(buf, &s, sizeof(s));
     return (int)sizeof(s);
 }
@@ -325,12 +345,13 @@ int pet_save_apply(const uint8_t *buf, int len) {
         S.play_count = s.play_count;
         S.sleep_count = s.sleep_count;
         S.sticker_mask = s.sticker_mask;
+        S.costume = (s.costume > PET_COSTUME_MAX) ? 0 : s.costume;
         acc_reset_all();
         return 0;
     }
 
-    if (s.schema_ver == 1) {
-        /* v1 → v2 迁移：只搬基础四维，新字段归零（旧档没这些数据） */
+    if (s.schema_ver == 1 || s.schema_ver == 2) {
+        /* v1/v2 → v3 迁移：只搬旧字段，装扮归零（旧档没这些数据） */
         S.hunger = clamp100(s.hunger);
         S.clean = clamp100(s.clean);
         S.fun = clamp100(s.fun);
@@ -338,9 +359,19 @@ int pet_save_apply(const uint8_t *buf, int len) {
         S.sleeping = s.sleeping != 0;
         S.xp = s.xp;
         S.care_count = s.care_count;
-        S.feed_count = S.clean_count = S.play_count = S.sleep_count = 0;
-        /* 保留 v1 已发的初次见面贴纸，其余归零 */
-        S.sticker_mask = (uint16_t)(1u << PST_FIRST);
+        if (s.schema_ver == 2) {
+            /* v2 已有分动作计数与贴纸位图，保留 */
+            S.feed_count = s.feed_count;
+            S.clean_count = s.clean_count;
+            S.play_count = s.play_count;
+            S.sleep_count = s.sleep_count;
+            S.sticker_mask = s.sticker_mask;
+        } else {
+            /* v1 只保留已发的初次见面贴纸，其余归零 */
+            S.feed_count = S.clean_count = S.play_count = S.sleep_count = 0;
+            S.sticker_mask = (uint16_t)(1u << PST_FIRST);
+        }
+        S.costume = 0;
         acc_reset_all();
         return 0;   /* 迁移成功 */
     }

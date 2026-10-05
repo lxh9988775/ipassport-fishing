@@ -6,13 +6,21 @@ verify_pet_logic.py — 电子宠物纯逻辑层的 Python 参考实现冒烟验
 本机无 gcc 时的兜底（与 verify_logic.py 对钓鱼层的角色相同）：
 用 Python 1:1 复刻 main/pet_logic.c 的常量与规则，跑关键场景断言。
 注意：它验证的是【数值设计与规则】，C 代码本身的编译验证仍需 ESP-IDF 构建。
+
+v3（2026-10-05）新增场景 7：换装 costume 字段的存档往返 + v1/v2 旧档迁移
+（按 C 结构体布局 struct.pack/unpack，1:1 复刻 pet_save_apply 的短读+迁移逻辑）。
 """
+import struct
+
 MIN = 60 * 1000
 HUNGER_MS = 40 * MIN
 CLEAN_MS = 60 * MIN
 FUN_MS = 30 * MIN
 ENERGY_MS = 45 * MIN
 SLEEP_ENERGY_MS = 3 * MIN
+
+PET_MAGIC = 0x50455431
+PET_COSTUME_MAX = 5
 
 
 class Pet:
@@ -114,7 +122,59 @@ def main():
         p6.feed()
     assert p6.xp == 60      # 升到 2 级
 
-    print("[PASS] pet 逻辑冒烟验证 6/6 场景全过")
+    # ------------------------------------------------------------------
+    # 场景 7：换装存档（v3 布局：…sticker_mask + costume，尾部对齐到 4）
+    # C 结构体：I B B B B B B(=sleeping) H H H H H H H B  → 25B，sizeof=28
+    # ------------------------------------------------------------------
+    FMT = "<IBBBBBBHHHHHHHB"
+    assert struct.calcsize(FMT) == 25
+
+    def pack_save(ver, costume=None, feed=7, mask=0x00FF, h=66):
+        body = struct.pack("<IBBBBBBHHHHHHH",
+                           PET_MAGIC, ver, h, 70, 70, 70, 0,
+                           120, 30, feed, 8, 9, 10, mask)
+        if costume is not None:
+            body += struct.pack("<B", costume)
+        while len(body) % 4:
+            body += b"\x00"          # C 尾部对齐
+        return body
+
+    def apply_save(buf):
+        """1:1 复刻 pet_save_apply：短读补 0 + 版本分支。"""
+        if not buf or len(buf) <= 0:
+            return None
+        s = bytearray(struct.calcsize(FMT))
+        s[:min(len(buf), len(s))] = buf[:min(len(buf), len(s))]
+        (magic, ver, h, _c, _f, _e, _sl, _xp, _care,
+         feed, _cl, _pl, _slp, mask, costume) = struct.unpack(FMT, bytes(s))
+        if magic != PET_MAGIC:
+            return "INVALID"
+        if ver == 3:
+            return dict(ver=3, h=h, feed=feed, mask=mask,
+                        costume=costume if costume <= PET_COSTUME_MAX else 0)
+        if ver in (1, 2):
+            r = dict(ver=ver, h=h, costume=0)
+            if ver == 2:
+                r["feed"], r["mask"] = feed, mask
+            else:
+                r["feed"], r["mask"] = 0, 1     # v1 只留初次见面贴纸
+            return r
+        return "NEWER"
+
+    # 7a：v3 往返，装扮 4（围巾）保留
+    r = apply_save(pack_save(3, costume=4))
+    assert r["ver"] == 3 and r["costume"] == 4 and r["feed"] == 7, r
+    # 7b：非法装扮值（>5）按 0 处理
+    r = apply_save(pack_save(3, costume=99))
+    assert r["costume"] == 0, r
+    # 7c：v2 旧档（无 costume 字节）短读迁移 → 装扮归零、计数/贴纸保留
+    r = apply_save(pack_save(2))
+    assert r["ver"] == 2 and r["costume"] == 0 and r["feed"] == 7 and r["mask"] == 0x00FF, r
+    # 7d：v1 老档迁移 → 分动作计数清零、只留 FIRST 贴纸
+    r = apply_save(pack_save(1))
+    assert r["ver"] == 1 and r["costume"] == 0 and r["feed"] == 0 and r["mask"] == 1, r
+
+    print("[PASS] pet 逻辑冒烟验证 7/7 场景全过（含 v3 换装存档迁移）")
 
 
 if __name__ == "__main__":

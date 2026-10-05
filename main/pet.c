@@ -33,6 +33,9 @@
 #include "pet_logic.h"
 #include "fishing_audio.h"
 #include "../assets/sprites/pet_sprites.h"
+#include "../assets/sprites/pet_room.h"
+#include "../assets/sprites/pet_costumes.h"
+#include "../assets/sprites/pet_game_sprites.h"
 
 /* ===================== 中文字体（与钓鱼共用同一子集字库） ===================== */
 LV_FONT_DECLARE(fishing_cjk_16);
@@ -72,7 +75,20 @@ static lv_color_t gc(int i) {
 }
 
 /* ===================== 场景模式 ===================== */
-enum { SCR_HOME = 0, SCR_MENU, SCR_PASSPORT, SCR_GAME };
+enum { SCR_HOME = 0, SCR_MENU, SCR_PASSPORT, SCR_GAME, SCR_DRESS };
+
+/* ===================== 换装（v3） ===================== */
+static const lv_image_dsc_t *const COSTUME_IMG[PET_COSTUME_MAX + 1] = {
+    NULL, &costume_hat, &costume_crown, &costume_glasses, &costume_scarf, &costume_flower,
+};
+static const char *const COSTUME_NAMES[PET_COSTUME_MAX + 1] = {
+    "不穿", "草帽", "皇冠", "眼镜", "围巾", "花环",
+};
+
+/* 颜色配对用的四色蛋（顺序与 COLORS_RGB / gc(i) 严格一致） */
+static const lv_image_dsc_t *const EGG_IMG[4] = {
+    &spr_egg_red, &spr_egg_blue, &spr_egg_yellow, &spr_egg_green,
+};
 
 /* ===================== NVS ===================== */
 #define NVS_NS  "petgame"
@@ -156,7 +172,9 @@ static bool set_text_cached(lv_obj_t *lbl, const char *txt) {
 
 /* ===================== 全局 UI 对象 ===================== */
 static lv_obj_t *g_home   = NULL;   /* 照顾主屏容器 */
+static lv_obj_t *g_home_bg = NULL;  /* 房间内景背景图（铺底） */
 static lv_obj_t *g_layer  = NULL;   /* 菜单/护照/游戏内容容器 */
+static lv_obj_t *g_layer_bg = NULL; /* 游戏层复用同一房间背景 */
 
 /* 主屏 HUD / 兔子 / 状态条 */
 static lv_obj_t *g_lbl_level = NULL;
@@ -166,6 +184,7 @@ static lv_obj_t *g_batt_body = NULL;
 static lv_obj_t *g_batt_fill = NULL;
 static lv_obj_t *g_batt_nub  = NULL;
 static lv_obj_t *g_rabbit    = NULL;
+static lv_obj_t *g_rab_cos   = NULL;   /* 主屏兔子身上当前装扮叠层 */
 static lv_obj_t *g_lbl_zzz   = NULL;
 static lv_obj_t *g_lbl_fb    = NULL;   /* 动作反馈文字 */
 static lv_obj_t *g_fb_cap    = NULL;   /* 动作反馈白底胶囊（避免与状态条文字重合） */
@@ -175,9 +194,16 @@ static lv_obj_t *g_home_cap  = NULL;
 static lv_obj_t *g_home_hint = NULL;
 
 /* 菜单（小游戏列表） */
-static lv_obj_t *g_menu_lbl[6] = {0};
+static lv_obj_t *g_menu_lbl[7] = {0};
 static lv_obj_t *g_menu_cap  = NULL;
 static lv_obj_t *g_menu_title = NULL;
+
+/* 换装界面 */
+static lv_obj_t *g_dress_rab  = NULL;   /* 2x 大兔子（试衣镜） */
+static lv_obj_t *g_dress_cos  = NULL;   /* 装扮预览叠层（同位置同缩放） */
+static lv_obj_t *g_dress_cap  = NULL;
+static lv_obj_t *g_dress_lbl[6] = {0};
+static lv_obj_t *g_dress_msg  = NULL;
 
 /* 护照（贴纸墙） */
 static lv_obj_t *g_pass_title = NULL;
@@ -189,12 +215,16 @@ static lv_obj_t *g_pass_icon[12] = {0};
 static lv_obj_t *g_g_title = NULL;
 static lv_obj_t *g_g_msg   = NULL;
 static lv_obj_t *g_g_obj[8] = {0};
+static lv_obj_t *g_g_egg[4] = {0};   /* 颜色配对：0..2 答案蛋，3 题目蛋 */
+static lv_obj_t *g_g_icon[4] = {0};  /* 记忆翻牌：卡面小图标 */
+static lv_obj_t *g_g_mark  = NULL;   /* 躲猫猫：红色选择箭头 */
 
 /* ===================== 运行状态 ===================== */
 static int  g_scr = SCR_HOME;
 static int  g_rebuild = 0;     /* 需要重建 g_layer 或切换可见性 */
 static int  g_home_sel = 0;
 static int  g_menu_sel = 0;
+static int  g_dress_sel = 0;
 static int  g_batt_soc = -1;
 
 /* 兔子动画 / 动作帧 */
@@ -219,7 +249,7 @@ static int s_lvl = -1, s_mood = -99, s_batt = -2;
 static int s_bar[4] = {-1,-1,-1,-1}, s_sel = -1, s_sleep = false;
 
 static const char *HOME_ITEMS[6] = { "喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照" };
-static const char *MENU_ITEMS[6] = { "接胡萝卜", "颜色配对", "记忆翻牌", "躲猫猫", "节奏蹦蹦", "返回" };
+static const char *MENU_ITEMS[7] = { "接胡萝卜", "颜色配对", "记忆翻牌", "躲猫猫", "节奏蹦蹦", "换装", "返回" };
 
 /* ===================== 简单随机数（无 stdlib rand 依赖） ===================== */
 static uint32_t g_rng = 0x12345678u;
@@ -256,6 +286,21 @@ typedef struct {
 } game_t;
 static game_t g_g;
 
+/* ===================== 换装叠层 ===================== */
+/* 把当前装扮叠到兔子图上（同尺寸画布，直接同位置覆盖即可对齐头部）。
+   0 = 不穿 → 隐藏叠层。主屏与换装页共用。 */
+static void costume_overlay_set(lv_obj_t *img, int id, bool scaled2x)
+{
+    if (!img) return;
+    if (id > 0 && id <= PET_COSTUME_MAX) {
+        lv_img_set_src(img, COSTUME_IMG[id]);
+        lv_obj_clear_flag(img, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(img, LV_OBJ_FLAG_HIDDEN);
+    }
+    (void)scaled2x;
+}
+
 /* ===================== 主屏构建 ===================== */
 static void build_home(void) {
     lv_obj_t *scr = lv_screen_active();
@@ -269,17 +314,11 @@ static void build_home(void) {
     lv_obj_set_style_pad_all(g_home, 0, 0);
     lv_obj_clear_flag(g_home, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 草地装饰条 */
-    lv_obj_t *grass = lv_obj_create(g_home);
-    lv_obj_set_size(grass, SCR_W, 26);
-    lv_obj_set_pos(grass, 0, SCR_H - 26);
-    lv_obj_set_style_bg_color(grass, GRASS, 0);
-    lv_obj_set_style_bg_opa(grass, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(grass, 0, 0);
-    lv_obj_set_style_radius(grass, 0, 0);
-    lv_obj_set_style_pad_all(grass, 0, 0);
-    lv_obj_clear_flag(grass, LV_OBJ_FLAG_SCROLLABLE);
-    (void)grass;
+    /* 房间内景背景：墙纸 + 窗户 + 相框 + 落地灯 + 书桌 + 木椅 + 木地板（像素风），
+       替换原 CREAM 纯色底 + 草地条。先铺底，后续 HUD/兔子/状态条都叠在其上。 */
+    g_home_bg = lv_img_create(g_home);
+    lv_img_set_src(g_home_bg, &pet_room);
+    lv_obj_set_pos(g_home_bg, 0, 0);
 
     /* HUD：等级 · 心情 · 电池 */
     g_lbl_level = make_label(g_home, "等级 1", 14, 4, BROWN);
@@ -320,6 +359,11 @@ static void build_home(void) {
     lv_img_set_src(g_rabbit, &rabbit_front);
     lv_obj_set_pos(g_rabbit, g_rab_x, 26);
 
+    /* 装扮叠层（跟兔子同位置；refresh_home 每帧同步坐标） */
+    g_rab_cos = lv_img_create(g_home);
+    costume_overlay_set(g_rab_cos, pet_get_costume(), false);
+    lv_obj_set_pos(g_rab_cos, g_rab_x, 26);
+
     g_lbl_zzz = make_label(g_home, "z Z z", g_rab_x + 58, 30, lv_color_make(150, 150, 170));
     lv_obj_add_flag(g_lbl_zzz, LV_OBJ_FLAG_HIDDEN);
 
@@ -353,13 +397,21 @@ static void build_home(void) {
 }
 
 /* ===================== 菜单（小游戏列表） ===================== */
+/* lv_obj_clean 会把房间背景一起清掉，重建层后要补回来 */
+static void layer_bg_readd(void) {
+    g_layer_bg = lv_img_create(g_layer);
+    lv_img_set_src(g_layer_bg, &pet_room);
+    lv_obj_set_pos(g_layer_bg, 0, 0);
+}
+
 static void build_menu(void) {
     lv_obj_clean(g_layer);
+    layer_bg_readd();
     g_menu_title = make_label(g_layer, "小游戏", 0, 0, RED_TXT);
     lv_obj_align(g_menu_title, LV_ALIGN_TOP_MID, 0, 26);
     g_menu_cap = make_capsule(g_layer, 16, 63, 208, 26);
-    int ly0 = 66, ldy = 30;
-    for (int i = 0; i < 6; ++i) {
+    int ly0 = 66, ldy = 27;
+    for (int i = 0; i < 7; ++i) {
         g_menu_lbl[i] = make_label(g_layer, MENU_ITEMS[i], 30, ly0 + i * ldy, BROWN);
     }
 }
@@ -388,6 +440,7 @@ static const char *sticker_name(int id) {
 
 static void build_passport(void) {
     lv_obj_clean(g_layer);
+    layer_bg_readd();
     g_pass_title = make_label(g_layer, "宠物护照", 0, 0, RED_TXT);
     lv_obj_align(g_pass_title, LV_ALIGN_TOP_MID, 0, 22);
     g_pass_count = make_label(g_layer, "贴纸 0/12", 0, 0, BROWN);
@@ -409,6 +462,7 @@ static void game_finish(void);
 
 static void build_game(void) {
     lv_obj_clean(g_layer);
+    layer_bg_readd();
     g_g_title = make_label(g_layer, "", 0, 0, RED_TXT);
     lv_obj_align(g_g_title, LV_ALIGN_TOP_MID, 0, 18);
     g_g_msg = make_label(g_layer, "", 0, 0, BROWN);
@@ -431,6 +485,7 @@ static void rebuild_current(void) {
         if (g_scr == SCR_MENU) build_menu();
         else if (g_scr == SCR_PASSPORT) build_passport();
         else if (g_scr == SCR_GAME) build_game();
+        else if (g_scr == SCR_DRESS) build_dress();
     }
 }
 
@@ -490,11 +545,12 @@ static void home_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
 /* ===================== 输入：菜单 ===================== */
 static void menu_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     if (ev != BSP_BTN_CLICK) return;
-    if (btn == BSP_BTN_UP)   { g_menu_sel = (g_menu_sel + 5) % 6; fishing_audio_play(SFX_CLICK); }
-    else if (btn == BSP_BTN_DOWN) { g_menu_sel = (g_menu_sel + 1) % 6; fishing_audio_play(SFX_CLICK); }
+    if (btn == BSP_BTN_UP)   { g_menu_sel = (g_menu_sel + 6) % 7; fishing_audio_play(SFX_CLICK); }
+    else if (btn == BSP_BTN_DOWN) { g_menu_sel = (g_menu_sel + 1) % 7; fishing_audio_play(SFX_CLICK); }
     else if (btn == BSP_BTN_OK) {
         if ((int)now_ms() - g_scr_since < 450) return;  /* 切屏防抖 */
-        if (g_menu_sel == 5) { g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms(); }
+        if (g_menu_sel == 6) { g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms(); }
+        else if (g_menu_sel == 5) { g_dress_sel = pet_get_costume(); g_scr = SCR_DRESS; g_rebuild = 1; g_scr_since = (int)now_ms(); }
         else {
             g_g.id = g_menu_sel; g_scr = SCR_GAME; g_rebuild = 1; g_scr_since = (int)now_ms();
         }
@@ -511,8 +567,73 @@ static void passport_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms();
 }
 
+/* ===================== 换装界面 ===================== */
+static void build_dress(void) {
+    lv_obj_clean(g_layer);
+    layer_bg_readd();
+    lv_obj_t *title = make_label(g_layer, "换装", 0, 0, RED_TXT);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
+    g_dress_msg = make_label(g_layer, "上下选 · OK 穿上", 0, 0, BROWN);
+    lv_obj_align(g_dress_msg, LV_ALIGN_TOP_MID, 0, 24);
+
+    /* 试衣镜：2x 大兔子 + 装扮实时预览叠层（NEAREST 硬边保持像素风） */
+    g_dress_rab = lv_img_create(g_layer);
+    lv_img_set_src(g_dress_rab, &rabbit_front);
+    lv_obj_set_pos(g_dress_rab, 48, 36);
+    lv_image_set_scale(g_dress_rab, 512);
+    lv_image_set_antialias(g_dress_rab, false);
+
+    g_dress_cos = lv_img_create(g_layer);
+    lv_obj_set_pos(g_dress_cos, 48, 36);
+    lv_image_set_scale(g_dress_cos, 512);
+    lv_image_set_antialias(g_dress_cos, false);
+    costume_overlay_set(g_dress_cos, g_dress_sel, true);
+
+    /* 装扮列表：0=不穿，1..5=五件装扮 */
+    g_dress_cap = make_capsule(g_layer, 16, 190, 208, 18);
+    for (int i = 0; i < 6; ++i) {
+        g_dress_lbl[i] = make_label(g_layer, COSTUME_NAMES[i], 30, 191 + i * 18, BROWN);
+    }
+
+    lv_obj_t *hint = make_label(g_layer, "长按 OK 返回", 0, 0, GRAYTX);
+    lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -4);
+}
+
+static void dress_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    /* 与小游戏同规则：3 键硬件没有返回键，长按 OK 随时退出 */
+    if (ev == BSP_BTN_LONG && btn == BSP_BTN_OK) {
+        g_scr = SCR_MENU; g_menu_sel = 5; g_rebuild = 1; g_scr_since = (int)now_ms();
+        fishing_audio_play(SFX_CLICK);
+        return;
+    }
+    if (ev != BSP_BTN_CLICK) return;
+    if (btn == BSP_BTN_UP)   { g_dress_sel = (g_dress_sel + 5) % 6; fishing_audio_play(SFX_CLICK); }
+    else if (btn == BSP_BTN_DOWN) { g_dress_sel = (g_dress_sel + 1) % 6; fishing_audio_play(SFX_CLICK); }
+    else if (btn == BSP_BTN_OK) {
+        if ((int)now_ms() - g_scr_since < 450) return;  /* 切屏防抖 */
+        pet_set_costume(g_dress_sel);
+        nvs_save_now();   /* 低频操作，立即落盘 */
+        fishing_audio_play(SFX_CATCH);
+        if (g_dress_msg) set_text_cached(g_dress_msg, (g_dress_sel == 0) ? "脱下来啦" : "真好看！");
+    }
+}
+
+static void refresh_dress(void) {
+    if (g_dress_sel != s_sel) {
+        s_sel = g_dress_sel;
+        lv_obj_set_pos(g_dress_cap, 16, 190 + g_dress_sel * 18);
+        for (int i = 0; i < 6; ++i) {
+            if (!g_dress_lbl[i]) continue;
+            lv_obj_set_style_text_color(g_dress_lbl[i],
+                                        (i == g_dress_sel) ? WHITE : BROWN, 0);
+        }
+        /* 实时预览：选中即试穿（OK 才真正保存） */
+        costume_overlay_set(g_dress_cos, g_dress_sel, true);
+    }
+}
+
 /* 出一道新题：题目色一定出现在三个选项里，正确位置随机。
-   init=true 时创建对象，false 时只改色（新一题复用已有对象）。*/
+   init=true 时创建对象，false 时只换色/换蛋（新一题复用已有对象）。*/
 static void color_new_round(bool init) {
     static const int OX[3] = { 16, 92, 168 };
     g_g.target  = rnd(4);
@@ -521,10 +642,25 @@ static void color_new_round(bool init) {
     for (int c = 0; c < 4; ++c) if (c != g_g.target) other[n++] = c;
     int oi = 0;
     for (int i = 0; i < 3; ++i) {
-        lv_color_t col = (i == g_g.correct) ? gc(g_g.target) : gc(other[oi++]);
-        if (init) g_g_obj[1 + i] = make_panel(g_layer, OX[i], 140, 56, 56, col);
-        else      lv_obj_set_style_bg_color(g_g_obj[1 + i], col, 0);
+        int ci = (i == g_g.correct) ? g_g.target : other[oi++];
+        if (init) {
+            g_g_obj[1 + i] = make_panel(g_layer, OX[i], 140, 56, 56, gc(ci));
+            g_g_egg[i] = lv_img_create(g_layer);
+            lv_img_set_src(g_g_egg[i], EGG_IMG[ci]);
+            lv_obj_set_pos(g_g_egg[i], OX[i] + 4, 144);
+        } else {
+            lv_obj_set_style_bg_color(g_g_obj[1 + i], gc(ci), 0);
+            lv_img_set_src(g_g_egg[i], EGG_IMG[ci]);
+        }
     }
+    /* 题目蛋（上方大蛋） */
+    if (init) {
+        g_g_obj[0] = make_panel(g_layer, 70, 56, 100, 46, gc(g_g.target));
+        g_g_egg[3] = lv_img_create(g_layer);
+        lv_obj_set_pos(g_g_egg[3], 96, 55);
+    }
+    lv_obj_set_style_bg_color(g_g_obj[0], gc(g_g.target), 0);
+    lv_img_set_src(g_g_egg[3], EGG_IMG[g_g.target]);
 }
 
 /* ===================== 小游戏：初始化 ===================== */
@@ -545,36 +681,53 @@ static void game_init(int id) {
     if (g_g_title) set_text_cached(g_g_title, names[id]);
     if (g_g_msg) set_text_cached(g_g_msg, "按 OK 开始 · 长按 OK 返回");
 
-    if (id == 0) { /* 接胡萝卜 */
+    if (id == 0) { /* 接胡萝卜：像素胡萝卜从天上掉 */
         g_g_obj[0] = lv_img_create(g_layer);
         lv_img_set_src(g_g_obj[0], &rabbit_front);
         lv_obj_set_pos(g_g_obj[0], 80, 240);
         g_g.obj_x = 110; g_g.obj_y = 70; g_g.pos = 80;
-        g_g_obj[1] = make_panel(g_layer, g_g.obj_x, g_g.obj_y, 22, 22, gc(2));
-    } else if (id == 1) { /* 颜色配对 */
+        g_g_obj[1] = lv_img_create(g_layer);
+        lv_img_set_src(g_g_obj[1], &spr_carrot);
+        lv_obj_set_pos(g_g_obj[1], g_g.obj_x, g_g.obj_y);
+    } else if (id == 1) { /* 颜色配对：四色彩蛋 */
         color_new_round(true);
-        g_g_obj[0] = make_panel(g_layer, 70, 56, 100, 46, gc(g_g.target));
-    } else if (id == 2) { /* 记忆翻牌 */
+    } else if (id == 2) { /* 记忆翻牌：卡面小图标 + 卡纸样式 */
+        static const lv_image_dsc_t *const ICONS[4] = {
+            &spr_paw, &spr_heart, &spr_star, &spr_flower,
+        };
         int px[4] = { 40, 140, 40, 140 };
         int py[4] = { 70, 70, 150, 150 };
         for (int i = 0; i < 4; ++i) {
-            g_g_obj[i] = make_panel(g_layer, px[i], py[i], 60, 60, lv_color_make(220,220,220));
-            lv_obj_set_style_border_width(g_g_obj[i], 0, 0);
+            g_g_obj[i] = make_panel(g_layer, px[i], py[i], 60, 60, lv_color_make(250, 242, 230));
+            lv_obj_set_style_border_width(g_g_obj[i], 2, 0);
+            lv_obj_set_style_border_color(g_g_obj[i], BROWN, 0);
+            lv_obj_set_style_radius(g_g_obj[i], 8, 0);
+            g_g_icon[i] = lv_img_create(g_layer);
+            lv_img_set_src(g_g_icon[i], ICONS[i]);
+            lv_obj_set_pos(g_g_icon[i], px[i] + 20, py[i] + 20);
         }
         for (int i = 0; i < g_g.seq_len; ++i) g_g.seq[i] = rnd(4);
-    } else if (id == 3) { /* 躲猫猫 */
+    } else if (id == 3) { /* 躲猫猫：像素灌木丛 + 红箭头选择 */
         int bx[3] = { 24, 96, 168 };
         for (int i = 0; i < 3; ++i) {
-            g_g_obj[i] = make_panel(g_layer, bx[i], 120, 60, 84, GRASS);
-            lv_obj_set_style_border_width(g_g_obj[i], 0, 0);
+            g_g_obj[i] = lv_img_create(g_layer);
+            lv_img_set_src(g_g_obj[i], &spr_bush);
+            lv_obj_set_pos(g_g_obj[i], bx[i], 120);
         }
         g_g_obj[3] = lv_img_create(g_layer);
         lv_img_set_src(g_g_obj[3], &rabbit_front);
         lv_obj_add_flag(g_g_obj[3], LV_OBJ_FLAG_HIDDEN);
+        g_g_mark = lv_img_create(g_layer);
+        lv_img_set_src(g_g_mark, &spr_arrow);
+        lv_obj_add_flag(g_g_mark, LV_OBJ_FLAG_HIDDEN);
         g_g.target = rnd(3);
-    } else if (id == 4) { /* 节奏蹦蹦 */
-        g_g_obj[0] = make_panel(g_layer, 90, 140, 60, 60, lv_color_make(255, 230, 200)); /* 命中区 */
-        g_g_obj[1] = make_panel(g_layer, 20, 150, 10, 40, RUI_RED);                       /* 移动标记 */
+    } else if (id == 4) { /* 节奏蹦蹦：小鼓 + 音符 */
+        g_g_obj[0] = lv_img_create(g_layer);
+        lv_img_set_src(g_g_obj[0], &spr_drum);
+        lv_obj_set_pos(g_g_obj[0], 92, 140);
+        g_g_obj[1] = lv_img_create(g_layer);
+        lv_img_set_src(g_g_obj[1], &spr_note);
+        lv_obj_set_pos(g_g_obj[1], 20, 162);
         g_g.pos = 20; g_g.dir = 1;
     }
 }
@@ -622,9 +775,8 @@ static void game_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
                 if (g_g.sel == g_g.correct) { g_g.score++; fishing_audio_play(SFX_CATCH); }
                 else { fishing_audio_play(SFX_MISS); }
                 if (g_g.score >= 5) game_finish();
-                else { /* 下一题：重新出题并重刷颜色 */
+                else { /* 下一题：重新出题并重刷蛋颜色 */
                        color_new_round(false);
-                       lv_obj_set_style_bg_color(g_g_obj[0], gc(g_g.target), 0);
                        g_g.sel = 0; }
             } else if (btn == BSP_BTN_OK && g_g.id == 4) {
                 g_g.beats++;
@@ -739,10 +891,13 @@ static void refresh_home(int now) {
             lv_obj_clear_flag(g_lbl_zzz, LV_OBJ_FLAG_HIDDEN);
             set_text_cached(g_home_hint, "任意键唤醒");
             bsp_display_backlight(15);
+            /* 睡觉要脱帽：躺姿头部位置变了，帽子会悬空穿模 */
+            if (g_rab_cos) lv_obj_add_flag(g_rab_cos, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(g_lbl_zzz, LV_OBJ_FLAG_HIDDEN);
             set_text_cached(g_home_hint, "上下选 · OK 做");
             bsp_display_backlight(80);
+            costume_overlay_set(g_rab_cos, pet_get_costume(), false);
         }
     }
 
@@ -767,6 +922,7 @@ static void refresh_home(int now) {
         lv_img_set_src(g_rabbit, fr);
     }
     lv_obj_set_pos(g_rabbit, g_rab_x, by);
+    lv_obj_set_pos(g_rab_cos, g_rab_x, by);   /* 装扮跟着兔子走 */
     if (st.sleeping) lv_obj_set_pos(g_lbl_zzz, g_rab_x + 58, by + 4);
 
     /* 反馈清理 */
@@ -781,9 +937,9 @@ static void refresh_home(int now) {
 static void refresh_menu(void) {
     if (g_menu_sel != s_sel) {
         s_sel = g_menu_sel;
-        lv_obj_set_pos(g_menu_cap, 16, 63 + g_menu_sel * 30);
+        lv_obj_set_pos(g_menu_cap, 16, 63 + g_menu_sel * 27);
         /* 同主屏：选中项文字翻白，保证红底上可读 */
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i < 7; ++i) {
             if (!g_menu_lbl[i]) continue;
             lv_obj_set_style_text_color(g_menu_lbl[i],
                                         (i == g_menu_sel) ? WHITE : BROWN, 0);
@@ -817,7 +973,7 @@ static void refresh_game(int now, int dt) {
     switch (g_g.id) {
         case 0: { /* 接胡萝卜 */
             g_g.obj_y += 55 * dt / 1000;
-            int pc = g_g.pos + 36, cc = g_g.obj_x + 11;
+            int pc = g_g.pos + 36, cc = g_g.obj_x + 12;   /* 胡萝卜 24 宽取中心 */
             if (g_g.obj_y >= 244) {
                 if (cc >= pc - 28 && cc <= pc + 28) { g_g.score++; fishing_audio_play(SFX_CATCH); }
                 g_g.obj_y = 60; g_g.obj_x = 40 + rnd(140);
@@ -840,16 +996,16 @@ static void refresh_game(int now, int dt) {
             if (!g_g.flash_done) {
                 g_g.timer += dt;
                 for (int i = 0; i < 4; ++i)
-                    lv_obj_set_style_bg_color(g_g_obj[i], lv_color_make(220,220,220), 0);
+                    lv_obj_set_style_bg_color(g_g_obj[i], lv_color_make(250, 242, 230), 0);
                 int cur = g_g.seq[g_g.sub];
                 lv_obj_set_style_bg_color(g_g_obj[cur], gc(cur), 0);
                 if (g_g.timer > 500) { g_g.timer = 0; g_g.sub++;
                     if (g_g.sub >= g_g.seq_len) { g_g.flash_done = 1; g_g.sel = 0;
-                        for (int i=0;i<4;i++) lv_obj_set_style_bg_color(g_g_obj[i], lv_color_make(220,220,220),0);
+                        for (int i=0;i<4;i++) lv_obj_set_style_bg_color(g_g_obj[i], lv_color_make(250, 242, 230),0);
                         if (g_g_msg) set_text_cached(g_g_msg, "照顺序按出来！"); } }
             } else {
                 for (int i = 0; i < 4; ++i)
-                    lv_obj_set_style_border_width(g_g_obj[i], (i == g_g.sel) ? 4 : 0, 0);
+                    lv_obj_set_style_border_width(g_g_obj[i], (i == g_g.sel) ? 4 : 2, 0);
                 char b[40]; snprintf(b, sizeof(b), "第 %d 关 对 %d", g_g.score+1, g_g.input_idx);
                 set_text_cached(g_g_msg, b);
             }
@@ -858,6 +1014,7 @@ static void refresh_game(int now, int dt) {
         case 3: { /* 躲猫猫 */
             if (!g_g.flash_done) {
                 g_g.timer += dt;
+                lv_obj_add_flag(g_g_mark, LV_OBJ_FLAG_HIDDEN);
                 if (g_g.timer < 900) {
                     lv_obj_clear_flag(g_g_obj[3], LV_OBJ_FLAG_HIDDEN);
                     int bx[3] = { 24, 96, 168 };
@@ -868,18 +1025,20 @@ static void refresh_game(int now, int dt) {
                     if (g_g_msg) set_text_cached(g_g_msg, "它藏哪了？");
                 }
             } else {
-                for (int i = 0; i < 3; ++i)
-                    lv_obj_set_style_border_width(g_g_obj[i], (i == g_g.sel) ? 4 : 0, 0);
+                /* 图片对象不吃 border 样式，改用红色箭头指示选中灌木 */
+                int bx[3] = { 24, 96, 168 };
+                lv_obj_set_pos(g_g_mark, bx[g_g.sel] + 23, 106);
+                lv_obj_clear_flag(g_g_mark, LV_OBJ_FLAG_HIDDEN);
                 char b[40]; snprintf(b, sizeof(b), "对 %d/5", g_g.score);
                 set_text_cached(g_g_msg, b);
             }
             break;
         }
-        case 4: { /* 节奏蹦蹦：标记自动左右移动 */
+        case 4: { /* 节奏蹦蹦：音符左右滑向小鼓 */
             g_g.pos += g_g.dir * 130 * dt / 1000;
             if (g_g.pos <= 20) { g_g.pos = 20; g_g.dir = 1; }
             if (g_g.pos >= 210) { g_g.pos = 210; g_g.dir = -1; }
-            lv_obj_set_pos(g_g_obj[1], g_g.pos, 150);
+            lv_obj_set_pos(g_g_obj[1], g_g.pos, 162);
             char b[40]; snprintf(b, sizeof(b), "拍 %d/8 中 %d", g_g.beats, g_g.score);
             set_text_cached(g_g_msg, b);
             break;
@@ -910,6 +1069,9 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
             break;
         case SCR_GAME:
             game_input(btn, ev);
+            break;
+        case SCR_DRESS:
+            dress_input(btn, ev);
             break;
     }
 }
@@ -965,6 +1127,7 @@ static void pet_task(void *arg) {
                 else if (g_scr == SCR_MENU) refresh_menu();
                 else if (g_scr == SCR_PASSPORT) refresh_passport();
                 else if (g_scr == SCR_GAME) refresh_game(now, dt);
+                else if (g_scr == SCR_DRESS) refresh_dress();
             }
             bsp_lvgl_unlock();
         }
@@ -988,12 +1151,17 @@ void pet_app_start(void) {
         g_layer = lv_obj_create(scr);
         lv_obj_set_size(g_layer, SCR_W, SCR_H);
         lv_obj_set_pos(g_layer, 0, 0);
-        lv_obj_set_style_bg_color(g_layer, CREAM, 0);
-        lv_obj_set_style_bg_opa(g_layer, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_opa(g_layer, LV_OPA_TRANSP, 0);  /* 背景交给房间图 */
         lv_obj_set_style_border_width(g_layer, 0, 0);
         lv_obj_set_style_radius(g_layer, 0, 0);
         lv_obj_set_style_pad_all(g_layer, 0, 0);
         lv_obj_clear_flag(g_layer, LV_OBJ_FLAG_SCROLLABLE);
+
+        /* 小游戏页复用同一房间背景（躲猫猫/节奏等都有“在家里玩”的氛围） */
+        g_layer_bg = lv_img_create(g_layer);
+        lv_img_set_src(g_layer_bg, &pet_room);
+        lv_obj_set_pos(g_layer_bg, 0, 0);
+
         lv_obj_add_flag(g_layer, LV_OBJ_FLAG_HIDDEN);
 
         g_scr = SCR_HOME;

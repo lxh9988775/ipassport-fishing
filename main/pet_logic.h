@@ -26,7 +26,7 @@ extern "C" {
 #endif
 
 /* ===================== 版本 / 存档 ===================== */
-#define PET_SCHEMA_VER   2
+#define PET_SCHEMA_VER   3
 #define PET_SAVE_MAGIC   0x50455431u   /* 'PET1' */
 
 /* ===================== 事件 ===================== */
@@ -93,6 +93,11 @@ pet_event_t pet_toggle_sleep(void);  /* 睡觉/唤醒 开关 */
 
 /* ===================== 小游戏奖励（只涨不扣） ===================== */
 void pet_add_fun(int delta);         /* 玩乐 +delta（上限 100） */
+
+/* ===================== 换装（v3 新增） ===================== */
+#define PET_COSTUME_MAX 5            /* 1..5 = 草帽/皇冠/眼镜/围巾/花环，0=不穿 */
+void pet_set_costume(int id);        /* 非法值按 0（不穿）处理 */
+int  pet_get_costume(void);
 
 /* ===================== 查询 ===================== */
 void pet_get_status(pet_status_t *out);
