@@ -205,6 +205,10 @@ static int  g_rab_bob_ms = 0;
 static const lv_image_dsc_t *g_rab_frame = &rabbit_front;
 static int  g_action_until = 0;
 static const lv_image_dsc_t *g_action_frame = &rabbit_front;
+/* 切屏防抖：进入新画面后 450ms 内忽略 OK/返回类 CLICK。一次按键在部分
+   驱动/模拟器上会 PRESS+CLICK 连发，孩子手抖也常连按；刚切屏就误触发
+   会“闪进闪出”，看起来像按键失灵（模拟器实测护照页被瞬间弹回）。 */
+static int  g_scr_since = 0;
 
 /* 反馈文案有效期 */
 static int g_fb_until_ms = 0;
@@ -469,9 +473,10 @@ static void home_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     if (btn == BSP_BTN_UP)   { g_home_sel = (g_home_sel + 5) % 6; fishing_audio_play(SFX_CLICK); }
     else if (btn == BSP_BTN_DOWN) { g_home_sel = (g_home_sel + 1) % 6; fishing_audio_play(SFX_CLICK); }
     else if (btn == BSP_BTN_OK) {
+        if ((int)now_ms() - g_scr_since < 450) return;  /* 切屏防抖 */
         if (g_home_sel < 4)      { do_care(g_home_sel); }
-        else if (g_home_sel == 4){ g_scr = SCR_MENU; g_menu_sel = 0; g_rebuild = 1; }
-        else                     { g_scr = SCR_PASSPORT; g_rebuild = 1; }
+        else if (g_home_sel == 4){ g_scr = SCR_MENU; g_menu_sel = 0; g_rebuild = 1; g_scr_since = (int)now_ms(); }
+        else                     { g_scr = SCR_PASSPORT; g_rebuild = 1; g_scr_since = (int)now_ms(); }
     }
 }
 
@@ -481,17 +486,22 @@ static void menu_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     if (btn == BSP_BTN_UP)   { g_menu_sel = (g_menu_sel + 5) % 6; fishing_audio_play(SFX_CLICK); }
     else if (btn == BSP_BTN_DOWN) { g_menu_sel = (g_menu_sel + 1) % 6; fishing_audio_play(SFX_CLICK); }
     else if (btn == BSP_BTN_OK) {
-        if (g_menu_sel == 5) { g_scr = SCR_HOME; g_rebuild = 1; }
+        if ((int)now_ms() - g_scr_since < 450) return;  /* 切屏防抖 */
+        if (g_menu_sel == 5) { g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms(); }
         else {
-            g_g.id = g_menu_sel; g_scr = SCR_GAME; g_rebuild = 1;
+            g_g.id = g_menu_sel; g_scr = SCR_GAME; g_rebuild = 1; g_scr_since = (int)now_ms();
         }
     }
 }
 
 /* ===================== 输入：护照 ===================== */
 static void passport_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    (void)btn;
     if (ev != BSP_BTN_CLICK) return;
-    g_scr = SCR_HOME; g_rebuild = 1;
+    /* 任意键返回；但刚进入的 450ms 内忽略，防止切屏连击瞬间把护照弹回，
+       小朋友会以为护照页“打不开”。 */
+    if ((int)now_ms() - g_scr_since < 450) return;
+    g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms();
 }
 
 /* 出一道新题：题目色一定出现在三个选项里，正确位置随机。
@@ -567,12 +577,13 @@ static void game_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     /* 长按 OK 随时退出：硬件只有三个键，游戏里没有专门的“返回”，
        不留退路孩子会被困在小游戏里、打不完出不来（违背“零挫败”适龄铁律）。 */
     if (ev == BSP_BTN_LONG && btn == BSP_BTN_OK) {
-        g_scr = SCR_MENU; g_menu_sel = 0; g_rebuild = 1;
+        g_scr = SCR_MENU; g_menu_sel = 0; g_rebuild = 1; g_scr_since = (int)now_ms();
         show_feedback("先玩到这儿，回头再来！");
         fishing_audio_play(SFX_CLICK);
         return;
     }
     if (ev != BSP_BTN_CLICK) return;
+    if (btn == BSP_BTN_OK && (int)now_ms() - g_scr_since < 450) return;  /* 进游戏防抖 */
 
     if (g_g.phase == G_INTRO) {
         if (btn == BSP_BTN_OK) {
