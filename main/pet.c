@@ -167,7 +167,8 @@ static lv_obj_t *g_batt_fill = NULL;
 static lv_obj_t *g_batt_nub  = NULL;
 static lv_obj_t *g_rabbit    = NULL;
 static lv_obj_t *g_lbl_zzz   = NULL;
-static lv_obj_t *g_lbl_fb    = NULL;   /* 动作反馈 */
+static lv_obj_t *g_lbl_fb    = NULL;   /* 动作反馈文字 */
+static lv_obj_t *g_fb_cap    = NULL;   /* 动作反馈白底胶囊（避免与状态条文字重合） */
 static lv_obj_t *g_row_fill[4] = {0};
 static lv_obj_t *g_home_lbl[6] = {0};
 static lv_obj_t *g_home_cap  = NULL;
@@ -322,12 +323,16 @@ static void build_home(void) {
     g_lbl_zzz = make_label(g_home, "z Z z", g_rab_x + 58, 30, lv_color_make(150, 150, 170));
     lv_obj_add_flag(g_lbl_zzz, LV_OBJ_FLAG_HIDDEN);
 
-    g_lbl_fb = make_label(g_home, "", 0, 0, RED_TXT);
-    lv_obj_align(g_lbl_fb, LV_ALIGN_TOP_MID, 0, 104);
+    /* 动作反馈：白底圆角胶囊 + 红字，独立一行（兔子底 98 / 状态条顶 118 之间），
+       出现时绝不与状态条文字重合（审核驳回点），默认隐藏 */
+    g_fb_cap = make_panel(g_home, 16, 100, 208, 18, lv_color_make(255, 250, 242));
+    lv_obj_add_flag(g_fb_cap, LV_OBJ_FLAG_HIDDEN);
+    g_lbl_fb = make_label(g_fb_cap, "", 0, 0, RED_TXT);
+    lv_obj_align(g_lbl_fb, LV_ALIGN_CENTER, 0, 0);
 
-    /* 四条状态条 */
+    /* 四条状态条（118 起，与反馈胶囊 100~118 相接不重叠） */
     static const char *ROW[4] = { "饱食", "干净", "玩乐", "精力" };
-    int bar_x = 40, bar_w = 120, bar_h = 8, row0 = 110, dyy = 14;
+    int bar_x = 40, bar_w = 120, bar_h = 8, row0 = 118, dyy = 14;
     for (int i = 0; i < 4; ++i) {
         int y = row0 + i * dyy;
         make_label(g_home, ROW[i], 8, y, BROWN);
@@ -336,9 +341,9 @@ static void build_home(void) {
         g_row_fill[i] = make_panel(g_home, bar_x, y, bar_w, bar_h, BAR_G);
     }
 
-    /* 照顾列表（6 项） */
-    g_home_cap = make_capsule(g_home, 6, 167, 208, 22);
-    int ly0 = 168, ldy = 25;
+    /* 照顾列表（6 项；胶囊 176 起，行距 21 保证末项不压草地） */
+    g_home_cap = make_capsule(g_home, 6, 176, 208, 22);
+    int ly0 = 177, ldy = 21;
     for (int i = 0; i < 6; ++i) {
         g_home_lbl[i] = make_label(g_home, HOME_ITEMS[i], 18, ly0 + i * ldy, BROWN);
     }
@@ -431,7 +436,9 @@ static void rebuild_current(void) {
 
 /* ===================== 反馈 ===================== */
 static void show_feedback(const char *txt) {
-    set_text_cached(g_lbl_fb, txt);
+    if (set_text_cached(g_lbl_fb, txt) || g_fb_until_ms == 0) {
+        lv_obj_clear_flag(g_fb_cap, LV_OBJ_FLAG_HIDDEN);
+    }
     g_fb_until_ms = (int)now_ms() + 1600;
 }
 
@@ -716,7 +723,7 @@ static void refresh_home(int now) {
 
     if (g_home_sel != s_sel) {
         s_sel = g_home_sel;
-        lv_obj_set_pos(g_home_cap, 6, 167 + g_home_sel * 25);
+        lv_obj_set_pos(g_home_cap, 6, 176 + g_home_sel * 21);
         /* 选中项文字翻白，否则棕色字压在红色胶囊上看不清（模拟器实测发现） */
         for (int i = 0; i < 6; ++i) {
             if (!g_home_lbl[i]) continue;
@@ -766,6 +773,7 @@ static void refresh_home(int now) {
     if (g_fb_until_ms != 0 && now >= g_fb_until_ms) {
         g_fb_until_ms = 0;
         set_text_cached(g_lbl_fb, "");
+        lv_obj_add_flag(g_fb_cap, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
