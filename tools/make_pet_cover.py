@@ -41,9 +41,11 @@ def main() -> None:
     bg = src.getpixel((8, 8))
 
     # Erase the generator watermark (bottom-right flat background area).
+    # Use the LOCAL background color there, not the global one - the source
+    # has a subtle gradient and a global fill leaves a visible patch.
     clean = src.copy()
     d = ImageDraw.Draw(clean)
-    d.rectangle((812, 944, src.width, src.height), fill=bg)
+    d.rectangle((812, 944, src.width, src.height), fill=src.getpixel((790, 960)))
 
     canvas = Image.new("RGB", (W, H), bg)
     draw = ImageDraw.Draw(canvas)
@@ -58,11 +60,13 @@ def main() -> None:
         band_draw.rectangle((0, i, W, i + 1), fill=alpha_color)
     canvas.paste(band, (0, 0))
 
-    # Hero rabbit, slightly above center.
-    rabbit_w = 880
+    # Hero rabbit, large and centered (bottom third stays clean: the
+    # community card overlay covers the lower part of the cover, and any
+    # text there gets occluded -> review rejection. Keep it text-free).
+    rabbit_w = 940
     rabbit = clean.resize((rabbit_w, rabbit_w), Image.LANCZOS)
     rabbit_x = (W - rabbit_w) // 2
-    rabbit_y = 400
+    rabbit_y = 430
     canvas.paste(rabbit, (rabbit_x, rabbit_y))
 
     ink = (58, 58, 72)
@@ -80,23 +84,6 @@ def main() -> None:
     sw = draw.textlength(sub, font=f_sub)
     draw.text(((W - sw) / 2, 296), sub, font=f_sub, fill=(150, 120, 110))
 
-    # Status bars motif (echoes the in-game UI).
-    labels = ["饱食", "干净", "玩乐", "精力"]
-    f_label = load_font(44, bold=False)
-    bar_y = rabbit_y + rabbit_w + 84
-    bar_x0, bar_w, bar_gap = 150, 200, 25
-    values = [0.92, 0.78, 0.85, 0.70]
-    green_full = (126, 196, 96)
-    green_dim = (214, 226, 200)
-    for i, (label, v) in enumerate(zip(labels, values)):
-        x = bar_x0 + i * (bar_w + bar_gap)
-        # label above bar
-        draw.text((x + 4, bar_y - 56), label, font=f_label, fill=(150, 120, 110))
-        draw.rounded_rectangle((x, bar_y, x + bar_w, bar_y + 30), radius=15, fill=green_dim)
-        fill_w = int(bar_w * v)
-        if fill_w > 0:
-            draw.rounded_rectangle((x, bar_y, x + fill_w, bar_y + 30), radius=15, fill=green_full)
-
     # A few pink hearts.
     heart = Image.new("RGBA", (80, 74), (0, 0, 0, 0))
     hd = ImageDraw.Draw(heart)
@@ -104,7 +91,7 @@ def main() -> None:
     hd.ellipse((0, 8, 38, 46), fill=pink)
     hd.ellipse((42, 8, 80, 46), fill=pink)
     hd.polygon([(4, 30), (76, 30), (40, 74)], fill=pink)
-    for (hx, hy, s) in [(96, 300, 1.0), (1010, 360, 0.8), (130, 1150, 0.7), (1000, 1120, 0.9)]:
+    for (hx, hy, s) in [(96, 300, 1.0), (1010, 360, 0.8), (90, 1330, 0.7), (1000, 1310, 0.9)]:
         hs = heart.resize((int(80 * s), int(74 * s)), Image.LANCZOS)
         canvas.paste(hs, (hx, hy), hs)
 
