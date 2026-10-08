@@ -56,3 +56,11 @@
 - Updated software-design and project README references for the new documentation structure.
 - Added the documentation catalog and task-triggered routing based on the earlier repository model.
 - Added bilingual contribution, code-of-conduct, security, and support documents tailored to this ESP-IDF and fork workflow.
+
+## v2.1.0-pet - 2026-10-08
+
+- Restored the pet rabbit to its original gray plush design across all poses and animations (6 poses, 8 animation frames), replacing the interim art.
+- Added a dress-up game: a new "Dress-up" menu entry opens a try-on mirror with a 2× live preview; 5 costumes (straw hat, crown, glasses, scarf, flower crown) can be worn and are saved to NVS immediately.
+- Reworked the five mini-games with hand-drawn pixel-art sprites (carrot, four colored eggs, card-face icons, bush with selection arrow, drum and music note), matching the classic pixel-pet look.
+- New home-screen background: a pixel-art room interior with wallpaper, window, picture frame, floor lamp, desk, wooden chair, floorboards, and rug.
+- Save data schema bumped to v3 (added `costume` field); v1/v2 saves migrate automatically with no data loss.

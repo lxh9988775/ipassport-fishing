@@ -53,3 +53,11 @@
 - 同步更新索引：`docs/software-design/README.md`、`README.en_US.md` / `README.zh_CN.md` 的 `docs/` 目录说明。
 - 参考 cindy 仓库文档组织完善索引：新增 `docs/README.md` 根总索引；AGENTS.md 规则索引按触发场景改写（附触发条件）；`docs/contribution/` 与 `docs/development/` 的 README 补充收录标准。
 - 引入社区治理文档（参照 cindy 改写，放仓库根目录）：新增 `CONTRIBUTING.md` / `.zh_CN.md`（贡献指南，针对 ESP-IDF/AI agent/fork 场景改写）、`CODE_OF_CONDUCT.md` / `.zh_CN.md`（贡献者公约）、`SECURITY.md` / `.zh_CN.md`（安全报告流程）、`SUPPORT.md` / `.zh_CN.md`（支持渠道）；AGENTS.md 与 docs/README.md 同步引用。
+
+## v2.1.0-pet - 2026-10-08
+
+- 宠物兔形象恢复为最早设定的灰毛绒造型，覆盖全部姿势与动画（6 姿势、8 帧动画），替换临时美术。
+- 新增换装游戏：主菜单新增「换装」入口，进入试衣镜以 2 倍实时预览；5 件装扮（草帽、皇冠、眼镜、围巾、花环）可穿戴并即时存入 NVS。
+- 5 款小游戏改用纯手绘像素精灵（胡萝卜、四色彩蛋、卡面图标、灌木+选择箭头、小鼓+音符），贴合经典像素宠物风格。
+- 主屏背景改为像素风房间内景：墙纸、窗、相框、落地灯、书桌、木椅、木地板与地毯。
+- 存档 schema 升至 v3（新增 `costume` 字段）；v1/v2 存档自动迁移，不丢数据。
