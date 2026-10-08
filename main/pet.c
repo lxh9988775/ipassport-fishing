@@ -158,7 +158,8 @@ static lv_obj_t *make_capsule(lv_obj_t *parent, int x, int y, int w, int h) {
     lv_obj_set_style_radius(c, h / 2, 0);
     lv_obj_set_style_pad_all(c, 0, 0);
     lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_move_to_index(c, 0);   /* 沉底，别盖住文字 */
+    /* 不做 move_to_index 沉底：三个调用点都是"先建胶囊、后建文字"，创建顺序
+       已保证文字在胶囊之上；若沉到 index 0 会掉到主屏房间背景图下面被盖住。 */
     return c;
 }
 
@@ -172,9 +173,8 @@ static bool set_text_cached(lv_obj_t *lbl, const char *txt) {
 
 /* ===================== 全局 UI 对象 ===================== */
 static lv_obj_t *g_home   = NULL;   /* 照顾主屏容器 */
-static lv_obj_t *g_home_bg = NULL;  /* 房间内景背景图（铺底） */
-static lv_obj_t *g_layer  = NULL;   /* 菜单/护照/游戏内容容器 */
-static lv_obj_t *g_layer_bg = NULL; /* 游戏层复用同一房间背景 */
+static lv_obj_t *g_home_bg = NULL;  /* 房间内景背景图（铺底，只露上半段墙区） */
+static lv_obj_t *g_layer  = NULL;   /* 菜单/护照/游戏内容容器（纯色底） */
 
 /* 主屏 HUD / 兔子 / 状态条 */
 static lv_obj_t *g_lbl_level = NULL;
@@ -314,11 +314,16 @@ static void build_home(void) {
     lv_obj_set_style_pad_all(g_home, 0, 0);
     lv_obj_clear_flag(g_home, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 房间内景背景：墙纸 + 窗户 + 相框 + 落地灯 + 书桌 + 木椅 + 木地板（像素风），
-       替换原 CREAM 纯色底 + 草地条。先铺底，后续 HUD/兔子/状态条都叠在其上。 */
+    /* 房间内景背景：天花板带 + 墙纸 + 窗 + 相框 + 落地灯 + 木椅 + 书桌 + 地板条。
+       只铺底；下面先垫两块奶油文字面板，保证文字绝不与房间花纹重合（审核驳回点）。 */
     g_home_bg = lv_img_create(g_home);
     lv_img_set_src(g_home_bg, &pet_room);
     lv_obj_set_pos(g_home_bg, 0, 0);
+
+    /* 文字衬底面板（在所有文字/胶囊之前创建，沉在文字下面）：
+       状态条区 y116-178 / 照顾列表区 y176-308；房间家具只安排在面板之外的缝隙 */
+    make_panel(g_home, 4, 116, 164, 62, CREAM);
+    make_panel(g_home, 8, 176, 224, 132, CREAM);
 
     /* HUD：等级 · 心情 · 电池 */
     g_lbl_level = make_label(g_home, "等级 1", 14, 4, BROWN);
@@ -385,28 +390,22 @@ static void build_home(void) {
         g_row_fill[i] = make_panel(g_home, bar_x, y, bar_w, bar_h, BAR_G);
     }
 
-    /* 照顾列表（6 项；胶囊 176 起，行距 21 保证末项不压草地） */
-    g_home_cap = make_capsule(g_home, 6, 176, 208, 22);
+    /* 照顾列表（6 项；选中胶囊随 refresh_home 移动，x10 营在列表面板内） */
+    g_home_cap = make_capsule(g_home, 10, 176, 208, 22);
     int ly0 = 177, ldy = 21;
     for (int i = 0; i < 6; ++i) {
         g_home_lbl[i] = make_label(g_home, HOME_ITEMS[i], 18, ly0 + i * ldy, BROWN);
     }
 
     g_home_hint = make_label(g_home, "上下选 · OK 做", 0, 0, GRAYTX);
-    lv_obj_align(g_home_hint, LV_ALIGN_BOTTOM_MID, 0, -4);
+    lv_obj_align(g_home_hint, LV_ALIGN_BOTTOM_MID, 0, -14);
 }
 
 /* ===================== 菜单（小游戏列表） ===================== */
-/* lv_obj_clean 会把房间背景一起清掉，重建层后要补回来 */
-static void layer_bg_readd(void) {
-    g_layer_bg = lv_img_create(g_layer);
-    lv_img_set_src(g_layer_bg, &pet_room);
-    lv_obj_set_pos(g_layer_bg, 0, 0);
-}
-
+/* 菜单/护照/游戏/换装均为文字密集页：g_layer 用纯奶油底，不铺房间图，
+   文字绝不与背景花纹重合（审核驳回点）；房间内景只在主屏露出。 */
 static void build_menu(void) {
     lv_obj_clean(g_layer);
-    layer_bg_readd();
     g_menu_title = make_label(g_layer, "小游戏", 0, 0, RED_TXT);
     lv_obj_align(g_menu_title, LV_ALIGN_TOP_MID, 0, 26);
     g_menu_cap = make_capsule(g_layer, 16, 63, 208, 26);
@@ -440,7 +439,6 @@ static const char *sticker_name(int id) {
 
 static void build_passport(void) {
     lv_obj_clean(g_layer);
-    layer_bg_readd();
     g_pass_title = make_label(g_layer, "宠物护照", 0, 0, RED_TXT);
     lv_obj_align(g_pass_title, LV_ALIGN_TOP_MID, 0, 22);
     g_pass_count = make_label(g_layer, "贴纸 0/12", 0, 0, BROWN);
@@ -463,7 +461,6 @@ static void build_dress(void);   /* 定义在 passport_input 之后，rebuild_cu
 
 static void build_game(void) {
     lv_obj_clean(g_layer);
-    layer_bg_readd();
     g_g_title = make_label(g_layer, "", 0, 0, RED_TXT);
     lv_obj_align(g_g_title, LV_ALIGN_TOP_MID, 0, 18);
     g_g_msg = make_label(g_layer, "", 0, 0, BROWN);
@@ -571,7 +568,6 @@ static void passport_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
 /* ===================== 换装界面 ===================== */
 static void build_dress(void) {
     lv_obj_clean(g_layer);
-    layer_bg_readd();
     lv_obj_t *title = make_label(g_layer, "换装", 0, 0, RED_TXT);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
     g_dress_msg = make_label(g_layer, "上下选 · OK 穿上", 0, 0, BROWN);
@@ -876,7 +872,7 @@ static void refresh_home(int now) {
 
     if (g_home_sel != s_sel) {
         s_sel = g_home_sel;
-        lv_obj_set_pos(g_home_cap, 6, 176 + g_home_sel * 21);
+        lv_obj_set_pos(g_home_cap, 10, 176 + g_home_sel * 21);
         /* 选中项文字翻白，否则棕色字压在红色胶囊上看不清（模拟器实测发现） */
         for (int i = 0; i < 6; ++i) {
             if (!g_home_lbl[i]) continue;
@@ -1152,16 +1148,12 @@ void pet_app_start(void) {
         g_layer = lv_obj_create(scr);
         lv_obj_set_size(g_layer, SCR_W, SCR_H);
         lv_obj_set_pos(g_layer, 0, 0);
-        lv_obj_set_style_bg_opa(g_layer, LV_OPA_TRANSP, 0);  /* 背景交给房间图 */
+        lv_obj_set_style_bg_color(g_layer, CREAM, 0);
+        lv_obj_set_style_bg_opa(g_layer, LV_OPA_COVER, 0);  /* 纯色底：文字页不铺房间图 */
         lv_obj_set_style_border_width(g_layer, 0, 0);
         lv_obj_set_style_radius(g_layer, 0, 0);
         lv_obj_set_style_pad_all(g_layer, 0, 0);
         lv_obj_clear_flag(g_layer, LV_OBJ_FLAG_SCROLLABLE);
-
-        /* 小游戏页复用同一房间背景（躲猫猫/节奏等都有“在家里玩”的氛围） */
-        g_layer_bg = lv_img_create(g_layer);
-        lv_img_set_src(g_layer_bg, &pet_room);
-        lv_obj_set_pos(g_layer_bg, 0, 0);
 
         lv_obj_add_flag(g_layer, LV_OBJ_FLAG_HIDDEN);
 

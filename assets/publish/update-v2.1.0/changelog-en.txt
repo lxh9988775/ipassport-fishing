@@ -1,0 +1,8 @@
+What's new in this update:
+
+- Fresh new rabbit: restored to the original fluffy gray design — every animation (strolling, eating, bathing, sleeping) now uses the new look.
+- New "Dress-up" play: a new menu entry opens a try-on mirror with a large live preview. 5 outfits (straw hat, crown, glasses, scarf, flower crown) — wear one and it saves instantly, surviving power-off.
+- All 5 mini-games visually remade: Carrot Catch, Egg Hunt, Memory Match, Jungle Adventure and Rhythm Drums now use hand-drawn pixel-art props and icons for a polished, unified look.
+- A cozy room to live in: the home screen background is now a warm room interior with a window, framed picture, floor lamp, desk, chair and rug — your rabbit finally has a real home.
+- Clearer text everywhere: every line of text now sits on a clean backdrop, and the room furniture was rearranged so nothing blocks the words.
+- Save data upgraded: fully compatible with old saves; feeding progress and stickers are all kept after the update.

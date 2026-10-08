@@ -64,3 +64,9 @@
 - Reworked the five mini-games with hand-drawn pixel-art sprites (carrot, four colored eggs, card-face icons, bush with selection arrow, drum and music note), matching the classic pixel-pet look.
 - New home-screen background: a pixel-art room interior with wallpaper, window, picture frame, floor lamp, desk, wooden chair, floorboards, and rug.
 - Save data schema bumped to v3 (added `costume` field); v1/v2 saves migrate automatically with no data loss.
+
+## v2.1.1-pet - 2026-10-08
+
+- Fixed the community-review rejection "text overlapping the background, unreadable": the home status-bar and care-list zones now sit on cream text panels; room furniture (window, picture frame, floor lamp, wooden chair, desk, rug) was rearranged into the visible areas outside the panels, and a ceiling band now carries the HUD text.
+- Text-dense pages (menu, passport, mini-games, dress-up) returned to a solid background instead of the room image.
+- Fixed the home selection highlight capsule being sunk beneath the room background image and becoming invisible (`make_capsule` no longer moves itself to child index 0).

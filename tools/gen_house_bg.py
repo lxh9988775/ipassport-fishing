@@ -28,6 +28,7 @@ SRC_W, SRC_H = 120, 160
 DST_W, DST_H = 240, 320
 
 # 调色板（暖色系、像素风、低饱和，保证灰兔在墙上清晰）
+CEILING = (247, 239, 228)  # 顶部天花板色带（主屏 HUD 文字压这里，必须干净浅色）
 WALL_A = (240, 226, 212)   # 墙纸主色
 WALL_B = (229, 213, 196)   # 墙纸竖条纹（交替）
 BASEBOARD = (150, 118, 88) # 踢脚线（木色）
@@ -71,18 +72,27 @@ def ellipse(img, cx, cy, rx, ry, color):
 
 
 def draw_room():
+    """布局按屏幕坐标 /2 设计（src 120x160 -> 屏幕 240x320）。
+
+    「上景下台」：屏幕 y0-22 天花板色带（HUD 文字）、y24-292 墙区（兔子+家具）、
+    y150-172 可见地板条；y172 以下会被主屏文字面板盖住，但仍铺满保持画面完整。
+    所有文字落点（HUD/状态条/列表）要么在纯色带上、要么被 pet.c 的奶油衬底
+    面板盖住 —— 家具只安排在衬底之外的可见缝隙里，绝不与文字重合（审核驳回点）。
+    """
     img = np.zeros((SRC_H, SRC_W, 3), dtype=np.uint8)
-    # 墙纸（竖条纹）
+    # 天花板色带（屏幕 y0-22）
+    rect(img, 0, 0, SRC_W - 1, 11, CEILING)
+    # 墙纸（竖条纹，屏幕 y24-146）
     for x in range(SRC_W):
         c = WALL_A if (x // 8) % 2 == 0 else WALL_B
-        img[0:128, x] = c
-    # 踢脚线（墙与地板交界）
-    rect(img, 0, 120, SRC_W - 1, 127, BASEBOARD)
-    # 地板（木纹横条 + 竖缝）
-    for y in range(128, SRC_H):
-        img[y, :] = FLOOR_A if ((y - 128) // 9) % 2 == 0 else FLOOR_B
+        img[12:73, x] = c
+    # 踢脚线（墙与地板交界，屏幕 y146-150）
+    rect(img, 0, 73, SRC_W - 1, 74, BASEBOARD)
+    # 地板（屏幕 y150 起全是地板；可见的是 y150-172 一条，以下被文字面板盖住）
+    for y in range(75, SRC_H):
+        img[y, :] = FLOOR_A if ((y - 75) // 5) % 2 == 0 else FLOOR_B
     for x in range(0, SRC_W, 22):
-        rect(img, x, 128, x, SRC_H - 1, (150, 114, 74))
+        rect(img, x, 75, x, SRC_H - 1, (150, 114, 74))
 
     # ---- 窗户（右上）----
     wx0, wy0, wx1, wy1 = 74, 16, 110, 54
@@ -106,33 +116,31 @@ def draw_room():
     rect(img, px0 + 19, py0 + 16, px0 + 22, py0 + 16, HEART)
     rect(img, px0 + 20, py0 + 17, px0 + 21, py0 + 18, HEART)
 
-    # ---- 落地灯（左侧）----
-    rect(img, 15, 72, 18, 128, LAMP_POLE)             # 灯杆
-    ellipse(img, 16, 130, 8, 3, LAMP_POLE)            # 底座
-    # 灯罩（梯形：上窄下宽）
-    for i, y in enumerate(range(54, 74)):
-        half = 4 + i // 2
-        rect(img, 16 - half, y, 16 + half, y, LAMP_SHADE)
-    ellipse(img, 16, 76, 9, 4, LAMP_GLOW)             # 灯下光晕
+    # ---- 落地灯（最左，灯罩在墙区，灯杆下段沉到主屏状态面板后面）----
+    for i, y in enumerate(range(15, 35)):
+        half = 3 + i // 5
+        rect(img, 6 - half, y, 6 + half, y, LAMP_SHADE)
+    rect(img, 5, 35, 7, 72, LAMP_POLE)
+    ellipse(img, 6, 73, 4, 2, LAMP_POLE)
 
-    # ---- 书桌（中右，靠下）----
-    rect(img, 58, 100, 114, 108, DESK)                 # 桌面
-    rect(img, 58, 108, 114, 110, DESK_DK)              # 桌面暗边
-    rect(img, 62, 110, 67, 140, DESK_DK)               # 左腿
-    rect(img, 108, 110, 113, 140, DESK_DK)             # 右腿
-    rect(img, 70, 104, 102, 106, (200, 160, 110))      # 桌上一本书
+    # ---- 地毯（右侧可见地板上，先画，书桌压在其上）----
+    ellipse(img, 100, 79, 12, 3, RUG)
+    ellipse(img, 100, 79, 10, 2, RUG_BD)
 
-    # ---- 木椅（左中）----
-    rect(img, 28, 112, 54, 118, CHAIR)                 # 座面
-    rect(img, 28, 118, 54, 120, CHAIR_DK)
-    rect(img, 28, 96, 33, 118, CHAIR)                  # 靠背
-    rect(img, 28, 96, 33, 98, CHAIR_DK)
-    rect(img, 30, 120, 33, 140, CHAIR_DK)              # 前腿
-    rect(img, 49, 120, 52, 140, CHAIR_DK)              # 后腿
+    # ---- 书桌（右，窗下；桌腿踩进可见地板条）----
+    rect(img, 89, 57, 105, 59, (200, 160, 110))       # 桌上一本书
+    rect(img, 85, 59, 118, 65, DESK)                  # 桌面
+    rect(img, 85, 65, 118, 67, DESK_DK)               # 桌面暗边
+    rect(img, 89, 67, 93, 84, DESK_DK)                # 左腿
+    rect(img, 110, 67, 114, 84, DESK_DK)              # 右腿
 
-    # ---- 地毯（地板中部椭圆）----
-    ellipse(img, 60, 150, 34, 9, RUG)
-    ellipse(img, 60, 150, 30, 7, RUG_BD)
+    # ---- 木椅（墙中，相框与窗户之间；腿落到状态面板上沿，像站在面板后）----
+    rect(img, 50, 26, 68, 38, CHAIR)                  # 靠背
+    rect(img, 50, 26, 68, 28, CHAIR_DK)               # 靠背顶边
+    rect(img, 48, 38, 70, 46, CHAIR)                  # 座面
+    rect(img, 48, 46, 70, 48, CHAIR_DK)               # 座面暗边
+    rect(img, 50, 48, 53, 58, CHAIR_DK)               # 左腿
+    rect(img, 65, 48, 68, 58, CHAIR_DK)               # 右腿
 
     return img
 
