@@ -1,9 +1,6 @@
-This version fixes the long-press menu and retunes how reeling feels and how hard the fight is: easier to land fish, more responsive controls. Fish, rods, spots, levels and the codex are unchanged, and your codex progress and high score carry over.
+This update fills in the fishing scene and finally explains why a spot will not switch. The screen used to show a lone float; now you can see the rod in your hand, the line under tension, and the bait on the hook.
 
-1. Fixed the long-press menu: long-pressing OK used to do nothing at all — it just cast the line, so the "hold for menu" hint was impossible to follow. Now holding OK for about 0.7 s on the water opens the menu, and holding OK in the menu or the codex goes back one level.
-2. Fixed the reeling direction: holding OK now lifts the catch bar and releasing drops it, exactly as the on-screen hint says. Holding OK used to drive the bar downward instead, which felt like the button did nothing.
-3. Easier to land fish: fish swim and dash more slowly. A legend used to dash faster than even the quickest rod could follow, so it was simply impossible to catch; now it can be chased down.
-4. Bigger catch bar: all three rods get a taller green zone, so a fish you can see is far easier to cover.
-5. More room to start: the progress bar starts higher, so a single slip no longer drops you straight back to zero.
-6. Wider strike window: the deep sea goes from 0.8 s to 1.0 s, and the other two spots are more forgiving too, so striking early no longer costs you a fish.
-7. More responsive controls: while reeling, the button is sampled every 0.01 s instead of 0.02 s, and release is detected in 10 ms instead of 40 ms, so lifting and dropping no longer feel sluggish.
+1. The scene now has a rod, a line and bait: a rod leans in from the left, the line runs from the rod tip down to the float, and the bait hangs below the float. This layer was in the design doc from the start but had never been built.
+2. Switching rods is now visible: the hand rod, lure rod and sea rod all look different, and the rod in your hand changes as soon as you leave the menu instead of you having to remember what the menu said.
+3. Switching bait is now visible: worm, dough and spinner hang below the float, so the difference is obvious at a glance.
+4. A locked spot now tells you why: the river unlocks at 8 fish landed in total, the deep sea at 20. With the cursor on the spot row, the menu shows "N more to unlock ...". Before, the up/down keys simply did nothing on a locked spot with no explanation, which made the menu look broken.

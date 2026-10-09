@@ -288,6 +288,30 @@ void fishing_set_bait(bait_t b) { if (b >= 0 && b < BAIT_COUNT) g_bait = b; }
 void fishing_set_rod(rod_t r)   { if (r >= 0 && r < ROD_COUNT)  g_rod  = r; }
 void fishing_set_spot(spot_t s) { if (s >= 0 && s < SPOT_COUNT && fishing_spot_unlocked(s)) g_spot = s; }
 
+/* 菜单里"上下键换一项"的动作策略。放在逻辑层而不是 UI 层，是为了能用宿主单测
+ * 钉住 —— 钓点这一项以前写在 fishing.c 里，静默跳过没解锁的钓点，玩家按住上下键
+ * 画面纹丝不动，被当成"换不了钓点"（社区反馈）。 */
+bool fishing_cycle_rod(int dir) {
+    g_rod = (rod_t)(((int)g_rod + (dir >= 0 ? 1 : ROD_COUNT - 1)) % ROD_COUNT);
+    return true;
+}
+bool fishing_cycle_bait(int dir) {
+    g_bait = (bait_t)(((int)g_bait + (dir >= 0 ? 1 : BAIT_COUNT - 1)) % BAIT_COUNT);
+    return true;
+}
+/* 只在已解锁的钓点之间跳；一个都跳不动时原样返回 false（UI 据此给"还差几条"的提示） */
+bool fishing_cycle_spot(int dir) {
+    int step = (dir >= 0) ? 1 : -1;
+    for (int k = 1; k <= SPOT_COUNT; ++k) {
+        int v = ((int)g_spot + step * k + SPOT_COUNT * k) % SPOT_COUNT;
+        if (v != (int)g_spot && fishing_spot_unlocked((spot_t)v)) {
+            g_spot = (spot_t)v;
+            return true;
+        }
+    }
+    return false;
+}
+
 void fishing_enter_menu(void) {
     /* 除了 IDLE，CASTING/WAITING/BITE 也放进来 —— 这三态是"长按开始抛竿、
      * 还没上鱼"的中途状态：玩家想开菜单时，按下 OK 的那一瞬间就已经抛竿了
@@ -727,6 +751,17 @@ const char *fishing_rarity_name(rarity_t r) {
 bool fishing_spot_unlocked(spot_t s) {
     if (s < 0 || s >= SPOT_COUNT) return false;
     return g_total_catch >= (int)SPOTS[s].unlock_catch;
+}
+int fishing_spot_unlock_left(spot_t s) {
+    if (s < 0 || s >= SPOT_COUNT) return 0;
+    int left = (int)SPOTS[s].unlock_catch - g_total_catch;
+    return left > 0 ? left : 0;
+}
+int fishing_next_locked_spot(void) {
+    for (int i = 0; i < SPOT_COUNT; ++i) {
+        if (!fishing_spot_unlocked((spot_t)i)) return i;
+    }
+    return -1;
 }
 
 void fishing_codex_open(void) {

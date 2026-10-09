@@ -38,8 +38,23 @@ SRC_PET = os.path.join(ROOT, "main", "pet.c")
 SRC_PET_LOGIC = os.path.join(ROOT, "main", "pet_logic.c")
 SRC_MAIN = os.path.join(ROOT, "main", "main.c")
 SRC_FILES = [SRC_C, SRC_LOGIC, SRC_PET, SRC_PET_LOGIC, SRC_MAIN]
-NODE = r"C:/Users/8605464/.workbuddy/binaries/node/versions/22.22.2-3/node.exe"
 CONV = r"C:/Users/8605464/.workbuddy/binaries/node/workspace/node_modules/lv_font_conv/lv_font_conv.js"
+
+
+def find_node():
+    """托管 node 的版本目录名会变（曾叫 22.22.2-3，后来是 22.22.2-6）。
+    写死版本号会让字库脚本突然跑不动，所以这里按目录扫一遍取一个能用的。"""
+    base = r"C:/Users/8605464/.workbuddy/binaries/node/versions"
+    cands = []
+    if os.path.isdir(base):
+        for d in sorted(os.listdir(base), reverse=True):
+            exe = os.path.join(base, d, "node.exe")
+            if os.path.exists(exe):
+                cands.append(exe)
+    return cands[0] if cands else os.path.join(base, "node.exe")
+
+
+NODE = find_node()
 
 FONT_NAME = "fishing_cjk_16"
 SIZE = 16

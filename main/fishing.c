@@ -60,6 +60,27 @@ static void use_cjk(lv_obj_t *o) {
 #define PRG_Y 46
 #define PRG_H 224
 
+/* 钓场道具（竿 / 线 / 漂 / 饵）落点。全部是"场景内相对坐标"。
+ *
+ * 尺寸不是美术原稿尺寸：原稿只有 12~24px，直接摆进 240×320 像一粒沙。
+ * tools/gen_sprites.py 的 PROPS 表已把竿/漂/饵按 3× NEAREST 放大并整体旋转
+ * （先放大再旋转，斜边是 3px 台阶，符合像素风），这里写死的是烘焙后的结果：
+ *   竿 60×(51~63)、漂 24×32、饵 32×32 —— 改尺寸要连着那张表一起改。
+ *
+ * ROD_W 取 60：三根竿烘焙后宽度都是 60，所以竿尖可以共用一个相对偏移，
+ * 换竿时鱼线起点不用重算。 */
+#define ROD_X       8
+#define ROD_Y       116
+#define ROD_W       60
+#define ROD_TIP_DX  (ROD_W - 6)   /* 竿尖 ≈ 旋转包围盒右上角 */
+#define ROD_TIP_DY  6
+#define FLOAT_X     150
+#define FLOAT_W     24
+#define FLOAT_Y     146           /* 浮漂顶部贴在水平线上 */
+#define FLOAT_CAST_Y (FLOAT_Y - 40)   /* 抛竿中：还在空中 */
+#define FLOAT_BITE_Y (FLOAT_Y + 8)    /* 咬钩：下沉一下 */
+#define BAIT_DY     29            /* 饵吊在漂下：漂高 32 - 3 */
+
 /* ===================== 时钟 / NVS ===================== */
 static uint32_t now_ms(void) {
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
@@ -110,6 +131,11 @@ static const lv_image_dsc_t *const SIL_IMG[FISH_SPECIES_COUNT] = {
     &sil_bayu, &sil_bimu, &sil_shiban, &sil_jinqiang, &sil_qiyu, &sil_xiaosha,
 };
 static const lv_image_dsc_t *const BG_IMG[FISH_SPOT_COUNT] = { &bg_pond, &bg_river, &bg_sea };
+/* 钓场里真正会画出来的道具：手上的竿 + 挂在钩上的饵。
+ * 这两组图一直在 sprites.h 里，但 v2 的界面从来没引用过 —— 换竿换饵只有
+ * 菜单文字变、画面一动不动，玩家会以为没生效。 */
+static const lv_image_dsc_t *const ROD_IMG[FISH_ROD_COUNT]   = { &rod_hand, &rod_lure, &rod_sea };
+static const lv_image_dsc_t *const BAIT_IMG[FISH_BAIT_COUNT] = { &bait_worm, &bait_dough, &bait_spinner };
 
 /* ===================== UI 对象 ===================== */
 /*
@@ -133,8 +159,12 @@ static lv_obj_t *g_lbl_hint    = NULL;   /* 底部提示 */
 
 /* 钓鱼场景 */
 static lv_obj_t *g_scene       = NULL;
+static lv_obj_t *g_rod         = NULL;   /* 手里的鱼竿（随鱼竿选择切换） */
+static lv_obj_t *g_line        = NULL;   /* 鱼线：竿尖 -> 浮漂，2 个点 */
 static lv_obj_t *g_floatbob    = NULL;
+static lv_obj_t *g_bait        = NULL;   /* 钩上的饵（随饵料选择切换） */
 static lv_obj_t *g_fish_scene  = NULL;
+static lv_point_precise_t g_line_pts[2];
 
 /* 收线界面 */
 static lv_obj_t *g_reel        = NULL;
@@ -303,13 +333,31 @@ static void build_ui(void) {
     g_lbl_spot = make_label(g_spot_cap, "静水塘", 0, 0, lv_color_white());
     lv_obj_center(g_lbl_spot);
 
+    /* 鱼线先建：它要压在竿和漂下面。
+     * lv_line 的点是"相对自身坐标"的，所以对象固定在 (0,0)、点直接用场景坐标，
+     * 省掉一层换算。线宽 1px、半透明白 —— 和像素背景叠得住，又不抢戏。 */
+    g_line = lv_line_create(g_scene);
+    lv_obj_set_pos(g_line, 0, 0);
+    lv_obj_set_style_line_width(g_line, 1, 0);
+    lv_obj_set_style_line_color(g_line, lv_color_make(244, 248, 255), 0);
+    lv_obj_set_style_line_opa(g_line, 190, 0);
+    lv_line_set_points(g_line, g_line_pts, 2);
+
+    g_rod = lv_img_create(g_scene);
+    lv_img_set_src(g_rod, ROD_IMG[0]);
+    lv_obj_set_pos(g_rod, ROD_X, ROD_Y);
+
     g_floatbob = lv_img_create(g_scene);
     lv_img_set_src(g_floatbob, &prop_float);
-    lv_obj_set_pos(g_floatbob, 110, 96);
+    lv_obj_set_pos(g_floatbob, FLOAT_X, FLOAT_Y);
+
+    g_bait = lv_img_create(g_scene);
+    lv_img_set_src(g_bait, BAIT_IMG[0]);
+    lv_obj_set_pos(g_bait, FLOAT_X + FLOAT_W / 2 - 16, FLOAT_Y + BAIT_DY);
 
     g_fish_scene = lv_img_create(g_scene);
     lv_img_set_src(g_fish_scene, FISH_IMG[0]);
-    lv_obj_set_pos(g_fish_scene, 20, 170);
+    lv_obj_set_pos(g_fish_scene, 20, 176);
     lv_obj_add_flag(g_fish_scene, LV_OBJ_FLAG_HIDDEN);
 
     /* ---------- 收线界面 ---------- */
@@ -502,11 +550,35 @@ static void hud_batt_refresh(void) {
 /* 已画到控件上的"业务键"，用来跳过重复写入（-98 是取不到的哨兵值，避免撞上真实键 0/1） */
 static int s_bg_spot    = -98;
 static int s_fish_scene = -98;
+static int s_rod_img    = -98;
+static int s_bait_img   = -98;
+static int s_tackle     = -99;   /* 上一次摆好的浮漂 y */
+
+/* 浮漂 / 鱼饵 / 鱼线是一套跟着 bob_y 走的道具，一次摆好。
+ * 只在 bob_y 真的变了才动 LVGL —— 主循环 20ms 一帧，无条件摆会让整条线
+ * 每帧失效重绘（收线页那份"已画值门闸"就是为这个加的）。 */
+static void place_tackle(int bob_y) {
+    if (bob_y == s_tackle) return;
+    s_tackle = bob_y;
+    lv_obj_set_pos(g_floatbob, FLOAT_X, bob_y);
+    lv_obj_set_pos(g_bait, FLOAT_X + FLOAT_W / 2 - 16, bob_y + BAIT_DY);
+    g_line_pts[0].x = ROD_X + ROD_TIP_DX;      /* 竿尖 */
+    g_line_pts[0].y = ROD_Y + ROD_TIP_DY;
+    g_line_pts[1].x = FLOAT_X + FLOAT_W / 2;   /* 漂顶 */
+    g_line_pts[1].y = bob_y;
+    lv_line_set_points(g_line, g_line_pts, 2);
+}
 
 static void refresh_scene(const fishing_status_t *st) {
     /* 背景图只在钓点真的换了才重设 —— 这是原来的头号开销源：
      * lv_image_set_src 没有"同源短路"，每帧都会 invalidate 整张 240x320（153,600 字节）。 */
     set_img_by_key(g_bg, &s_bg_spot, (int)st->spot, BG_IMG[st->spot]);
+
+    /* 换竿 / 换饵要看得见：菜单里选完，钓场上的竿和钩上的饵当场就换。
+     * 这两组 sprite 早就编进了固件，但 v2 的界面从没引用过 ——
+     * 所以"选完鱼竿/鱼饵画面没变化"不是错觉，是真没画。 */
+    set_img_by_key(g_rod,  &s_rod_img,  (int)st->rod,  ROD_IMG[st->rod]);
+    set_img_by_key(g_bait, &s_bait_img, (int)st->bait, BAIT_IMG[st->bait]);
 
     /* 钓点名只在文案变化时写；宽度变了才需要重新居中（「深海」比三字名窄 16px） */
     if (set_text_cached(g_lbl_spot, fishing_spot_name(st->spot))) {
@@ -520,15 +592,15 @@ static void refresh_scene(const fishing_status_t *st) {
     set_text_cached(g_lbl_high, buf);
 
     lv_obj_add_flag(g_fish_scene, LV_OBJ_FLAG_HIDDEN);
-    int bob_y = 96;
+    int bob_y = FLOAT_Y;
     const char *hint = "";
     switch (st->state) {
         case STATE_IDLE:    hint = "OK 抛竿 · 长按菜单"; break;
-        case STATE_CASTING: hint = "抛竿中…"; bob_y = 70; break;
-        case STATE_WAITING: hint = "等鱼上钩…"; bob_y = 96; break;
+        case STATE_CASTING: hint = "抛竿中…"; bob_y = FLOAT_CAST_Y; break;
+        case STATE_WAITING: hint = "等鱼上钩…"; bob_y = FLOAT_Y; break;
         case STATE_BITE:
             hint = "咬钩了！按 OK 提竿";
-            bob_y = 116;
+            bob_y = FLOAT_BITE_Y;
             lv_obj_clear_flag(g_fish_scene, LV_OBJ_FLAG_HIDDEN);
             if (st->cur_species >= 0) {
                 set_img_by_key(g_fish_scene, &s_fish_scene, st->cur_species, SIL_IMG[st->cur_species]);
@@ -536,7 +608,7 @@ static void refresh_scene(const fishing_status_t *st) {
             break;
         default: hint = ""; break;
     }
-    lv_obj_set_pos(g_floatbob, 110, bob_y);   /* 值没变时 LVGL 自己会短路 */
+    place_tackle(bob_y);
     set_text_cached(g_lbl_hint, hint);
 }
 
@@ -618,20 +690,31 @@ static void refresh_menu(const fishing_status_t *st) {
             case 0: txt = "开始钓鱼"; break;
             case 1: snprintf(buf, sizeof(buf), "鱼竿   %s", fishing_rod_name(st->rod)); txt = buf; break;
             case 2: snprintf(buf, sizeof(buf), "饵料   %s", fishing_bait_name(st->bait)); txt = buf; break;
-            case 3: {
-                if (fishing_spot_unlocked(st->spot))
-                    snprintf(buf, sizeof(buf), "钓点   %s", fishing_spot_name(st->spot));
-                else
-                    snprintf(buf, sizeof(buf), "钓点   %s(未解锁)", fishing_spot_name(st->spot));
-                txt = buf; break;
-            }
+            case 3: snprintf(buf, sizeof(buf), "钓点   %s", fishing_spot_name(st->spot)); txt = buf; break;
             case 4: snprintf(buf, sizeof(buf), "图鉴   %d/%d", st->codex_total, FISH_SPECIES_COUNT); txt = buf; break;
             default: break;
         }
         set_text_cached(g_menu_rows[i], txt);
     }
     lv_obj_set_pos(g_menu_selbar, 6, 70 + g_menu_idx * 30);   /* 值没变时 LVGL 自己会短路 */
-    set_text_cached(g_lbl_hint, g_menu_edit ? "上下改值·OK确认" : "上下选·OK进入·长按返回");
+
+    /* 钓点这一行：没解锁的钓点选不进去（fishing_set_spot 会拒绝），
+     * 但之前这版只做了"静默跳过"，玩家按住上下键画面纹丝不动，看上去就是坏了
+     * （社区反馈的原话是"不能更换钓点"）。光标停在这一行时，把还差几条直接写在
+     * 提示条上 —— 选中/进入编辑两种状态都给，因为"按了没反应"正是发生在编辑态。 */
+    char hb[64];
+    const char *hint;
+    int locked = fishing_next_locked_spot();
+    if (g_menu_idx == 3 && locked >= 0) {
+        snprintf(hb, sizeof(hb), "再钓 %d 条解锁 %s",
+                 fishing_spot_unlock_left((spot_t)locked), fishing_spot_name((spot_t)locked));
+        hint = hb;
+    } else if (g_menu_edit) {
+        hint = "上下改值·OK确认";
+    } else {
+        hint = "上下选·OK进入·长按返回";
+    }
+    set_text_cached(g_lbl_hint, hint);
 }
 
 /* key：>=0 = 已收录（用鱼种序号），否则 = -(idx+1) 表示未收录剪影 */
@@ -688,21 +771,13 @@ static void refresh_ui(void) {
 
 /* ===================== 按键处理 ===================== */
 static void menu_change_value(int dir) {
-    fishing_status_t st;
-    fishing_get_status(&st);
-    if (g_menu_idx == 1) {
-        int v = ((int)st.rod + (dir > 0 ? 1 : FISH_ROD_COUNT - 1)) % FISH_ROD_COUNT;
-        fishing_set_rod((rod_t)v);
-    } else if (g_menu_idx == 2) {
-        int v = ((int)st.bait + (dir > 0 ? 1 : FISH_BAIT_COUNT - 1)) % FISH_BAIT_COUNT;
-        fishing_set_bait((bait_t)v);
-    } else if (g_menu_idx == 3) {
-        /* 只能在已解锁的钓点之间循环，避免玩家选到进不去的关卡 */
-        for (int k = 1; k <= FISH_SPOT_COUNT; ++k) {
-            int v = ((int)st.spot + (dir > 0 ? k : -k + FISH_SPOT_COUNT * 2)) % FISH_SPOT_COUNT;
-            if (fishing_spot_unlocked((spot_t)v)) { fishing_set_spot((spot_t)v); break; }
-        }
-    }
+    /* 三项都走逻辑层的 fishing_cycle_*：策略（尤其是"只在已解锁钓点之间跳"）
+     * 在那边有单测钉着，UI 只负责把按下的方向递过去。
+     * 钓点换不动时这里不弹提示 —— 光标停在第 3 行时 refresh_menu() 已经把
+     * "再钓 N 条解锁 X" 常驻在提示条上，按下的一刻就能对上，不用另设一闪而过的话。 */
+    if (g_menu_idx == 1)      (void)fishing_cycle_rod(dir);
+    else if (g_menu_idx == 2) (void)fishing_cycle_bait(dir);
+    else if (g_menu_idx == 3) (void)fishing_cycle_spot(dir);
 }
 
 /* ===================== 收线：直接读按键电压判"按住" =====================

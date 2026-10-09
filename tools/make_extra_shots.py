@@ -33,9 +33,19 @@ FISH_ZH = {
     "xiaohuang": "小黄鱼", "daiyu": "带鱼", "bayu": "鲅鱼", "shiban": "石斑鱼",
     "bimu": "比目鱼", "jinqiang": "金枪鱼", "qiyu": "旗鱼", "xiaosha": "小鲨鱼",
 }
-# (素材, 名称, 纵向裁切位置 0=顶 1=底)
-SCENES = [("bg_pond", "静水塘", 0.86), ("bg_river", "急流河", 0.5),
-          ("bg_sea", "深海", 0.42)]
+# (素材, 名称, 纵向裁切位置 0=顶 1=底, 鱼竿, 鱼饵)
+# 裁切位置要让"竿尖→浮漂→鱼饵"整套家什都落在画格里（竿在 y116~，饵到 y207），
+# 所以三片都取中段，不再取贴顶/贴底。
+SCENES = [
+    ("bg_pond", "静水塘", 0.49, "rod_hand", "bait_worm"),
+    ("bg_river", "急流河", 0.49, "rod_lure", "bait_dough"),
+    ("bg_sea", "深海", 0.49, "rod_sea", "bait_spinner"),
+]
+
+# 与 main/fishing.c 的 ROD_X/ROD_Y/FLOAT_*/BAIT_DY 一致
+ROD_X, ROD_Y = 8, 116
+FLOAT_X, FLOAT_Y, FLOAT_W = 150, 146, 24
+BAIT_DY = 29
 
 INK = (14, 26, 44)
 PAPER = (233, 240, 250)
@@ -55,9 +65,9 @@ def paste(base, name, x, y, zoom=1):
 
 
 def corner_note(d):
+    # 放左下角：右下角会被浮漂/鱼饵压住
     f = font(22)
-    tw = d.textlength(NOTE, font=f)
-    d.text((W - 28 - tw, H - 40), NOTE, font=f, fill=(150, 168, 192))
+    d.text((28, H - 40), NOTE, font=f, fill=(150, 168, 192))
 
 
 def make_codex():
@@ -93,24 +103,52 @@ def make_codex():
     print("saved", out)
 
 
+def overlay_tackle(scene, rod_name, bait_name, sc):
+    """把鱼竿/鱼线/浮漂/鱼饵按 main/fishing.c 的坐标叠到放大后的钓场图上。
+
+    坐标全部先在"游戏坐标"里算，再乘 sc 放大 —— 这样和真机画面是同一套位置。
+    """
+    def zoom(im):
+        return im.resize((int(round(im.width * sc)), int(round(im.height * sc))),
+                         Image.NEAREST)
+
+    rod = zoom(Image.open(os.path.join(PNG, rod_name + ".png")).convert("RGBA"))
+    fl = zoom(Image.open(os.path.join(PNG, "prop_float.png")).convert("RGBA"))
+    bt = zoom(Image.open(os.path.join(PNG, bait_name + ".png")).convert("RGBA"))
+    d = ImageDraw.Draw(scene)
+    # 鱼线：竿尖 → 浮漂顶（LVGL 里线宽 1，这里按同一比例放大）
+    tip = ((ROD_X + rod.width / sc - 6) * sc, (ROD_Y + 6) * sc)
+    top = ((FLOAT_X + FLOAT_W / 2) * sc, FLOAT_Y * sc)
+    d.line([tuple(int(round(v)) for v in tip), tuple(int(round(v)) for v in top)],
+           fill=(244, 248, 255, 190), width=max(1, int(round(sc))))
+    scene.alpha_composite(rod, (int(round(ROD_X * sc)), int(round(ROD_Y * sc))))
+    scene.alpha_composite(fl, (int(round(FLOAT_X * sc)), int(round(FLOAT_Y * sc))))
+    gx_bait = FLOAT_X + FLOAT_W / 2 - (bt.width / sc) / 2
+    scene.alpha_composite(bt, (int(round(gx_bait * sc)),
+                               int(round((FLOAT_Y + BAIT_DY) * sc))))
+
+
 def make_scenes():
     img = Image.new("RGB", (W, H), INK)
     band_h = H // 3
     d = ImageDraw.Draw(img)
-    for i, (key, zh, bias) in enumerate(SCENES):
+    for i, (key, zh, bias, rod, bait) in enumerate(SCENES):
         bg = Image.open(os.path.join(PNG, key + ".png")).convert("RGB")
         # 按宽度铺满、纵向居中裁切
         sc = W / bg.width
-        bg = bg.resize((W, int(bg.height * sc)), Image.NEAREST)
+        bg = bg.resize((W, int(bg.height * sc)), Image.NEAREST).convert("RGBA")
+        overlay_tackle(bg, rod, bait, sc)
         top = max(0, int((bg.height - band_h) * bias))
-        bg = bg.crop((0, top, W, top + band_h))
-        img.paste(bg, (0, i * band_h))
+        band = bg.crop((0, top, W, top + band_h)).convert("RGB")
+        img.paste(band, (0, i * band_h))
         d.rectangle([0, i * band_h, W, i * band_h + 3], fill=(10, 18, 32))
         f = font(46)
         tw = d.textlength(zh, font=f)
-        box = (36, i * band_h + 28, 36 + tw + 44, i * band_h + 104)
+        # 标签放右上角：左上角会压到斜着的鱼竿
+        box = (W - 36 - tw - 44, i * band_h + 28,
+               W - 36, i * band_h + 104)
         d.rounded_rectangle(box, radius=14, fill=(12, 22, 38))
-        d.text((58, i * band_h + 42), zh, font=f, fill=PAPER)
+        d.text((W - 36 - tw - 22, i * band_h + 42), zh, font=f, fill=PAPER)
 
     corner_note(d)
     out = os.path.join(OUT, "fishing-shot-scenes-3x4.png")

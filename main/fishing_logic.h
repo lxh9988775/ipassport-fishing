@@ -193,6 +193,13 @@ void fishing_init(uint32_t seed);
 void fishing_set_bait(bait_t b);
 void fishing_set_rod(rod_t r);
 void fishing_set_spot(spot_t s);
+
+/* 菜单里"上下键换一项"的策略（逻辑层，可单测）。
+ * 返回 true = 真的换掉了；fishing_cycle_spot 在全部已解锁钓点都到不了新位置时
+ * 返回 false（当前就只有这一个钓点解锁），UI 据此显示"再钓 N 条解锁 X"。 */
+bool fishing_cycle_bait(int dir);
+bool fishing_cycle_rod(int dir);
+bool fishing_cycle_spot(int dir);
 void fishing_enter_menu(void);
 void fishing_exit_menu(void);
 
@@ -249,6 +256,11 @@ const char *fishing_spot_name(spot_t s);
 const char *fishing_rarity_name(rarity_t r);
 /* sprite 查表在 UI 层 fishing.c 实现（逻辑层不依赖 LVGL） */
 bool fishing_spot_unlocked(spot_t s);
+/* 还差多少条累计钓获才解锁（已解锁返回 0）。UI 拿它拼"再钓 N 条解锁 X"。
+ * 门槛本身是设计（静水塘 0 / 急流河 8 / 深海 20），这里只把差距暴露出来。 */
+int  fishing_spot_unlock_left(spot_t s);
+/* 第一个还没解锁的钓点（按解锁顺序就是按门槛顺序）；全部解锁返回 -1 */
+int  fishing_next_locked_spot(void);
 
 /* 图鉴浏览游标（UI 层驱动） */
 void fishing_codex_open(void);
