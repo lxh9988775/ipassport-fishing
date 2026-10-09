@@ -211,6 +211,32 @@ def tap_to_scene(page, tries=4):
     return img, kind
 
 
+def in_menu(page) -> bool:
+    _, kind = shot(page, "_probe_nav")
+    return kind == "menu"
+
+
+def settle_row(page, want, tries=6):
+    """把光标挪到第 want 行，并确认它「停住了」才算到位。
+
+    为什么非要再确认一次：模拟器的按键会迟到。刚读到「光标在第 1 行」时，
+    上一步的余键可能还在路上，读完才落地 —— 光标随即飘走，后面那几下 OK/上下
+    就全部打偏。实测出现过：以为在第 1 行按 OK 进编辑，其实光标已经回到第 0 行，
+    那下 OK 变成「开始钓鱼」，菜单直接关掉、竿根本没换。
+
+    所以这里挪到位后再空等一拍复读一次，两次一致才返回 want，否则返回 None。
+    """
+    for _ in range(tries):
+        cur, _, kind = goto_row(page, want)
+        if kind != "menu" or cur != want:
+            return None
+        time.sleep(1.0)
+        img2, kind2 = shot(page, "_probe_nav")
+        if kind2 == "menu" and menu_index(img2) == want:
+            return want
+    return None
+
+
 # --------------------------------------------------------------------------
 def clean_scratch() -> int:
     """删掉本次运行产生的临时取景帧（_probe*.png），只留 sim_* 证据图。
@@ -343,46 +369,72 @@ def main() -> int:
             return 1
 
         # ---- 3) 菜单提示条：光标在「钓点」行 vs 首行 应该不一样 ----
-        cur0, img0, k0 = goto_row(page, 0)
-        print("  菜单光标回到第 0 行 ->", cur0, k0)
-        h_row0 = hint_bar_region(img0) if img0 is not None else b""
+        # 用 settle_row 而不是 goto_row：要到"确认停住"为止，否则读到的是
+        # 延迟按键落地之前的旧位置，后面的断言全部对着错的画面。
+        r0 = settle_row(page, 0)
+        img0, _ = shot(page, "_probe_nav")
+        print("  菜单光标回到第 0 行 ->", r0)
+        h_row0 = hint_bar_region(img0) if r0 == 0 else b""
 
-        cur3, img3, k3 = goto_row(page, 3)
-        print("  菜单光标移到第 3 行（钓点）->", cur3, k3)
-        check(cur3 == 3, "方向键能把光标挪到「钓点」行（实际 %s）" % cur3)
-        if img3 is not None:
+        r3 = settle_row(page, 3)
+        print("  菜单光标移到第 3 行（钓点）->", r3)
+        check(r3 == 3, "方向键能把光标挪到「钓点」行（实际 %s）" % r3)
+        img3 = None
+        if r3 == 3:
+            img3 = Image.open(os.path.join(OUT, "_probe_nav.png"))
             img3.save(os.path.join(OUT, "sim_03_menu_spot.png"))
         check(img3 is not None and hint_bar_region(img3) != h_row0,
               "「钓点」行提示条与首行不同（=解锁进度提示按行变化）")
 
         # ---- 4) 换竿：站到「鱼竿」行改值，再回钓场比对竿的像素 ----
-        cur1, img1, k1 = goto_row(page, 1)
-        check(cur1 == 1, "方向键能把光标挪到「鱼竿」行（实际 %s）" % cur1)
-        tap(page)                                # OK 进入编辑
-        time.sleep(1.3)
-        tap(page, "ArrowDown")                   # 换下一根竿
-        time.sleep(1.3)
-        tap(page)                                # OK 确认
-        time.sleep(1.3)
-        img_m, k = shot(page, "sim_04_menu_rod_changed")
-        check(k == "menu", "改完鱼竿仍停在菜单（%s）" % k)
-        # 退回第 0 行再点，才能"开始钓鱼"回到钓场
-        cur_back, _, _ = goto_row(page, 0)
-        check(cur_back == 0, "改完后光标能退回「开始钓鱼」（实际 %s）" % cur_back)
-        img_b, k = tap_to_scene(page)
-        check(k == "scene", "从菜单回到钓场（当前分类 %s）" % k)
-        if k != "scene":
-            # 没回到钓场就没法比竿。绝不能拿菜单画面去算"竿的像素"——
-            # 菜单底色也是深蓝，ROI 里近黑像素一大把，会假通过。
-            browser.close()
-            clean_scratch()
-            return 1
+        # 这一整块可重试。成功判据只有一条：回到钓场后竿的像素真的变了。
+        # 不能拿"按过了"当成功 —— 模拟器会丢键、会迟到，实测出现过光标飘回第 0 行
+        # 导致那下 OK 变成"开始钓鱼"：菜单关掉、竿没换，但流程看着"走完了"。
+        row1_ok = stayed_menu = back_ok = rod_changed = False
+        n_dark1 = 0
+        for attempt in range(3):
+            if not in_menu(page):
+                long_press_to_menu(page, tries=2)
+            if settle_row(page, 1) != 1:
+                print("  第 %d 次走不到「鱼竿」行，重开菜单再来" % (attempt + 1))
+                continue
+            row1_ok = True
+            tap(page)                                # OK 进入编辑
+            time.sleep(1.4)
+            tap(page, "ArrowDown")                   # 换下一根竿
+            time.sleep(1.4)
+            tap(page)                                # OK 确认
+            time.sleep(1.4)
+            _, k = shot(page, "sim_04_menu_rod_changed")
+            if k != "menu":
+                print("  第 %d 次改完掉出了菜单（%s），重开菜单再来" % (attempt + 1, k))
+                continue
+            stayed_menu = True
+            if settle_row(page, 0) != 0:
+                print("  第 %d 次改完回不到「开始钓鱼」行，再来" % (attempt + 1))
+                continue
+            img_b, k = tap_to_scene(page)
+            if k != "scene":
+                print("  第 %d 次没能回到钓场（%s），再来" % (attempt + 1, k))
+                continue
+            back_ok = True
+            shot(page, "sim_05_scene_rod1")
+            img1s = Image.open(os.path.join(OUT, "sim_05_scene_rod1.png"))
+            if classify(img1s) != "scene":
+                continue
+            n_dark1 = dark_in_rod_roi(img1s)
+            # 必须先确认画面是钓场再比竿：菜单底色也是深蓝，ROI 里近黑像素一大把，
+            # 拿菜单画面来比会"看起来通过了"，其实什么都没测。
+            if n_dark1 >= 40 and rod0 != rod_roi_bytes(img1s):
+                rod_changed = True
+                break
+            print("  第 %d 次竿没换成功（近黑像素 %d），再来" % (attempt + 1, n_dark1))
 
-        shot(page, "sim_05_scene_rod1")
-        img1s = Image.open(os.path.join(OUT, "sim_05_scene_rod1.png"))
-        n_dark1 = dark_in_rod_roi(img1s)
-        check(n_dark1 >= 40, "换竿后新钓场里仍有鱼竿（近黑像素 %d）" % n_dark1)
-        check(rod0 != rod_roi_bytes(img1s), "换竿后钓场上的鱼竿像素变了（=换竿看得见）")
+        check(row1_ok, "方向键能把光标挪到「鱼竿」行")
+        check(stayed_menu, "改完鱼竿仍停在菜单")
+        check(back_ok, "从菜单回到钓场")
+        check(rod_changed,
+              "换竿后钓场上的鱼竿像素变了（=换竿看得见；近黑像素 %d）" % n_dark1)
 
         browser.close()
 
