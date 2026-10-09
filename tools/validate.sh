@@ -70,6 +70,13 @@ run_static_checks() {
         tests/test_fishing_hold_menu.c main/fishing_logic.c \
         -o "${test_dir}/test_fishing_hold_menu"
     "${test_dir}/test_fishing_hold_menu"
+    # 菜单里换竿/换饵/换钓点：社区反馈「不能更换钓点」——钓点有解锁门槛
+    # （8 条开急流河 / 20 条开深海），老代码静默跳过、不给提示，看着就像坏了。
+    # 现在策略在逻辑层，跳不动必须返回 false，这里钉住门槛边界与双向循环。
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_fishing_spots.c main/fishing_logic.c \
+        -o "${test_dir}/test_fishing_spots"
+    "${test_dir}/test_fishing_spots"
     # 钓鱼逻辑层全套（确定性/咬钩/计分/图鉴/平衡）
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/fishing_logic_test.c main/fishing_logic.c \

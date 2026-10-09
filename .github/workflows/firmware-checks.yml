@@ -10,6 +10,10 @@ on:
   push:
     branches:
       - main
+      # 钓鱼 play（社区 733）专用构建线。
+      # 本仓 main 已只编电子宠物（口袋兔，社区 948），钓鱼源码留在 fishing-app 分支上，
+      # 两条线各自出各自的整镜像；这个分支不往 main 合。
+      - fishing-app
     paths-ignore:
       - "docs/**"
       - "plays/**"

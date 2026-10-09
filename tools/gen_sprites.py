@@ -46,19 +46,23 @@ FISH_SHEETS = {
 }
 
 # 道具/饵/竿/图标：一张 4×4 拼图，行优先
-# 字段：(key, 中文, 行, 列, 横向跨格数, 输出宽, 输出高, 分类)
+# 字段：(key, 中文, 行, 列, 横向跨格数, 输出宽, 输出高, 分类[, 旋转角度°])
 #   —— 海竿那张图很宽，横跨了 (1,1)(1,2) 两格，所以要 colspan=2；
 #      浮漂在 (1,3)，(1,2) 是空的（之前错填成 (1,2)，导致整列错位：
 #      浮漂变成空图、鱼钩拿到浮漂、图鉴拿到水波……）
+#   —— 竿/漂/饵的输出尺寸是"游戏里实际显示的大小"，不是美术原稿大小：
+#      原稿只有 12~24px，直接摆到 240×320 的钓场里像一粒沙。这里先 NEAREST
+#      放大再旋转，旋转放在放大之后（先生成 3× 方块再转，边缘是 3px 台阶，
+#      符合像素风；反过来的话旋转锯齿会被放大 3 倍）。
 PROPS_SHEET = "props_sheet.png"
 PROPS = [
-    ("bait_worm",     "蚯蚓",   0, 0, 1, 16, 16, "bait"),
-    ("bait_dough",    "面团",   0, 1, 1, 16, 16, "bait"),
-    ("bait_spinner",  "亮片",   0, 2, 1, 16, 16, "bait"),
-    ("rod_hand",      "手竿",   0, 3, 1, 24, 24, "rod"),
-    ("rod_lure",      "路亚竿", 1, 0, 1, 24, 24, "rod"),
-    ("rod_sea",       "海竿",   1, 1, 2, 24, 24, "rod"),
-    ("prop_float",    "浮漂",   1, 3, 1, 12, 16, "prop"),
+    ("bait_worm",     "蚯蚓",   0, 0, 1, 32, 32, "bait"),
+    ("bait_dough",    "面团",   0, 1, 1, 32, 32, "bait"),
+    ("bait_spinner",  "亮片",   0, 2, 1, 32, 32, "bait"),
+    ("rod_hand",      "手竿",   0, 3, 1, 76, 76, "rod", 40),
+    ("rod_lure",      "路亚竿", 1, 0, 1, 76, 76, "rod", 40),
+    ("rod_sea",       "海竿",   1, 1, 2, 76, 76, "rod", 40),
+    ("prop_float",    "浮漂",   1, 3, 1, 24, 32, "prop"),
     ("prop_hook",     "鱼钩",   2, 0, 1, 12, 12, "prop"),
     ("prop_bubble",   "气泡",   2, 1, 1,  8,  8, "prop"),
     ("prop_wave",     "水波",   2, 2, 1, 24,  4, "prop"),
@@ -66,6 +70,11 @@ PROPS = [
     ("icon_star",     "稀有",   3, 0, 1,  8,  8, "icon"),
     ("icon_perfect",  "完美",   3, 1, 1, 12, 12, "icon"),
 ]
+
+# 鱼竿的卷线器原稿是"白圈 + 深色轴"，在浅蓝天空上会糊成一块发光白斑。
+# 这里把竿上的近白像素压成中灰蓝（阈值, 目标色），卷线器读成金属轮且保住中间的轴。
+# 只对 cat == "rod" 生效，鱼/饵/道具/背景都不动。
+ROD_DARKEN = (110, (88, 98, 115))
 
 # 场景背景：全屏 240×320（RGB565 不透明，省一半空间）
 BG_W, BG_H = 240, 320
@@ -154,6 +163,21 @@ def make_silhouette(img, color=(18, 34, 56)):
     m = a[..., 3] > 0
     a[m, 0], a[m, 1], a[m, 2] = color
     a[m, 3] = 255
+    return Image.fromarray(a, "RGBA")
+
+
+def darken_light(img, thresh=110, tone=(88, 98, 115)):
+    """把精灵里的近白像素压成中灰蓝。
+
+    鱼竿原稿的卷线器是"白圈 + 深色轴"，摆到浅蓝天空上会糊成一块发光白斑，
+    放大 3× 再旋转后更像一块渲染噪点。压暗后卷线器读成金属轮，还保住了中间
+    的轴。只作用于竿（见 ROD_DARKEN），鱼/饵/道具/背景都不动。
+    """
+    a = np.asarray(img).copy()
+    m = a[..., 3] > 0
+    lum = a[..., :3].mean(-1)
+    hit = m & (lum > thresh)
+    a[hit, 0], a[hit, 1], a[hit, 2] = tone
     return Image.fromarray(a, "RGBA")
 
 
@@ -306,12 +330,23 @@ def main():
     psrc = os.path.join(raw, PROPS_SHEET)
     psheet = blank_corner_watermark(Image.open(psrc).convert("RGBA"))
     psheet, _ = key_out_magenta(psheet)
-    for (key, zh, r, c, cspan, w, h, cat) in PROPS:
+    for entry in PROPS:
+        key, zh, r, c, cspan, w, h, cat = entry[:8]
+        rot = float(entry[8]) if len(entry) > 8 else 0.0
         cell = slice_cell(psheet, 4, 4, r, c, cspan)
         spr = extract_sprite(cell, w, h)
         if spr is None:
             print("  !! empty cell: %s (%s r%d c%d)" % (key, cat, r, c))
             continue
+        if rot:
+            # 放大之后才旋转：先有 3× 方块，再整体转，得到 3px 台阶的像素斜边
+            spr = spr.rotate(rot, resample=Image.NEAREST, expand=True)
+            bb = spr.getbbox()
+            if bb:
+                spr = spr.crop(bb)
+        if cat == "rod":
+            spr = darken_light(spr, ROD_DARKEN[0], ROD_DARKEN[1])
+        w, h = spr.size          # 旋转后画布跟着变大，C 数组尺寸以实际为准
         p = os.path.join(pngdir, "%s.png" % key)
         spr.save(p)
         prop_pngs.append((key, zh, cat, p, w, h))

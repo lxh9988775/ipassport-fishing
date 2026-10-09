@@ -33,9 +33,27 @@ SYMBOLS_TXT = os.path.join(ROOT, "tools", "font_symbols.txt")
 SRC_C = os.path.join(ROOT, "main", "fishing.c")
 # v2 起鱼名/简介/稀有度都放在纯逻辑层，字库必须一并扫描，否则图鉴页会出方框
 SRC_LOGIC = os.path.join(ROOT, "main", "fishing_logic.c")
+# 本分支（fishing-app）只编钓鱼 play，字库也只按钓鱼文案生成。
+# 电子宠物在本仓另一条主线（main）上，那条线自己生成自己的子集字库，
+# 两边互不牵连 —— 别把 pet.c 加进来，否则钓鱼固件白白多背一堆兔子的字。
 SRC_FILES = [SRC_C, SRC_LOGIC]
-NODE = r"C:/Users/8605464/.workbuddy/binaries/node/versions/22.22.2-3/node.exe"
 CONV = r"C:/Users/8605464/.workbuddy/binaries/node/workspace/node_modules/lv_font_conv/lv_font_conv.js"
+
+
+def find_node():
+    """托管 node 的版本目录名会变（曾叫 22.22.2-3，后来是 22.22.2-6）。
+    写死版本号会让字库脚本突然跑不动，所以这里按目录扫一遍取一个能用的。"""
+    base = r"C:/Users/8605464/.workbuddy/binaries/node/versions"
+    cands = []
+    if os.path.isdir(base):
+        for d in sorted(os.listdir(base), reverse=True):
+            exe = os.path.join(base, d, "node.exe")
+            if os.path.exists(exe):
+                cands.append(exe)
+    return cands[0] if cands else os.path.join(base, "node.exe")
+
+
+NODE = find_node()
 
 FONT_NAME = "fishing_cjk_16"
 SIZE = 16

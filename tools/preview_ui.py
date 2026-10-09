@@ -139,10 +139,22 @@ def draw_multiline(d, fnt, xy, text, width, fill, line_h=20, spacing=4):
 
 
 def shot_scene(fnt):
+    """钓场页：背景 + 鱼竿 + 鱼线 + 浮漂 + 鱼饵。
+    坐标必须和 main/fishing.c 的 ROD_*/FLOAT_*/BAIT_* 宏一致 —— 那边是真值来源，
+    改了记得同步这里，再跑一次本脚本用眼睛过一遍。"""
     img = base("bg_pond")
     d = ImageDraw.Draw(img)
     hud(img, d, fnt, spot="静水塘")
-    sprite(img, "prop_float", 110, 96)
+    rod_x, rod_y = 8, 116
+    fx, fy = 150, 146
+    rod = Image.open(os.path.join(PNG, "rod_hand.png")).convert("RGBA")
+    fl = Image.open(os.path.join(PNG, "prop_float.png")).convert("RGBA")
+    bt = Image.open(os.path.join(PNG, "bait_worm.png")).convert("RGBA")
+    d.line([(rod_x + rod.width - 6, rod_y + 6), (fx + fl.width // 2, fy)],
+           fill=(244, 248, 255), width=1)
+    img.paste(rod, (rod_x, rod_y), rod)
+    img.paste(fl, (fx, fy), fl)
+    img.paste(bt, (fx + fl.width // 2 - bt.width // 2, fy + 29), bt)
     hint_pill(img, d, fnt, "OK 抛竿 · 长按菜单")
     return img
 
@@ -165,11 +177,13 @@ def shot_menu(fnt):
     img = base(None, (6, 18, 36))
     d = ImageDraw.Draw(img)
     hud(img, d, fnt, batt=86, score=128)
-    d.rounded_rectangle([6, 70, 233, 95], radius=4, fill=ACCENT)   # 选中条
+    d.rounded_rectangle([6, 160, 233, 185], radius=4, fill=ACCENT)   # 选中条停在「钓点」
     rows = ["开始钓鱼", "鱼竿   手竿", "饵料   蚯蚓", "钓点   静水塘", "图鉴   5/24"]
     for i, t in enumerate(rows):
         d.text((12, 74 + i * 30), t, font=fnt.f, fill=(255, 255, 255))
-    hint_pill(img, d, fnt, "上下选·OK进入·长按返回")
+    # 钓点这一行没解锁时，提示条常驻"再钓 N 条解锁 X" —— 社区反馈的
+    # "不能更换钓点"就是这条缺失导致的（按了没反应、也没解释）
+    hint_pill(img, d, fnt, "再钓 8 条解锁 急流河")
     return img
 
 
