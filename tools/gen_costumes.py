@@ -45,7 +45,8 @@ CROWN_DK = (214, 168, 56, 255)
 GEM_R    = (222, 60, 90, 255)
 GEM_B    = (80, 140, 220, 255)
 GLS_FR   = (78, 56, 44, 255)
-GLS_LN   = (214, 238, 248, 255)
+GLS_LN   = (214, 238, 248, 72)    # 半透明镜片：眼睛能透出来（全不透明会遮眼）
+GLS_W    = (250, 252, 254, 140)   # 反光点半透明
 SCARF_R  = (214, 64, 88, 255)
 SCARF_LT = (238, 122, 140, 255)
 FLW_ST   = (110, 172, 96, 255)
@@ -107,23 +108,42 @@ def draw_crown():
     return im
 
 
+def detect_eyes():
+    """从 rabbit_front.png 自动测眼睛中心：脸部内区（x16..56, y32..44）的
+    深色像素（lum<60）聚成左右两簇，返回 (左cx, 右cx, cy)。"""
+    im = np.asarray(Image.open(os.path.join(OUT_DIR, "rabbit_front.png")).convert("RGBA")).astype(int)
+    lum = im[..., 0] * 0.3 + im[..., 1] * 0.6 + im[..., 2] * 0.1
+    alpha = im[..., 3]
+    ys, xs = np.nonzero((lum < 60) & (alpha > 200))
+    m = (xs >= 16) & (xs <= 56) & (ys >= 32) & (ys <= 44)
+    xs, ys = xs[m], ys[m]
+    med = (xs.min() + xs.max()) / 2.0
+    lm, rm = xs < med, xs >= med
+    return (float(xs[lm].mean()), float(xs[rm].mean()), float(ys.mean()))
+
+
 def draw_glasses():
-    """圆框眼镜：两个圆框 + 鼻梁 + 腿。位置对齐眼睛（y≈30）。"""
+    """圆框眼镜：镜片精确对齐自动测出的真实眼睛位置。
+    镜片半透明（alpha 72），戴上是"眼睛后面有镜片"而不是"镜片盖住脸"。"""
+    lcx, rcx, ey = detect_eyes()
+    print("  [glasses] eye centers: left cx=%.1f right cx=%.1f cy=%.1f" % (lcx, rcx, ey))
     im = new_canvas()
     d = ImageDraw.Draw(im)
-    ey = 30
-    # 镜片（先浅色再描框）
-    ellipse(d, 17, ey - 7, 33, ey + 7, GLS_LN)
-    ellipse(d, 39, ey - 7, 55, ey + 7, GLS_LN)
-    # 框（空心圆用两圈近似）
-    ellipse(d, 16, ey - 8, 34, ey + 8, GLS_FR)
-    ellipse(d, 18, ey - 6, 32, ey + 6, GLS_LN)
-    ellipse(d, 38, ey - 8, 56, ey + 8, GLS_FR)
-    ellipse(d, 40, ey - 6, 54, ey + 6, GLS_LN)
-    # 鼻梁 + 腿
-    rect(d, 33, ey - 2, 39, ey - 1, GLS_FR)
-    rect(d, 12, ey - 2, 16, ey, GLS_FR)
-    rect(d, 56, ey - 2, 60, ey, GLS_FR)
+    # 框（外圈深色、内圈浅色回填，形成 2px 框壁），镜片外径 15px
+    ellipse(d, int(lcx) - 8, ey - 7, int(lcx) + 6, ey + 7, GLS_FR)
+    ellipse(d, int(lcx) - 6, ey - 5, int(lcx) + 4, ey + 5, GLS_LN)
+    ellipse(d, int(rcx) - 8, ey - 7, int(rcx) + 6, ey + 7, GLS_FR)
+    ellipse(d, int(rcx) - 6, ey - 5, int(rcx) + 4, ey + 5, GLS_LN)
+    # 镜片斜向反光（左上角小三角，避开眼睛）
+    for cx0 in (int(lcx) - 5, int(rcx) - 5):
+        d.point((cx0, ey - 4), fill=GLS_W)
+        d.point((cx0 + 1, ey - 4), fill=GLS_W)
+        d.point((cx0, ey - 3), fill=GLS_W)
+    # 鼻梁（两框内缘之间）
+    rect(d, int(lcx) + 6, ey - 3, int(rcx) - 7, ey - 2, GLS_FR)
+    # 镜腿（伸向脸缘两侧）
+    rect(d, int(lcx) - 12, ey - 2, int(lcx) - 7, ey, GLS_FR)
+    rect(d, int(rcx) + 6, ey - 2, int(rcx) + 11, ey, GLS_FR)
     return im
 
 

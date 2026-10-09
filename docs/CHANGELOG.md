@@ -70,3 +70,5 @@
 - Fixed the community-review rejection "text overlapping the background, unreadable": the home status-bar and care-list zones now sit on cream text panels; room furniture (window, picture frame, floor lamp, wooden chair, desk, rug) was rearranged into the visible areas outside the panels, and a ceiling band now carries the HUD text.
 - Text-dense pages (menu, passport, mini-games, dress-up) returned to a solid background instead of the room image.
 - Fixed the home selection highlight capsule being sunk beneath the room background image and becoming invisible (`make_capsule` no longer moves itself to child index 0).
+- Redesigned the dress-up screen: a mirror panel on the left (2x live preview plus the current costume name under the rabbit), a compact costume list on the right, and the hint moved below the mirror so no text overlaps the preview or the screen edges.
+- Redrew the glasses costume: lenses now auto-align to the real eye positions (the generator detects eye centers from the sprite) and are translucent, so the eyes stay clearly visible instead of looking like a mask.

@@ -204,6 +204,7 @@ static lv_obj_t *g_dress_cos  = NULL;   /* 装扮预览叠层（同位置同缩�
 static lv_obj_t *g_dress_cap  = NULL;
 static lv_obj_t *g_dress_lbl[6] = {0};
 static lv_obj_t *g_dress_msg  = NULL;
+static lv_obj_t *g_dress_name = NULL;   /* 镜下当前装扮名 */
 
 /* 护照（贴纸墙） */
 static lv_obj_t *g_pass_title = NULL;
@@ -565,32 +566,52 @@ static void passport_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms();
 }
 
-/* ===================== 换装界面 ===================== */
+/* ===================== 换装界面 =====================
+ * 布局（240x320）：
+ *   y6    标题「换装」居中
+ *   左侧  试衣镜面板 (8,28,150,230)：2x 兔子居中 + 镜下当前装扮名
+ *   右侧  装扮列表 x160..232，6 行每行 24px，与镜子垂直居中
+ *   y264  操作提示 / 穿戴反馈（居中，不与任何图形重叠）
+ *   底部  长按 OK 返回                                          */
+#define DRESS_LIST_X   160
+#define DRESS_LIST_Y   71      /* 首行 y：面板 28+230 中心对齐 6 行 x24 */
+#define DRESS_ROW_H    24
+#define DRESS_RAB_XY   3, 43   /* 兔子在镜面板内相对坐标（144 宽居中于 150） */
+
 static void build_dress(void) {
     lv_obj_clean(g_layer);
     lv_obj_t *title = make_label(g_layer, "换装", 0, 0, RED_TXT);
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-    g_dress_msg = make_label(g_layer, "上下选 · OK 穿上", 0, 0, BROWN);
-    lv_obj_align(g_dress_msg, LV_ALIGN_TOP_MID, 0, 24);
 
-    /* 试衣镜：2x 大兔子 + 装扮实时预览叠层（NEAREST 硬边保持像素风） */
-    g_dress_rab = lv_img_create(g_layer);
+    /* 试衣镜面板：淡青灰底，与奶油层拉开层次 */
+    lv_obj_t *mirror = make_panel(g_layer, 8, 28, 150, 230,
+                                  lv_color_make(226, 236, 246));
+    g_dress_rab = lv_img_create(mirror);
     lv_img_set_src(g_dress_rab, &rabbit_front);
-    lv_obj_set_pos(g_dress_rab, 48, 36);
+    lv_obj_set_pos(g_dress_rab, DRESS_RAB_XY);
     lv_image_set_scale(g_dress_rab, 512);
     lv_image_set_antialias(g_dress_rab, false);
 
-    g_dress_cos = lv_img_create(g_layer);
-    lv_obj_set_pos(g_dress_cos, 48, 36);
+    g_dress_cos = lv_img_create(mirror);
+    lv_obj_set_pos(g_dress_cos, DRESS_RAB_XY);
     lv_image_set_scale(g_dress_cos, 512);
     lv_image_set_antialias(g_dress_cos, false);
     costume_overlay_set(g_dress_cos, g_dress_sel, true);
 
-    /* 装扮列表：0=不穿，1..5=五件装扮 */
-    g_dress_cap = make_capsule(g_layer, 16, 190, 208, 18);
+    /* 镜下装扮名：随选中即时更新 */
+    g_dress_name = make_label(mirror, COSTUME_NAMES[g_dress_sel], 0, 0, BROWN);
+    lv_obj_align(g_dress_name, LV_ALIGN_BOTTOM_MID, 0, -8);
+
+    /* 装扮列表（右侧）：0=不穿，1..5=五件装扮；先建胶囊后建文字 */
+    g_dress_cap = make_capsule(g_layer, DRESS_LIST_X, DRESS_LIST_Y, 72, 20);
     for (int i = 0; i < 6; ++i) {
-        g_dress_lbl[i] = make_label(g_layer, COSTUME_NAMES[i], 30, 191 + i * 18, BROWN);
+        g_dress_lbl[i] = make_label(g_layer, COSTUME_NAMES[i],
+                                    DRESS_LIST_X + 18, DRESS_LIST_Y + 2 + i * DRESS_ROW_H,
+                                    BROWN);
     }
+
+    g_dress_msg = make_label(g_layer, "上下选 · OK 穿上", 0, 0, BROWN);
+    lv_obj_align(g_dress_msg, LV_ALIGN_TOP_MID, 0, 264);
 
     lv_obj_t *hint = make_label(g_layer, "长按 OK 返回", 0, 0, GRAYTX);
     lv_obj_align(hint, LV_ALIGN_BOTTOM_MID, 0, -4);
@@ -618,12 +639,13 @@ static void dress_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
 static void refresh_dress(void) {
     if (g_dress_sel != s_sel) {
         s_sel = g_dress_sel;
-        lv_obj_set_pos(g_dress_cap, 16, 190 + g_dress_sel * 18);
+        lv_obj_set_pos(g_dress_cap, DRESS_LIST_X, DRESS_LIST_Y + g_dress_sel * DRESS_ROW_H);
         for (int i = 0; i < 6; ++i) {
             if (!g_dress_lbl[i]) continue;
             lv_obj_set_style_text_color(g_dress_lbl[i],
                                         (i == g_dress_sel) ? WHITE : BROWN, 0);
         }
+        if (g_dress_name) set_text_cached(g_dress_name, COSTUME_NAMES[g_dress_sel]);
         /* 实时预览：选中即试穿（OK 才真正保存） */
         costume_overlay_set(g_dress_cos, g_dress_sel, true);
     }
