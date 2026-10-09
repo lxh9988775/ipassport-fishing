@@ -7,6 +7,9 @@ poll_ci.py - 查询云端 GitHub Actions 对本仓库最新提交的编译结果
 用法：
     python tools/poll_ci.py            # 只看最新一次 workflow run 的结论
     python tools/poll_ci.py --wait     # 轮询到结束（默认最多 10 分钟）
+
+查询的分支默认跟着「当前 git 分支」走（本仓有两条构建线：main=电子宠物、
+fishing-app=钓鱼 play）。要指定别的分支用环境变量 POLL_BRANCH。
 """
 
 import json
@@ -17,12 +20,24 @@ import time
 import urllib.request
 
 REPO = "lxh9988775/ipassport-fishing"
-BRANCH = "main"
 
 
 def git_head():
     out = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True)
     return out.strip()
+
+
+def git_branch():
+    env = os.environ.get("POLL_BRANCH")
+    if env:
+        return env
+    try:
+        out = subprocess.check_output(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"], text=True)
+        name = out.strip()
+        return name if name and name != "HEAD" else "main"
+    except Exception:  # noqa: BLE001
+        return "main"
 
 
 def http_json(url):
@@ -37,9 +52,9 @@ def http_json(url):
         return json.load(r)
 
 
-def find_run(head):
+def find_run(head, branch):
     data = http_json(
-        f"https://api.github.com/repos/{REPO}/actions/runs?branch={BRANCH}&per_page=20"
+        f"https://api.github.com/repos/{REPO}/actions/runs?branch={branch}&per_page=20"
     )
     for run in data.get("workflow_runs", []):
         if run.get("head_sha") == head:
@@ -50,11 +65,13 @@ def find_run(head):
 def main():
     wait = "--wait" in sys.argv
     head = git_head()
+    branch = git_branch()
     print("本地 HEAD:", head)
+    print("查询分支:", branch)
     deadline = time.time() + 600
     while True:
         try:
-            run = find_run(head)
+            run = find_run(head, branch)
         except Exception as e:
             print("查询失败:", e)
             return 2

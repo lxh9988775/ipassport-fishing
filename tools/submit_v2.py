@@ -7,15 +7,19 @@
 
 用法：
     python tools/submit_v2.py                 # 只打印「新建」预览（不上传）
-    python tools/submit_v2.py --auto          # 带 --auto 真正新建上传
     python tools/submit_v2.py --update        # 打印「更新」预览（目标 733）
-    python tools/submit_v2.py --update --auto # 真正提交更新
+    python tools/submit_v2.py --update --confirmed   # 预览确认无误后，真正提交更新
 
 注意（平台规则）：
-  - 更新必须拿到 scope=update_once 且 projectId 匹配的**新**授权码，
-    上次那张「新建」授权不能复用（SKILL.md:159）。跑之前先 `whoami` 确认。
+  - 更新要「完整版本」：固件 + 3:4 封面 + 全部配图 + 中英更新日志一次交齐，
+    端点是整版替换，不是打补丁，漏传的图片不会被保留。
   - 更新不带任何 remix 标记；不传 --tag（保留平台已有标签）。
-  - 更新必须提交完整版本：固件 + 3:4 封面 + 全部配图 + 中英更新日志。
+  - 授权分两种，先跑 `whoami` 看 scope：
+      · scope=update_once 且 projectId 匹配 → 用 --auto（官方一次性授权，无需再问）
+      · scope=publisher（浏览器授权，长期有效）→ 先出预览，创作者点头后再 --confirmed
+    两种都不能拿 create 授权去更新别人，反之亦然。
+  - 固件必须取自 build/（CI 产物）。仓库根目录那份是 10-01 的旧镜像，
+    正是线上已公开的 1740 本体，误传会「更新成没更新」。
 """
 from __future__ import annotations
 
@@ -53,7 +57,7 @@ def build(update: bool) -> list[str]:
         "--instructions-zh-file", str(PUB / "instructions_zh.txt"),
         "--instructions-en-file", str(PUB / "instructions_en.txt"),
         "--category", "games",
-        "--firmware", str(ROOT / "FoloToy-AI-Passport-full.bin"),
+        "--firmware", str(ROOT / "build" / "FoloToy-AI-Passport-full.bin"),
         "--cover", str(PUB / "fishing-cover-3x4.png"),
         "--image", str(PUB / "fishing-shot-codex-3x4.png"),
         "--image", str(PUB / "fishing-shot-scenes-3x4.png"),
@@ -73,22 +77,30 @@ def build(update: bool) -> list[str]:
 
     if "--auto" in sys.argv:
         argv.append("--auto")
+    elif "--confirmed" in sys.argv:
+        argv.append("--confirmed")
     return argv
 
 
 def main() -> int:
     update = "--update" in sys.argv
+    upload = "--auto" in sys.argv or "--confirmed" in sys.argv
     os.environ["FOLOTOY_AI_PASSPORT_URL"] = BASE_URL
     if not PUBLISHER.is_file():
         raise SystemExit("publisher.py not found: %s" % PUBLISHER)
 
     argv = build(update)
     print("模式：%s%s" % ("更新 project " + UPDATE_PROJECT_ID if update else "新建",
-                         "（--auto 真上传）" if "--auto" in sys.argv else "（仅预览）"))
+                         "（真上传）" if upload else "（仅预览，不上传）"))
     for p in argv:
         if p.startswith(str(ROOT)):
-            print("   文件 %s  %s" % (Path(p).name,
-                                      "存在" if Path(p).is_file() else "<<< 缺失!"))
+            ok = Path(p).is_file()
+            extra = ""
+            if ok and p.endswith(".bin"):
+                import hashlib
+                h = hashlib.sha256(Path(p).read_bytes()).hexdigest()
+                extra = "  %d bytes  sha256 %s..." % (Path(p).stat().st_size, h[:16])
+            print("   文件 %-32s %s%s" % (Path(p).name, "存在" if ok else "<<< 缺失!", extra))
     sys.argv = argv
     runpy.run_path(str(PUBLISHER), run_name="__main__")
     return 0

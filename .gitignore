@@ -12,6 +12,8 @@ managed_components/
 .DS_Store
 Thumbs.db
 *.log
+__pycache__/
+*.pyc
 
 # 字体源文件（8.4MB，可由 tools/gen_font.py 重新下载生成；下载方式见 assets/fonts/README.md）
 assets/fonts/*.otf
