@@ -28,7 +28,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lvgl.h"
-#include "lv_snapshot.h"
+#include "others/snapshot/lv_snapshot.h"
 #include "esp_log.h"
 #include "bsp_display.h"
 #include "fap_screenshot.h"
