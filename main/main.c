@@ -50,6 +50,15 @@ void app_main(void) {
     /* 交给游戏应用层（内部注册按键回调 + 创建游戏任务）*/
     mage_app_start();
 
-    /* 真机串口截屏协议（社区投稿截图用，纯只读）*/
+    /* 真机串口截屏协议（社区投稿截图用，纯只读）
+     * 注意：调试期可用 FAP_SCREENSHOT=0 关掉。
+     * 该模块常驻抢占 USB-Serial-JTAG 控制台驱动，在本工程上疑似与 LVGL 渲染冲突。 */
+#ifndef FAP_SCREENSHOT
+#define FAP_SCREENSHOT 0
+#endif
+#if FAP_SCREENSHOT
     fap_screenshot_init();
+#else
+    ESP_LOGW(TAG, "FAP_SCREENSHOT=0，串口截屏模块已停用");
+#endif
 }
