@@ -4,6 +4,7 @@ idf_component_register(
          "mage_data.c"
          "mage.c"
          "mage_draw.c"
+         "mage_fx.c"
     INCLUDE_DIRS "." ".." "../assets"
     REQUIRES bsp nvs_flash lvgl freertos
 )
@@ -18,6 +19,9 @@ target_sources(${COMPONENT_LIB} PRIVATE
 target_sources(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../assets/mage_sprites.c"
 )
+
+# 战斗演出层用到 sinf/fmodf 等三角函数，需要显式链接 libm
+target_link_libraries(${COMPONENT_LIB} PRIVATE m)
 
 # 【重要】串口截屏模块 fap_screenshot.c 已从构建中移除。
 # 原因：它的 150KB 全屏静态缓冲 + 8KB 任务栈把 ESP32-C3 的可用 RAM

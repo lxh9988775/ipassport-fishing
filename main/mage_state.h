@@ -58,6 +58,13 @@ typedef struct {
     int rarity;              /* 0..4 */
     int ivs[3];
     int x;                   /* 模拟横坐标（最近/射程判定） */
+    /* ---- 战斗演出状态（1:1 复刻 HTML 实时演出，纯视觉不参与逻辑） ---- */
+    float bob;               /* 跳跃相位偏移（每只怪不同，避免同步） */
+    float hurtT;             /* 受击后仰计时 >0 时后仰 -0.14rad */
+    float lungeT, lungeDur;  /* 冲锋位移计时/时长 */
+    int   lungeBig;          /* BOSS 蓄力大招（出⚡蓄力大招!） */
+    float brokenT;           /* 破防硬直闪烁计时 */
+    float flashT;            /* 受击闪红计时 */
 } BattleEnemy;
 
 typedef struct {
@@ -86,6 +93,23 @@ typedef struct {
     int bossCrystal, bossOrb, bossSeal;
     float guardBlock;  /* 守护护盾（0..0.6） */
     uint32_t tickMs;   /* 自动推进计时 */
+    /* ---- 演出计时（HTML 的 bt.t，单位秒） ---- */
+    float fxT;         /* 全局演出时间轴，驱动滚动/呼吸/粒子 */
+    float cam;         /* 背景横向滚动偏移 */
+    float walkF;       /* 英雄行走帧相位 */
+    float lungeT;      /* 英雄攻击突进计时 */
+    float hurtT;       /* 英雄受击计时 */
+    float catLungeT, catLungeDur;  /* 伙伴猫突击 */
+    float shake;       /* 暴击震屏强度 */
+    int   weakKnown;   /* 是否已揭示弱点 */
+    /* 粒子池：p=方块 / ring=圆环 / circle=地面魔法阵 / charge=聚能球 */
+    struct {
+        float x, y, r, t, t0;
+        int   kind;
+        int   c;          /* 颜色索引（用 PAL 表） */
+        int   shard;
+    } fx[16];
+    int   fxHead;       /* 环形写指针 */
     int enemyCount;
     BattleEnemy enemies[BATTLE_MAX_ENEMIES];
 } BattleState;

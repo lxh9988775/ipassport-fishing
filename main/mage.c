@@ -16,6 +16,7 @@
 #include "bsp_button.h"
 #include "lvgl.h"
 #include "mage_draw.h"
+#include "mage_fx.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -155,11 +156,6 @@ static void set_hidden(lv_obj_t *o, bool h) {
 }
 static int spellModLen(int slot) { return slot == 0 ? 3 : slot == 1 ? 9 : 5; }
 
-/* 对照实验开关：0=关闭全屏贴图（调试用），1=开启 */
-#ifndef MAGE_ART_FULLSCREEN
-#define MAGE_ART_FULLSCREEN 1
-#endif
-
 /* ===================== 战斗引擎（M3，1:1 复刻 HTML 战斗逻辑）前向声明 ===================== */
 static void battle_render(void);
 static void battle_handle(int act);
@@ -201,21 +197,10 @@ static void build_ui(void) {
     /* 标题页主视觉：与 HTML 一致用 title_art 全屏铺底。
      * 必须建在所有文字之后并移到最底层，否则会盖住标题文字。 */
     lv_obj_t *t_bg = NULL, *t_hero = NULL;
-    ESP_LOGI("mage", "T1 建 title 底图");
-    /* 对照实验开关：设 MAGE_ART_FULLSCREEN=0 可临时关闭全屏贴图，
-     * 用于确认崩溃是否由「240x320 全屏贴图渲染」本身引起。 */
-#if MAGE_ART_FULLSCREEN
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
-    ESP_LOGI("mage", "T2 title 完成 %p", (void *)t_bg);
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
-    ESP_LOGI("mage", "T3 建 sp_hero 立绘");
     mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);
-    ESP_LOGI("mage", "T4 sp_hero 完成 %p", (void *)t_hero);
     if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
-#else
-    ESP_LOGW("mage", "MAGE_ART_FULLSCREEN=0，已关闭标题页全屏贴图");
-#endif
-    ESP_LOGI("mage", "T5 标题页美术完成");
 
     /* 命名组 */
     g_name_grp = lv_obj_create(g_root);
@@ -293,6 +278,18 @@ static void build_ui(void) {
         lv_obj_set_style_radius(s, 1, 0);
         g_stars[i] = s;
     }
+
+    /* 战斗演出层：挂在 g_root 下、沉到最底（index 0），保证文字压在其上。
+     * 对象池在这里一次性构建完成，之后每帧只改属性。 */
+    lv_obj_t *fx_root = lv_obj_create(g_root);
+    lv_obj_remove_style_all(fx_root);
+    lv_obj_set_size(fx_root, SCR_W, SCR_H);
+    lv_obj_set_pos(fx_root, 0, 0);
+    lv_obj_set_style_bg_opa(fx_root, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(fx_root, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_move_to_index(fx_root, 0);
+    mage_fx_attach(fx_root);
+    lv_obj_add_flag(fx_root, LV_OBJ_FLAG_HIDDEN);   /* 非战斗时隐藏 */
 }
 
 /* ===================== 通用小工具 ===================== */
@@ -319,9 +316,7 @@ static void refresh_ui(void) {
     set_hidden(g_name_grp, !naming);
     set_hidden(g_scene_grp, title || naming);
     set_hidden(g_hud, !hud_on);
-    ESP_LOGI("mage", "R1 组显隐完成");
     for (int i = 0; i < 14; i++) set_hidden(g_stars[i], !title);
-    ESP_LOGI("mage", "R2 星星完成");
 
     /* 离开城镇页时清掉主视觉，下次进入再重建（避免周期刷新里贴图无限叠加） */
     if (g_scene != SC_CITY && g_city_art_shown) {
@@ -329,7 +324,6 @@ static void refresh_ui(void) {
         g_city_art = NULL;
         g_city_art_shown = false;
     }
-    ESP_LOGI("mage", "R3 城镇清理完成");
 
     if (title) {
         /* 星星闪烁动画已停用：在全屏贴图之上做透明度动画会每帧触发全屏重绘，
@@ -1179,9 +1173,7 @@ static void game_task(void *arg) {
     for (;;) {
         btn_ev_t e;
         if (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) {
-            ESP_LOGI("mage", "K1 收到按键 btn=%d ev=%d", (int)e.btn, (int)e.ev);
             handle_btn(e.btn, e.ev);
-            ESP_LOGI("mage", "K2 按键处理完成");
         }
 
         uint32_t now = now_ms();
@@ -1195,9 +1187,6 @@ static void game_task(void *arg) {
             if (bsp_lvgl_lock(100)) {
                 refresh_ui();
                 bsp_lvgl_unlock();
-                ESP_LOGI("mage", "G1 周期刷新完成 scene=%d", (int)g_scene);
-            } else {
-                ESP_LOGW("mage", "G0 拿不到 LVGL 锁");
             }
         }
         vTaskDelay(pdMS_TO_TICKS(20));
@@ -1292,6 +1281,12 @@ static void end_battle(void);
 static void deal_to(BattleEnemy *e, int dmg) {
     if (e->brokenTurns > 0) dmg = (int)(dmg * 1.4f + 0.5f);   /* 破防易伤 ×1.4 */
     e->hp -= dmg; if (e->hp < 0) e->hp = 0;
+    /* 演出：受击后仰 + 闪红 + 粒子迸溅（HTML e.hurtT / fx） */
+    e->hurtT  = 0.22f;
+    e->flashT = 0.15f;
+    mage_fx_spawn(FX_K_PARTICLE, (float)(e->x - 70) - (float)(int)bt.cam,
+                   250.0f - (float)e->typeIdx * 20.0f, 0xff9ad5, 5.0f, 0.45f);
+    if (dmg > 0) bt.shake = 0.35f;   /* 伤害震屏 */
     if (e->boss && !e->enraged && e->hp > 0 && e->hp <= (int)(e->maxHp * 0.65f)) {
         e->enraged = 1; e->atk = (int)(e->atk * 1.6f + 0.5f);
         e->bossCD = e->bossCD < 2 ? e->bossCD : 2;
@@ -1378,6 +1373,8 @@ static void partner_strike(void) {
     Partner *p = &g.partners[g.activePartner];
     BattleEnemy *target = nearest_enemy(175);
     if (!target) return;
+    /* 演出：伙伴猫突击（HTML bt.catLunge 冲向目标再退回） */
+    bt.catLungeT = 0.40f; bt.catLungeDur = 0.40f;
     int hits = 1;
     if (p->skillIdx == skillIndex("swift") && mage_rf(0, 1) < 0.5f) hits = 2;
     if (p->traitIdx == traitIndex("nimble") && mage_rf(0, 1) < 0.2f) hits = 2;
@@ -1418,6 +1415,10 @@ static void magic_cast(void) {
     if (a == 0) take = nh > 0 ? 1 : 0;                 /* 弹：单体 */
     else if (m == 3) take = nh > 3 ? 3 : nh;           /* 古代：最多3 */
     if (take == 0) { toast("空放了…"); after_player_action(); return; }
+    /* 演出：英雄突进（HTML bt.lungeT/0.22）+ 施法聚能光球（HTML fx charge） */
+    bt.lungeT = 0.22f;
+    mage_fx_spawn(FX_K_CHARGE, (float)(hits[0]->x - 70) - (float)(int)bt.cam,
+                   205.0f, 0xb98cff, 12.0f, 0.35f);
     for (int i = 0; i < take; i++) {
         BattleEnemy *en = hits[i];
         int wk = 0; for (int j = 0; j < ENEMY[en->typeIdx].nWeak; j++) if (ENEMY[en->typeIdx].weakOf[j] == e2) wk = 1;
@@ -1426,8 +1427,16 @@ static void magic_cast(void) {
         if (resisted) { dmg = (int)(dmg * 0.45f + 0.5f); en->resistKnown = 1; toast("抗性!"); }
         if (wk) {
             dmg = (int)(dmg * 1.5f + 0.5f);
+            bt.weakKnown = 1;   /* 弱点揭示（HTML e.weakKnown 命中后才显示图标） */
+            /* 演出：地面魔法阵 + 扩散环 */
+            mage_fx_spawn(FX_K_CIRCLE, (float)(en->x - 70) - (float)(int)bt.cam,
+                           252.0f, 0x7fd4ff, 20.0f, 0.5f);
+            mage_fx_spawn(FX_K_RING, (float)(en->x - 70) - (float)(int)bt.cam,
+                          210.0f, 0xffd93d, 16.0f, 0.4f);
+            bt.shake = 0.8f;   /* 弱点暴击强震屏 */
             if (en->shield > 0 && en->brokenTurns <= 0) {
                 en->shield--;
+                en->brokenT = 3.0f;   /* 破防后盾槽闪烁 */
                 if (en->shield <= 0) { en->brokenTurns = 3; toast("破防！%s 硬直，受伤×1.4", ENEMY[en->typeIdx].n); }  /* HTML 原文 brokenT=4.5s（实时引擎）；回合制下等价取 3 个敌方回合 */
             }
         }
@@ -1517,6 +1526,13 @@ static void apply_enemy_hit(BattleEnemy *e, int big) {
     if (bt.guardBlock > 0) { int cut = (int)(d * bt.guardBlock + 0.5f); d -= cut; if (d < 1) d = 1; bt.guardBlock -= 0.15f; if (bt.guardBlock < 0) bt.guardBlock = 0; }
     g.hp -= d; if (g.hp < 0) g.hp = 0;
     toast("-%d HP", d);
+    /* 演出：敌方冲锋前倾 + BOSS 大招蓄力警告 + 英雄受击后仰闪红 */
+    e->lungeT = 0.35f; e->lungeDur = 0.35f;
+    if (big) e->lungeBig = 1;
+    bt.hurtT = 0.25f;
+    bt.shake = big ? 1.0f : 0.5f;
+    mage_fx_spawn(FX_K_RING, (float)(BTPX - (int)bt.cam), 210.0f,
+                  big ? 0xff6b6b : 0xffa04d, 18.0f, 0.4f);
 }
 static void enemy_phase(void) {
     /* 中毒结算 */
@@ -1574,6 +1590,8 @@ static void enemy_phase(void) {
     set_bphase(BP_MENU);
 }
 static void after_player_action(void) {
+    /* BOSS 蓄力警告只在出招那一回合闪（HTML e.lunge.big 的瞬时标记） */
+    for (int i = 0; i < bt.enemyCount; i++) bt.enemies[i].lungeBig = 0;
     partner_strike();
     if (bt.enemyCount == 0) { win_battle(); return; }
     enemy_phase();
@@ -1622,6 +1640,7 @@ static void spawn_group(void) {
         e->rarity = rollRarity();
         e->ivs[0] = mage_ri(6, 15); e->ivs[1] = mage_ri(6, 15); e->ivs[2] = mage_ri(6, 15);
         e->x = BTPX + 78 + i * 16;
+        e->bob = mage_rf(0.0f, 6.28f);   /* 跳跃相位错开，避免几只怪同步弹跳（HTML e.bob） */
         if (e->elite) { e->hp = (int)(e->hp * 2.2f + 0.5f); e->maxHp = e->hp; e->atk = (int)(e->atk * 1.5f + 0.5f); }
     }
 }
@@ -1645,6 +1664,7 @@ static void spawn_boss(void) {
     int rr = rollRarity(); e->rarity = (rr + 1) < 3 ? (rr + 1) : 3;
     e->ivs[0] = mage_ri(10, 15); e->ivs[1] = mage_ri(10, 15); e->ivs[2] = mage_ri(10, 15);
     e->x = BTPX + 150;
+    e->bob = mage_rf(0.0f, 6.28f);
     int pl[9]; int np = 0;
     for (int i = 0; i < 9; i++) { int wk = 0; for (int j = 0; j < bd->nWeak; j++) if (bd->weakOf[j] == i) wk = 1; if (!wk) pl[np++] = i; }
     e->resist[0] = -1; e->resist[1] = -1;
@@ -1822,76 +1842,21 @@ void battle_start_boss(int chapter) {
 
 /* ---------- 渲染 / 输入 / 自动推进 ---------- */
 
-/* 战斗画面美术层：HTML 用 battle_bg 全屏铺底 + 敌我立绘（drawSprite）。
- * 文字战报仍走 s_init/s_add 叠在美术之上，与 HTML 的「背景+立绘+战报」结构一致。
+/* 战斗画面美术层已抽到 main/mage_fx.c（战斗演出层）。
  *
- * 关键：refresh_ui 是周期调用（UI_REFRESH_MS），绝不能每次都 lv_obj_clean 重建，
- * 否则全屏反复重绘 = 闪屏。这里用「敌人构成签名」判断，只有阵容变了才重画。 */
-static lv_obj_t *g_battle_art = NULL;
-static int      g_battle_sig = -1;      /* 上次绘制的阵容签名，-1 = 未绘制 */
-
-static int battle_art_signature(void)
-{
-    int sig = bt.mode * 1000 + bt.wave * 100 + bt.enemyCount * 10;
-    for (int i = 0; i < bt.enemyCount; i++) {
-        const BattleEnemy *e = &bt.enemies[i];
-        sig = sig * 7 + (e->hp > 0 ? (e->typeIdx + 1) * 3 + (e->boss ? 1 : 0) : 0);
-    }
-    return sig;
-}
-
+ * 那里实现了 HTML 原版的实时演出：背景横向滚动、敌我跳跃与落地压扁、
+ * 受击后仰、冲锋前倾、暴击震屏、伤害飘字、粒子/魔法阵、BOSS 巨型化与蓄力警告、
+ * 精英标记、破防盾槽、前景草丛视差 1.3。
+ *
+ * 防闪屏铁律（ESP32-C3 单核）：对象池一次构建，之后每帧只改属性，
+ * 绝不 lv_obj_clean 重建；离开战斗必须隐藏，否则会盖住后续页面持续重绘。 */
 static void battle_art_update(void) {
     const bool in_battle = (g_scene == SC_BATTLE) && bt.active;
-
-    /* 离开战斗：立刻隐藏并作废签名，下次进入会重画 */
-    if (!in_battle) {
-        if (g_battle_art && !lv_obj_has_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN)) {
-            lv_obj_add_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN);
-        }
-        g_battle_sig = -1;
-        return;
+    mage_fx_show(in_battle);
+    if (in_battle) {
+        mage_fx_tick(0.020f);   /* 20ms 周期任务，与 UI_REFRESH_MS 对齐 */
+        mage_fx_render();
     }
-
-    if (!g_battle_art) {
-        g_battle_art = lv_obj_create(g_root);
-        lv_obj_remove_style_all(g_battle_art);
-        lv_obj_set_size(g_battle_art, SCR_W, SCR_H);
-        lv_obj_set_pos(g_battle_art, 0, 0);
-        lv_obj_set_style_bg_opa(g_battle_art, LV_OPA_TRANSP, 0);
-        lv_obj_set_scrollbar_mode(g_battle_art, LV_SCROLLBAR_MODE_OFF);
-        /* 压在 HUD 之下：scene_grp 是 g_root 的第 2 个子对象（index 1） */
-        lv_obj_move_to_index(g_battle_art, 1);
-    }
-    lv_obj_remove_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN);
-
-    /* 阵容没变就不重画 —— 这一条就是防闪屏的关键 */
-    const int sig = battle_art_signature();
-    if (sig == g_battle_sig) {
-        return;
-    }
-    g_battle_sig = sig;
-    lv_obj_clean(g_battle_art);
-
-    /* 战斗背景（HTML: ctx.drawImage(bg,...) 铺满） */
-    mage_draw_bg(g_battle_art, "battle_bg", 0, 0, SCR_W, 132);
-
-    /* 敌方立绘：goblin/slime/cat 三型，与 HTML spr 映射一致；最多画 3 个
-     * h 必须等于贴图原高（1:1 免缩放），宽由绘制层按原图比例算 */
-    const char *spr[3] = {"sp_goblin", "sp_slime", "sp_cat"};
-    const int  sprh[3] = {80, 54, 76};
-    int drawn = 0;
-    for (int i = 0; i < bt.enemyCount && drawn < 3; i++) {
-        const BattleEnemy *e = &bt.enemies[i];
-        if (e->hp <= 0) continue;
-        const int k = (e->typeIdx >= 0 && e->typeIdx <= 2) ? e->typeIdx : 0;
-        int cx = SCR_W * (drawn + 1) / 4;
-        if (mage_draw_sprite(g_battle_art, spr[k], cx, 128, sprh[k], 1.0f, 0.0f)) {
-            drawn++;
-        }
-    }
-    /* 我方主角 + 伙伴猫（HTML: spHero 在左下，spCat 在右下） */
-    mage_draw_sprite(g_battle_art, "sp_hero", 46, 130, 108, 1.0f, 0.0f);
-    mage_draw_sprite(g_battle_art, "sp_cat", SCR_W - 42, 130, 76, 1.0f, 0.0f);
 }
 
 static void battle_render(void) {
@@ -2009,14 +1974,10 @@ void mage_app_start(void) {
     s_btn_q = xQueueCreate(16, sizeof(btn_ev_t));
     mage_init();
     if (bsp_lvgl_lock(1000)) {
-        ESP_LOGI("mage", "B1 开始建 UI");
         build_ui();
-        ESP_LOGI("mage", "B2 build_ui 返回");
         refresh_ui();
-        ESP_LOGI("mage", "B3 refresh_ui 返回");
         bsp_lvgl_unlock();
     }
     bsp_button_init(mage_on_key, NULL);
-    ESP_LOGI("mage", "B4 按键初始化完成，启动流程结束");
     xTaskCreate(game_task, "mage", 12288, NULL, 5, NULL);
 }
