@@ -207,6 +207,19 @@ void mage_hud_show(bool on)
     H.shown = (int8_t)(on ? 1 : 0);
 }
 
+/* 文本记忆：与 lv_label_set_text 配合，内容相同则完全不碰 LVGL。
+ * 必须用「按目标缓冲尺寸安全拷贝」而不是 snprintf(dst,N,"%s",src) ——
+ * 工程开 -Werror=format-truncation，当 dst 小于 src 时 snprintf 直接报错：
+ *   error: '%s' directive output may be truncated writing up to 63 bytes
+ *          into a region of size 24 */
+static void hud_keep(char *dst, size_t dstsz, const char *src)
+{
+    size_t n = strlen(src);
+    if (n >= dstsz) { n = dstsz - 1; }
+    memcpy(dst, src, n);
+    dst[n] = '\0';
+}
+
 /* 每帧只改文本与条宽，不建对象。
  *
  * 【卡死修复】lv_label_set_text 每次调用都会重新排版 + invalidate；
@@ -229,7 +242,7 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
     if (w != H.hpW) { H.hpW = w; lv_obj_set_size(H.hpBar, w, 7); }
     snprintf(want, sizeof(want), "%d/%d", hp, maxHp);
     if (strcmp(H.hpTxt, want) != 0) {
-        snprintf(H.hpTxt, sizeof(H.hpTxt), "%s", want);
+        hud_keep(H.hpTxt, sizeof(H.hpTxt), want);
         lv_label_set_text(H.hpTx, want);
     }
 
@@ -239,7 +252,7 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
     if (w != H.mpW) { H.mpW = w; lv_obj_set_size(H.mpBar, w, 5); }
     snprintf(want, sizeof(want), "%d/%d", mp, maxMp);
     if (strcmp(H.mpTxt, want) != 0) {
-        snprintf(H.mpTxt, sizeof(H.mpTxt), "%s", want);
+        hud_keep(H.mpTxt, sizeof(H.mpTxt), want);
         lv_label_set_text(H.mpTx, want);
     }
 
@@ -248,7 +261,7 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
     else       snprintf(want, sizeof(want), "%d/%d%s", wave, waveMax,
                         wave == 10 ? " \xe2\x98\xa0BOSS" : (wave == 5 ? " \xe2\x9a\x94\xe7\xb2\xbe\xe8\x8b\xb1" : ""));
     if (strcmp(H.waveTxt, want) != 0) {
-        snprintf(H.waveTxt, sizeof(H.waveTxt), "%s", want);
+        hud_keep(H.waveTxt, sizeof(H.waveTxt), want);
         lv_label_set_text(H.waveTx, want);
     }
 
@@ -258,14 +271,14 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
              autoMode ? "AUTO" : "\xe6\x89\x8b\xe5\x8a\xa8", loadout, orbs, seals, potions);
     (void)autoCap;
     if (strcmp(H.statTxt, want) != 0) {
-        snprintf(H.statTxt, sizeof(H.statTxt), "%s", want);
+        hud_keep(H.statTxt, sizeof(H.statTxt), want);
         lv_label_set_text(H.statTx, want);
     }
 
     /* 回合徽标 */
     snprintf(want, sizeof(want), "\xe5\x9b\x9e\xe5\x90\x88 %d", turn);
     if (strcmp(H.turnTxt, want) != 0) {
-        snprintf(H.turnTxt, sizeof(H.turnTxt), "%s", want);
+        hud_keep(H.turnTxt, sizeof(H.turnTxt), want);
         lv_label_set_text(H.turnTx, want);
     }
 }

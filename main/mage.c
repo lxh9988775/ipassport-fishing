@@ -346,17 +346,21 @@ static void build_ui(void) {
 
     /* 把 build_ui 里各处直接 add_flag 设定的初始隐藏状态登记进跟踪表，
      * 否则首次 set_hidden(...,false) 会被误判为「状态没变」而跳过。 */
+    /* 注意：这里**不能**用 `static lv_obj_t *arr[] = {g_title_grp, ...}`。
+     * g_title_grp 等是运行期赋值的全局变量，C 语言要求静态存储期数组的
+     * 初始化器必须是常量表达式，否则报：
+     *   error: initializer element is not constant
+     * 用局部（自动存储期）数组即可。 */
     s_hidden_cnt = 0;
-    static lv_obj_t *init_hidden[] = {
-        g_title_grp, g_name_grp, g_hud,
-        g_toast,
-    };
+    lv_obj_t *init_hidden[] = { g_title_grp, g_name_grp, g_hud, g_toast };
     for (size_t k = 0; k < sizeof(init_hidden)/sizeof(init_hidden[0]); k++) {
+        if (s_hidden_cnt >= HIDDEN_TRACK_MAX) { break; }
         s_hidden_track[s_hidden_cnt].o = init_hidden[k];
         s_hidden_track[s_hidden_cnt].hidden = 1;
         s_hidden_cnt++;
     }
     for (int k = 0; k < 14; k++) {
+        if (s_hidden_cnt >= HIDDEN_TRACK_MAX) { break; }
         s_hidden_track[s_hidden_cnt].o = g_stars[k];
         s_hidden_track[s_hidden_cnt].hidden = 1;
         s_hidden_cnt++;
@@ -871,7 +875,12 @@ static void refresh_ui(void) {
         /* lv_label_set_text 每次都会重排文本并 invalidate。
          * refresh_ui 每 60ms 跑一次，必须先比对内容，相同则跳过。 */
         if (strcmp(g_toast_t, g_toast_buf) != 0) {
-            snprintf(g_toast_t, sizeof(g_toast_t), "%s", g_toast_buf);
+            /* 用 memcpy + 显式截断，不用 snprintf(dst,N,"%s",src)
+             * （工程开 -Werror=format-truncation 会直接报错） */
+            size_t n = strlen(g_toast_buf);
+            if (n >= sizeof(g_toast_t)) { n = sizeof(g_toast_t) - 1; }
+            memcpy(g_toast_t, g_toast_buf, n);
+            g_toast_t[n] = '\0';
             lv_label_set_text(g_toast, g_toast_buf);
         }
     } else {
