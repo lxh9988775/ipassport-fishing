@@ -43,7 +43,8 @@ static const char *TAG = "fap_ss";
 #define SS_CMD              "FAP_SCREENSHOT_V1"
 #define SS_CMD_LEN          (sizeof(SS_CMD) - 1)
 #define SS_BUF_BYTES        (SS_W * SS_H * 2)
-#define SS_CHUNK            512
+#define SS_CHUNK            64           /* USB-CDC 单次写小块，降低溢出丢包 */
+#define SS_CHUNK_DELAY_MS   2            /* 每块之间的节流延时 */
 #define SS_TASK_PRIO        (3)          /* 低于 LVGL 的 4 */
 #define SS_TASK_STACK       (8192)
 
@@ -64,9 +65,15 @@ static void ss_send_bytes(const uint8_t *p, size_t n)
     while (off < n) {
         size_t chunk = n - off;
         if (chunk > SS_CHUNK) chunk = SS_CHUNK;
-        ssize_t r = write(STDOUT_FILENO, p + off, chunk);
-        if (r <= 0) return;               /* 主机拔线：放弃传输但保留任务 */
-        off += (size_t)r;
+        /* USB-CDC 缓冲很小：一次 write 后必须给固件侧/驱动侧时间把数据推完，
+         * 否则主机侧会在声明长度之前就读不到数据（"ended before the declared length"）。 */
+        ssize_t w = write(STDOUT_FILENO, p + off, chunk);
+        if (w <= 0) {
+            vTaskDelay(pdMS_TO_TICKS(20));
+            continue;                     /* 主机暂时不可写：重试同一块，绝不跳过 */
+        }
+        off += (size_t)w;
+        vTaskDelay(pdMS_TO_TICKS(SS_CHUNK_DELAY_MS));
     }
 }
 
@@ -116,7 +123,11 @@ static void ss_capture(void)
                      "FAP_SCREENSHOT_V1 %d %d RGB565LE %lu\n",
                      SS_W, SS_H, (unsigned long)total);
     ss_send_bytes((const uint8_t *)hdr, (size_t)hl);
+    /* 头与像素之间稍作停顿，让主机侧先进入读状态 */
+    vTaskDelay(pdMS_TO_TICKS(20));
     ss_send_bytes(s_fb, total);
+    /* 末尾多发几字节余量后主机按声明长度截断即可，这里给一点收尾时间 */
+    vTaskDelay(pdMS_TO_TICKS(20));
 
     /* 退出窗口：恢复日志 */
     esp_log_level_set("*", ESP_LOG_INFO);
