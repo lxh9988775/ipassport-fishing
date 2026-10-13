@@ -17,6 +17,7 @@
 #include "nvs_flash.h"
 
 #include "mage_state.h"   /* mage_app_start() 声明 */
+#include "fap_screenshot.h" /* 真机串口截屏协议 FAP_SCREENSHOT_V1 */
 
 static const char *TAG = "mage_main";
 
@@ -48,4 +49,7 @@ void app_main(void) {
 
     /* 交给游戏应用层（内部注册按键回调 + 创建游戏任务）*/
     mage_app_start();
+
+    /* 真机串口截屏协议（社区投稿截图用，纯只读）*/
+    fap_screenshot_init();
 }

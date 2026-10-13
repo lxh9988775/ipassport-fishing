@@ -3,8 +3,9 @@ idf_component_register(
          "mage_state.c"
          "mage_data.c"
          "mage.c"
+         "fap_screenshot.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp nvs_flash lvgl freertos
+    REQUIRES bsp nvs_flash lvgl freertos usb_serial_jtag
 )
 
 # 中文子集字体：由 lv_font_conv 生成（源字体思源黑体 CN / SIL OFL 1.1）。
