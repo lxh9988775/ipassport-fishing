@@ -102,6 +102,7 @@ void mage_defaults(void);    /* 填默认值（= HTML newState） */
 void mage_init(void);        /* 默认值 + 尝试读档 */
 void mage_new_game(void);    /* 新游戏：默认值 + 进入 NAME */
 void mage_load_from_nvs(void);
+void mage_app_start(void);   /* 入口（main.c 调用） */
 
 /* spell key = form*45 + elem*5 + mod （0..134） */
 static inline int spell_key(int f, int e, int m) { return f * 45 + e * 5 + m; }

@@ -10,6 +10,7 @@
 #define MAGE_DATA_H
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>   /* NULL */
 
 /* ============ 进阶 / 魔法 ============ */
 extern const char *RANKS[7];
