@@ -39,22 +39,55 @@ typedef struct {
 typedef struct { char slot; int rar; int atk, def; float pow; char name[16]; } EbagItem;
 
 /* ============ 战斗状态（瞬态，不入存档） ============ */
+#define BATTLE_MAX_ENEMIES 6
 typedef struct {
-    int active;           /* 是否进行中 */
-    int mobIdx;           /* ENEMY 下标 */
-    int mobHp, mobMax;
-    int shield;           /* 破防盾层数 */
-    int turn;             /* 0=玩家 1=敌方 */
-    int round;
-    int boss;             /* 0/1 */
-    int chapter;          /* 章节下标（BOSS 战） */
-    int dungeonId;        /* 副本下标（-1=普通野外） */
-    int captured;         /* 本场是否已捕获 */
-    int fled;
-    int lootGold, lootExp, lootHerb, lootMat, lootStone, lootStoneN;
-    int autoT2;           /* 结算倒计时（百分秒） */
-    int result;           /* 0=胜 1=败 2=捕获 3=逃跑 */
-    int hpPct;            /* 敌方血线比例（捕捉门槛判定） */
+    int typeIdx;       /* ENEMY 下标 */
+    int lvl;
+    int hp, maxHp, atk;
+    int shield, shieldMax;   /* 破防盾层数（精英2/普通1/BOSS5） */
+    int brokenTurns;         /* >0：破防硬直，跳过攻击且受伤×1.4 */
+    int boss;                /* 0/1 */
+    int elite;               /* 0/1 */
+    int enraged;             /* BOSS 二阶段 */
+    int bossCD;              /* 大招冷却（回合） */
+    int mercy;               /* 手下留情锁血 */
+    int mercyTurns;          /* 锁血兜底计数 */
+    int poisonTurns;         /* 毒牙剩余回合 */
+    int resist[2];           /* BOSS 抗性元素下标，-1 无 */
+    int resistKnown;
+    int rarity;              /* 0..4 */
+    int ivs[3];
+    int x;                   /* 模拟横坐标（最近/射程判定） */
+} BattleEnemy;
+
+typedef struct {
+    int active;
+    int mode;          /* 0=野外远征 1=副本(crawl) 2=遗迹秘境 */
+    int phase;         /* BP_MENU/MAGIC/ITEM/RESULT/EVENT/FAINT */
+    int wave;
+    int turn;
+    int enemyIdx;
+    int autoBattle;    /* 自动战斗（来自 MENU 设置） */
+    int autoCapture;   /* 自动捕捉 */
+    int autoSpell;     /* 自动轮放游标 */
+    int lastSpell;     /* 上次施法 key，-1 无 */
+    int magicIdx;      /* BP_MAGIC 选中魔法 */
+    int itemIdx;       /* BP_ITEM 选中道具 */
+    int dungeonId;     /* 副本 id（-1=遗迹秘境） */
+    int dungeonRounds; /* 副本通关轮数 */
+    int eventKind;     /* 0=宝箱 1=陷阱 2=泉水 3=药草，-1 无 */
+    int eventSeen;     /* 本场事件已触发 */
+    int done;          /* 远征完成 */
+    int storyShown;
+    int goldGain, expGain, herbGain, matGain, potGain;
+    int killCnt;
+    int bossEquipRar;
+    char bossEquip[16];
+    int bossCrystal, bossOrb, bossSeal;
+    float guardBlock;  /* 守护护盾（0..0.6） */
+    uint32_t tickMs;   /* 自动推进计时 */
+    int enemyCount;
+    BattleEnemy enemies[BATTLE_MAX_ENEMIES];
 } BattleState;
 
 /* ============ 主状态（与 HTML newState 逐字段对应） ============ */

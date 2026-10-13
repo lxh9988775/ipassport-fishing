@@ -90,7 +90,6 @@ static int bagIdx = 0, dexIdx = 0, bookIdx = 0, partIdx = 0;
 static int partMenuOpen = 0, partMenu = 0, partRelConf = 0;
 static int menuIdx = 0, homeSel = 0, resIdx = 0, forgeSel = 0, marketIdx = 0, alcIdx = 0;
 static int acadIdx = 0, muIdx = 0, craftSlot = 0, eqSel = 0, guildIdx = 0, wildIdx = 0;
-static int battleStub = 0;
 
 static int  g_scene = SC_TITLE;
 static int  g_need_refresh = 1;
@@ -151,6 +150,11 @@ static void set_hidden(lv_obj_t *o, bool h) {
     else   lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
 }
 static int spellModLen(int slot) { return slot == 0 ? 3 : slot == 1 ? 9 : 5; }
+
+/* ===================== 战斗引擎（M3，1:1 复刻 HTML 战斗逻辑）前向声明 ===================== */
+static void battle_render(void);
+static void battle_handle(int act);
+static void battle_tick(void);
 
 /* ===================== 建 UI ===================== */
 static void build_ui(void) {
@@ -659,10 +663,7 @@ static void refresh_ui(void) {
         break;
     }
     case SC_BATTLE: {
-        s_add("⚔ 战斗系统\n");
-        s_add("下个里程碑实装\n");
-        s_add("（行走/魔法/捕捉\n BOSS/掉落）\n");
-        lv_label_set_text(g_scene_hint, "OK/长按 回城镇");
+        battle_render();
         break;
     }
     case SC_MUPGRADE: {
@@ -1055,20 +1056,20 @@ static void scene_handle(int act) {
                 if (g.level < WILD_REQ[wildIdx]) { toast("建议Lv%d以上", WILD_REQ[wildIdx]); break; }
                 if (!g.storySeen[wildIdx]) { g.storySeen[wildIdx] = 1; toast("%s", STORY_ENTER[wildIdx]); }
                 g.mapChapter = wildIdx; mage_persist();
-                battleStub = 1; mage_set_scene(SC_BATTLE); toast("战斗引擎下个里程碑实装");
+                battle_start_wild(wildIdx);
             } else if (wildIdx == 5) {
                 if (g.rank < 1) { toast("晋升初级魔法师后开放"); break; }
-                battleStub = 1; mage_set_scene(SC_BATTLE); toast("遗迹秘境 下个里程碑");
+                battle_start_dungeon(-1);
             } else {
                 int id = g.dungeonOffers[wildIdx - 6];
-                battleStub = 1; mage_set_scene(SC_BATTLE); toast("进入%s", DUNGEONS[id].name);
+                battle_start_dungeon(id);
             }
         }
         g_need_refresh = 1;
         break;
     }
     case SC_BATTLE:
-        if (act == ACT_OK || act == ACT_BACK) { battleStub = 0; mage_set_scene(SC_CITY); g.cityMode = 0; }
+        battle_handle(act);
         break;
     case SC_MUPGRADE: {
         int n = discoveredCount();
@@ -1115,6 +1116,7 @@ static void game_task(void *arg) {
         while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
 
         uint32_t now = now_ms();
+        if (bt.active) battle_tick();
         if (now - g_last_save_ms > 30000) { mage_persist(); g_last_save_ms = now; }
 
         if (g_need_refresh || g_scene != g_last_scene || now - g_last_ui_ms >= UI_REFRESH_MS) {
@@ -1132,6 +1134,717 @@ void mage_on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
     if (!s_btn_q) return;
     const btn_ev_t e = { btn, ev };
     xQueueSend(s_btn_q, &e, 0);
+}
+
+/* ===================== 战斗引擎（M3，1:1 复刻 HTML 战斗逻辑） ===================== */
+#define BP_MENU 0
+#define BP_MAGIC 1
+#define BP_ITEM  2
+#define BP_ENEMY 3
+#define BP_RESULT 4
+#define BP_EVENT 5
+#define BP_FAINT 6
+#define BTPX 70
+
+static float fclamp(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
+
+static void set_bphase(int p) { bt.phase = p; bt.tickMs = now_ms(); }
+
+/* 取最近敌人（模拟横坐标判定，与 HTML engage/range 一致） */
+static BattleEnemy *nearest_enemy(int range) {
+    BattleEnemy *best = NULL; int bd = 2000000000;
+    for (int i = 0; i < bt.enemyCount; i++) {
+        BattleEnemy *e = &bt.enemies[i];
+        if (e->hp <= 0) continue;
+        int d = e->x - BTPX;
+        if (d > -6 && d < range && d < bd) { bd = d; best = e; }
+    }
+    return best;
+}
+
+/* ---------- 捕捉判定 ---------- */
+static int can_capture(BattleEnemy *e) {
+    if (e->boss) return 0;
+    const MobDef *bd = &ENEMY[e->typeIdx];
+    if (!bd->hasCap) return 0;
+    float ratio = (float)e->hp / (float)e->maxHp;
+    if (bd->cap.hp > 0 && ratio > bd->cap.hp) return 0;        /* 需压到指定血线以下 */
+    if (strcmp(bd->cap.tool, "seal") == 0) { if (g.seals <= 0) return 0; }
+    else { if (g.orbs <= 0) return 0; }
+    return 1;
+}
+static BattleEnemy *capture_target(void) {
+    BattleEnemy *best = NULL; int bestScore = 2000000000;
+    for (int i = 0; i < bt.enemyCount; i++) {
+        BattleEnemy *e = &bt.enemies[i];
+        if (e->hp <= 0 || !can_capture(e)) continue;
+        int uncaught = g.dexCaught[e->typeIdx] ? 0 : 1;
+        int score = (uncaught ? 0 : 100)
+                   + (strcmp(ENEMY[e->typeIdx].type, "cat") == 0 ? 12 : 0)
+                   + (int)((float)e->hp / (float)e->maxHp * 100);
+        if (score < bestScore) { bestScore = score; best = e; }
+    }
+    return best;
+}
+static int capture_chance(BattleEnemy *e, int seal) {
+    float ratio = (float)e->hp / (float)e->maxHp;
+    float p;
+    if (seal) p = fclamp(0.75f + (1 - ratio) * 0.2f, 0.75f, 0.95f);
+    else      p = fclamp(RARITY[e->rarity].cap * (1.45f - ratio) / 1.15f, 0.05f, 0.95f);
+    Partner *pr = NULL;
+    if (g.npartners > 0 && g.activePartner >= 0 && g.activePartner < g.npartners) pr = &g.partners[g.activePartner];
+    if (pr) {
+        if (pr->traitIdx == traitIndex("lucky")) p += 0.10f;
+        if (pr->traitIdx == traitIndex("flex"))  p += 0.15f;
+    }
+    if (p < 0.02f) p = 0.02f; if (p > 0.98f) p = 0.98f;
+    return (int)(p * 100);
+}
+
+/* ---------- 前向声明（战斗函数互相引用，集中声明避免隐式声明报错） ---------- */
+static void kill_award(BattleEnemy *e);
+static void reap_dead(void);
+static void after_player_action(void);
+static void win_battle(void);
+static void spawn_boss(void);
+static void finish_crawl(void);
+static void finish_expedition(void);
+static void throw_orb(int seal);
+
+/* ---------- 伤害/击杀 ---------- */
+static void deal_to(BattleEnemy *e, int dmg) {
+    if (e->brokenTurns > 0) dmg = (int)(dmg * 1.4f + 0.5f);   /* 破防易伤 ×1.4 */
+    e->hp -= dmg; if (e->hp < 0) e->hp = 0;
+    if (e->boss && !e->enraged && e->hp > 0 && e->hp <= (int)(e->maxHp * 0.65f)) {
+        e->enraged = 1; e->atk = (int)(e->atk * 1.6f + 0.5f);
+        e->bossCD = e->bossCD < 2 ? e->bossCD : 2;
+        toast("🔥 %s 狂暴了！攻击大幅提升", ENEMY[e->typeIdx].n);
+    }
+    if (ENEMY[e->typeIdx].hasCap && can_capture(e)) {           /* 手下留情锁血 */
+        int fl = (int)(e->maxHp * 0.08f + 0.5f); if (fl < 1) fl = 1;
+        if (e->hp <= fl) { e->hp = fl; if (!e->mercy) { e->mercy = 1; e->mercyTurns = 0; toast("手下留情！%s 留了残血，可捕捉", ENEMY[e->typeIdx].n); } }
+    }
+    /* 击杀回收统一在 reap_dead() 中进行（deal_to 只管扣血，避免在伤害循环里移动数组导致悬垂指针） */
+}
+static void partner_gain(int gxp) {
+    if (g.npartners <= 0 || g.activePartner < 0 || g.activePartner >= g.npartners) return;
+    Partner *p = &g.partners[g.activePartner];
+    p->exp += gxp;
+    int need = 10 + p->level * 4;
+    while (p->exp >= need) {
+        p->exp -= need; p->level++;
+        if (mage_rf(0, 1) < 0.6f) { int i = mage_ri(0, 2); if (p->ivs[i] < 15) p->ivs[i]++; }
+        need = 10 + p->level * 4;
+    }
+}
+static void check_level(void) {
+    while (g.exp >= expNeed()) {
+        g.exp -= expNeed(); g.level++;
+        g.maxHp += 6; g.maxMp += 3; g.hp = g.maxHp; g.mp = g.maxMp;
+        toast("升级！Lv%d", g.level);
+    }
+}
+static void kill_award(BattleEnemy *e) {
+    const MobDef *bd = &ENEMY[e->typeIdx];
+    int m = e->boss ? 9 : (e->elite ? 3 : 1);
+    if (e->boss) {
+        EbagItem it; rollEquip(1, &it);
+        if (g.nebag < 24) { g.ebag[g.nebag] = it; g.nebag++; }
+        g.crystals += 2; g.orbs += 2; g.seals += 1;
+        strncpy(bt.bossEquip, it.name, sizeof(bt.bossEquip) - 1); bt.bossEquip[sizeof(bt.bossEquip) - 1] = '\0';
+        bt.bossCrystal = 2; bt.bossOrb = 2; bt.bossSeal = 1;
+        int ck = g.mapChapter; if (ck < 0) ck = 0; if (ck > 4) ck = 4;
+        g.bossKilled[ck] = 1;
+        if (!bt.storyShown && g.mapChapter < 4) { bt.storyShown = 1; toast("主线推进：%s 已解锁！", CHAPTERS[g.mapChapter + 1]); }
+        mage_persist();
+    }
+    int gd = mage_ri(bd->gold[0], bd->gold[1]) * m;
+    int ed = bd->exp * m;
+    Partner *ap = NULL;
+    if (g.npartners > 0 && g.activePartner >= 0 && g.activePartner < g.npartners) ap = &g.partners[g.activePartner];
+    if (ap && ap->traitIdx == traitIndex("greedy")) gd = (int)(gd * 1.2f + 0.5f);
+    g.gold += gd; bt.goldGain += gd; g.exp += ed; bt.expGain += ed;
+    bt.killCnt++; g.kills++;
+    if (mage_rf(0, 1) < 0.18) { int h = mage_ri(1, 2) * m; g.herbs += h; bt.herbGain += h; }
+    if (mage_rf(0, 1) < 0.14) { int mm = mage_ri(1, 2) * m; g.mats += mm; bt.matGain += mm; }
+    if (mage_rf(0, 1) < 0.10) { g.potions++; bt.potGain++; }
+    partner_gain((int)(ed * 0.4f));
+    check_level();
+}
+/* 一次性回收所有 HP<=0 的敌人（在整套伤害结算完后调用，避免伤害循环中移动数组导致悬垂指针） */
+static void reap_dead(void) {
+    for (int i = 0; i < bt.enemyCount; ) {
+        if (bt.enemies[i].hp <= 0) {
+            kill_award(&bt.enemies[i]);
+            for (int j = i; j < bt.enemyCount - 1; j++) bt.enemies[j] = bt.enemies[j + 1];
+            bt.enemyCount--;
+        } else i++;
+    }
+}
+
+/* ---------- 玩家行动 ---------- */
+static void hero_strike(void) {
+    BattleEnemy *e = nearest_enemy(175);
+    if (!e) {
+        if (bt.enemyCount > 0) toast("敌人还没走近…");
+        else win_battle();
+        return;
+    }
+    int dmg = (int)((9 + g.level * 3 + g.rank * 3 + g.atkBonus + eqAtk()) * mage_rf(0.9f, 1.1f) + 0.5f);
+    if (dmg < 1) dmg = 1;
+    deal_to(e, dmg);
+    reap_dead();
+    after_player_action();
+}
+static void partner_strike(void) {
+    if (g.npartners <= 0 || g.activePartner < 0 || g.activePartner >= g.npartners) return;
+    Partner *p = &g.partners[g.activePartner];
+    BattleEnemy *target = nearest_enemy(175);
+    if (!target) return;
+    int hits = 1;
+    if (p->skillIdx == skillIndex("swift") && mage_rf(0, 1) < 0.5f) hits = 2;
+    if (p->traitIdx == traitIndex("nimble") && mage_rf(0, 1) < 0.2f) hits = 2;
+    float mul = 1.0f;
+    if (p->skillIdx == skillIndex("claw"))  mul *= 1.15f;
+    if (p->skillIdx == skillIndex("ember")) mul *= 1.10f;
+    if (p->skillIdx == skillIndex("frost")) mul *= 1.05f;
+    if (p->traitIdx == traitIndex("fierce")) mul *= 1.12f;
+    if (p->skillIdx == skillIndex("guard")) { bt.guardBlock += 0.3f; if (bt.guardBlock > 0.6f) bt.guardBlock = 0.6f; }
+    for (int h = 0; h < hits; h++) {
+        int a = (int)((8 + p->ivs[0] + p->level * 2) * mul * mage_rf(0.9f, 1.1f) + 0.5f);
+        if (a < 1) a = 1;
+        deal_to(target, a);
+        if (p->skillIdx == skillIndex("venom") && target->hp > 0) { if (target->poisonTurns < 4) target->poisonTurns = 4; }
+        if (p->skillIdx == skillIndex("leech")) {
+            int heal = (int)((8 + p->ivs[0]) * 0.2f + 0.5f);
+            g.hp += heal; if (g.hp > g.maxHp) g.hp = g.maxHp;
+        }
+    }
+    reap_dead();
+}
+static void magic_cast(void) {
+    int key = g.equipped;
+    int cost = spellCost(key);
+    if (g.mp < cost) { toast("魔力不足"); return; }
+    g.mp -= cost;
+    int a, e2, m; spell_split(key, &a, &e2, &m);
+    int range = FORMS[a].range;
+    int pow = (int)(spellPower(key) * eqPow() + 0.5f);
+    BattleEnemy *hits[6]; int nh = 0;
+    for (int i = 0; i < bt.enemyCount; i++) {
+        BattleEnemy *en = &bt.enemies[i];
+        if (en->hp <= 0) continue;
+        int d = en->x - BTPX;
+        if (d > -8 && d < range) hits[nh++] = en;       /* 已按 x 升序 */
+    }
+    int take = nh;
+    if (a == 0) take = nh > 0 ? 1 : 0;                 /* 弹：单体 */
+    else if (m == 3) take = nh > 3 ? 3 : nh;           /* 古代：最多3 */
+    if (take == 0) { toast("空放了…"); after_player_action(); return; }
+    for (int i = 0; i < take; i++) {
+        BattleEnemy *en = hits[i];
+        int wk = 0; for (int j = 0; j < ENEMY[en->typeIdx].nWeak; j++) if (ENEMY[en->typeIdx].weakOf[j] == e2) wk = 1;
+        int resisted = (en->resist[0] >= 0 && (en->resist[0] == e2 || en->resist[1] == e2)) ? 1 : 0;
+        int dmg = (int)(pow * mage_rf(0.9f, 1.15f) + 0.5f); if (dmg < 1) dmg = 1;
+        if (resisted) { dmg = (int)(dmg * 0.45f + 0.5f); en->resistKnown = 1; toast("抗性!"); }
+        if (wk) {
+            dmg = (int)(dmg * 1.5f + 0.5f);
+            if (en->shield > 0 && en->brokenTurns <= 0) {
+                en->shield--;
+                if (en->shield <= 0) { en->brokenTurns = 3; toast("破防！%s 硬直，受伤×1.4", ENEMY[en->typeIdx].n); }  /* HTML 原文 brokenT=4.5s（实时引擎）；回合制下等价取 3 个敌方回合 */
+            }
+        }
+        deal_to(en, dmg);
+    }
+    reap_dead();
+    after_player_action();
+}
+static int item_opt_count(void) {
+    int c = 0;
+    if (g.potions > 0) c++;
+    if (g.orbs > 0) c++;
+    if (g.seals > 0) c++;
+    return c;
+}
+static int item_opt_kind(int i) {   /* 0=药水 1=球 2=封印卡（按可用顺序） */
+    int k = 0;
+    if (g.potions > 0) { if (k == i) return 0; k++; }
+    if (g.orbs > 0)    { if (k == i) return 1; k++; }
+    if (g.seals > 0)   { if (k == i) return 2; k++; }
+    return -1;
+}
+static void use_item(void) {
+    int kind = item_opt_kind(bt.itemIdx);
+    if (kind == 0) {
+        if (g.potions <= 0) { toast("没有药水了"); return; }
+        if (g.hp >= g.maxHp) { toast("状态很好"); return; }
+        g.potions--;
+        g.hp += (int)(g.maxHp * 0.4f + 0.5f); if (g.hp > g.maxHp) g.hp = g.maxHp;
+        g.mp += (int)(g.maxMp * 0.3f + 0.5f); if (g.mp > g.maxMp) g.mp = g.maxMp;
+        after_player_action();
+    } else if (kind == 1 || kind == 2) {
+        throw_orb(kind == 2 ? 1 : 0);
+        after_player_action();
+    }
+}
+static void throw_orb(int seal) {   /* seal: 1=封印卡 0=球 -1=auto */
+    BattleEnemy *e = capture_target();
+    if (!e) { toast("没有可捕捉的魔物"); return; }
+    if (seal < 0) {
+        const MobDef *bd = &ENEMY[e->typeIdx];
+        seal = (strcmp(bd->cap.tool, "seal") == 0) ? 1 : 0;
+    }
+    if (seal) { if (g.seals <= 0) { toast("没有魔法封印卡！"); return; } g.seals--; }
+    else      { if (g.orbs <= 0)  { toast("没有捕捉球！"); return; } g.orbs--; }
+    int p = capture_chance(e, seal);
+    if (mage_rf(0, 1) * 100 < p) {                                 /* 成功 */
+        int idx = (int)(e - &bt.enemies[0]);
+        for (int i = idx; i < bt.enemyCount - 1; i++) bt.enemies[i] = bt.enemies[i + 1];
+        bt.enemyCount--;
+        const MobDef *bd = &ENEMY[e->typeIdx];
+        char nm[16];
+        if (bd->nNames > 0) { strncpy(nm, bd->names[mage_ri(0, bd->nNames - 1)], sizeof(nm) - 1); nm[sizeof(nm) - 1] = '\0'; }
+        else { strncpy(nm, CAT_NAMES[mage_ri(0, 7)], sizeof(nm) - 1); nm[sizeof(nm) - 1] = '\0'; }
+        int sk = bd->nSkills > 0 ? skillIndex(bd->skills[mage_ri(0, bd->nSkills - 1)]) : 0;
+        int tr = bd->nTraits > 0 ? traitIndex(bd->traits[mage_ri(0, bd->nTraits - 1)]) : 0;
+        if (g.npartners < 6) {
+            Partner *p2 = &g.partners[g.npartners++];
+            p2->typeIdx = e->typeIdx;
+            strncpy(p2->name, nm, sizeof(p2->name) - 1); p2->name[sizeof(p2->name) - 1] = '\0';
+            p2->level = g.level > 0 ? g.level : 1; p2->exp = 0;
+            p2->skillIdx = sk; p2->traitIdx = tr; p2->evolved = 0; p2->rar = e->rarity;
+            p2->ivs[0] = e->ivs[0]; p2->ivs[1] = e->ivs[1]; p2->ivs[2] = e->ivs[2];
+            p2->hp = 0; p2->maxhp = 0; p2->atk = 0;
+        }
+        g.cats++;
+        g.dexCaught[e->typeIdx]++;
+        toast("%s 收服成功！(%d%%)", nm, p);
+        mage_persist();
+        if (bt.enemyCount == 0) win_battle();
+    } else {
+        int heal = (int)(e->maxHp * 0.08f + 0.5f);
+        e->hp += heal; if (e->hp > e->maxHp) e->hp = e->maxHp;
+        toast("%s 挣脱了！(概率%d%%)", ENEMY[e->typeIdx].n, p);
+    }
+}
+
+/* ---------- 敌方回合 ---------- */
+static void apply_enemy_hit(BattleEnemy *e, int big) {
+    int d = (int)(e->atk + mage_ri(-1, 2)); if (d < 1) d = 1;
+    if (big) { d = (int)(d * 2.6f + 0.5f); toast("💥 %s 大招命中！", ENEMY[e->typeIdx].n); }
+    d = (int)(d * diffC()->dmgTaken + 0.5f); if (d < 1) d = 1;
+    d -= eqDef(); if (d < 1) d = 1;
+    Partner *pr = NULL;
+    if (g.npartners > 0 && g.activePartner >= 0 && g.activePartner < g.npartners) pr = &g.partners[g.activePartner];
+    if (pr && pr->traitIdx == traitIndex("tough")) d = (int)(d * 0.9f + 0.5f);
+    if (bt.guardBlock > 0) { int cut = (int)(d * bt.guardBlock + 0.5f); d -= cut; if (d < 1) d = 1; bt.guardBlock -= 0.15f; if (bt.guardBlock < 0) bt.guardBlock = 0; }
+    g.hp -= d; if (g.hp < 0) g.hp = 0;
+    toast("-%d HP", d);
+}
+static void enemy_phase(void) {
+    /* 中毒结算 */
+    int i = 0;
+    while (i < bt.enemyCount) {
+        BattleEnemy *e = &bt.enemies[i];
+        if (e->hp <= 0) { i++; continue; }
+        if (e->poisonTurns > 0) {
+            int pd = (int)(e->maxHp * 0.02f + 0.5f); if (pd < 1) pd = 1;
+            deal_to(e, pd); e->poisonTurns--;
+            if (e->hp <= 0) continue;       /* 死亡敌人留给下方 reap_dead 统一回收 */
+        }
+        i++;
+    }
+    reap_dead();
+    if (bt.enemyCount == 0) { win_battle(); return; }
+    /* 逐个攻击 */
+    for (int k = 0; k < bt.enemyCount; k++) {
+        BattleEnemy *e = &bt.enemies[k];
+        if (e->hp <= 0 || e->brokenTurns > 0) continue;   /* 硬直跳过 */
+        if (e->boss) {
+            if (e->hp < e->maxHp) {
+                int hg = (int)(e->maxHp * (e->enraged ? 0.045f : 0.03f) + 0.5f); if (hg < 1) hg = 1;
+                e->hp += hg; if (e->hp > e->maxHp) e->hp = e->maxHp;
+            }
+            if (e->bossCD > 0) e->bossCD--;
+            if (e->bossCD <= 0) { apply_enemy_hit(e, 1); e->bossCD = e->enraged ? 2 : 3; }
+            else apply_enemy_hit(e, 0);
+        } else {
+            apply_enemy_hit(e, 0);
+        }
+        if (g.hp <= 0) { set_bphase(BP_FAINT); return; }
+    }
+    /* 破防恢复 */
+    for (int k = 0; k < bt.enemyCount; k++) {
+        BattleEnemy *e = &bt.enemies[k];
+        if (e->brokenTurns > 0) { e->brokenTurns--; if (e->brokenTurns <= 0) { e->brokenTurns = 0; e->shield = e->shieldMax; } }
+    }
+    /* 手下留情锁血兜底逃走 */
+    for (int k = 0; k < bt.enemyCount; k++) {
+        BattleEnemy *e = &bt.enemies[k];
+        if (e->mercy) {
+            e->mercyTurns++;
+            if (e->mercyTurns >= 5) {
+                int idx = (int)(e - &bt.enemies[0]);
+                for (int j = idx; j < bt.enemyCount - 1; j++) bt.enemies[j] = bt.enemies[j + 1];
+                bt.enemyCount--;
+                toast("%s 恢复力气逃走了…", ENEMY[e->typeIdx].n);
+                k--;
+            }
+        }
+    }
+    if (bt.enemyCount == 0) { win_battle(); return; }
+    bt.turn++;
+    set_bphase(BP_MENU);
+}
+static void after_player_action(void) {
+    partner_strike();
+    if (bt.enemyCount == 0) { win_battle(); return; }
+    enemy_phase();
+}
+
+/* ---------- 刷怪 ---------- */
+static void spawn_group(void) {
+    if (bt.mode == 1 && bt.wave >= bt.dungeonRounds) { finish_crawl(); return; }
+    if (bt.mode != 1 && bt.wave >= 10) { spawn_boss(); return; }
+    int cnt = mage_ri(1, 3);
+    int elite = (bt.mode == 1) ? 1 : (bt.wave == 5 ? 1 : (mage_rf(0, 1) < (bt.mode == 2 ? 0.55f : 0.12f) ? 1 : 0));
+    const char **pool; int npool;
+    static const char *dungeonPool[8] = {"bat","skel","magma","sala","wolf","frost","golem","ghost"};
+    if (bt.mode == 1) {
+        const char *pl[8]; int pn = 0;
+        for (int i = 0; i < 5; i++) if (DUNGEONS[bt.dungeonId].pool[i]) pl[pn++] = DUNGEONS[bt.dungeonId].pool[i];
+        pool = pl; npool = pn;
+    } else if (bt.mode == 2) { pool = dungeonPool; npool = 8; }
+    else {
+        const char *pl[10]; int pn = 0;
+        for (int i = 0; i < ZONE_MOBS_N[g.mapChapter]; i++) pl[pn++] = ZONE_MOBS[g.mapChapter][i];
+        pool = pl; npool = pn;
+    }
+    if (npool <= 0) npool = 1;
+    for (int i = 0; i < cnt && bt.enemyCount < BATTLE_MAX_ENEMIES; i++) {
+        int typeIdx;
+        if (mage_rf(0, 1) < 0.26f) typeIdx = enemyIndex("cat");
+        else typeIdx = enemyIndex(pool[mage_ri(0, npool - 1)]);
+        if (typeIdx < 0) continue;
+        const MobDef *bd = &ENEMY[typeIdx];
+        g.dexSeen[typeIdx]++;
+        int lvl = (g.mapChapter - 1) * 2 + bt.wave + mage_ri(0, 1);
+        if (elite && i == 0) lvl += 2;
+        const DiffDef *dc = diffC();
+        float mult = 1 + (lvl - 1) * 0.14f;
+        float MB = 1.05f;
+        int hp = (int)(bd->hp * mult * dc->hp * MB + 0.5f);
+        int atk = (int)((bd->atk + mult * 0.6f) * dc->atk * MB + 0.5f);
+        BattleEnemy *e = &bt.enemies[bt.enemyCount++];
+        e->typeIdx = typeIdx; e->lvl = lvl;
+        e->hp = hp; e->maxHp = hp; e->atk = atk;
+        e->shield = elite ? 2 : 1; e->shieldMax = elite ? 2 : 1; e->brokenTurns = 0;
+        e->boss = 0; e->elite = (elite && i == 0) ? 1 : 0; e->enraged = 0; e->bossCD = 0;
+        e->mercy = 0; e->mercyTurns = 0; e->poisonTurns = 0;
+        e->resist[0] = -1; e->resist[1] = -1; e->resistKnown = 0;
+        e->rarity = rollRarity();
+        e->ivs[0] = mage_ri(6, 15); e->ivs[1] = mage_ri(6, 15); e->ivs[2] = mage_ri(6, 15);
+        e->x = BTPX + 78 + i * 16;
+        if (e->elite) { e->hp = (int)(e->hp * 2.2f + 0.5f); e->maxHp = e->hp; e->atk = (int)(e->atk * 1.5f + 0.5f); }
+    }
+}
+static void spawn_boss(void) {
+    int bi = g.mapChapter; if (bi > 4) bi = 4; if (bi < 0) bi = 0;
+    const BossDef *B = &BOSSES[bi];
+    int typeIdx = enemyIndex(B->type); if (typeIdx < 0) typeIdx = 0;
+    const MobDef *bd = &ENEMY[typeIdx];
+    g.dexSeen[typeIdx]++;
+    int lvl = (g.mapChapter - 1) * 2 + 10 + 2;
+    const DiffDef *dc = diffC();
+    float mult = (1 + (lvl - 1) * 0.14f) * 7.5f * dc->hp;
+    int hp = (int)(bd->hp * mult + 0.5f);
+    int atk = (int)((bd->atk + mult * 0.6f) * 1.85f * dc->bossAtk + 0.5f);
+    bt.enemyCount = 1;
+    BattleEnemy *e = &bt.enemies[0];
+    e->typeIdx = typeIdx; e->lvl = lvl; e->hp = hp; e->maxHp = hp; e->atk = atk;
+    e->shield = 5; e->shieldMax = 5; e->brokenTurns = 0;
+    e->boss = 1; e->elite = 1; e->enraged = 0; e->bossCD = 3;
+    e->mercy = 0; e->mercyTurns = 0; e->poisonTurns = 0;
+    int rr = rollRarity(); e->rarity = (rr + 1) < 3 ? (rr + 1) : 3;
+    e->ivs[0] = mage_ri(10, 15); e->ivs[1] = mage_ri(10, 15); e->ivs[2] = mage_ri(10, 15);
+    e->x = BTPX + 150;
+    int pl[9]; int np = 0;
+    for (int i = 0; i < 9; i++) { int wk = 0; for (int j = 0; j < bd->nWeak; j++) if (bd->weakOf[j] == i) wk = 1; if (!wk) pl[np++] = i; }
+    e->resist[0] = -1; e->resist[1] = -1;
+    for (int k = 0; k < 2 && np > 0; k++) {
+        int pi = mage_ri(0, np - 1); e->resist[k] = pl[pi];
+        for (int j = pi; j < np - 1; j++) pl[j] = pl[j + 1]; np--;
+    }
+    e->resistKnown = 0;
+    bt.storyShown = 0;
+    toast("⚠ %s 出现！用弱点破盾，蓄力时防御！", B->n);
+}
+static void spawn_and_menu(void) {
+    spawn_group();
+    bt.turn = 1;
+    set_bphase(BP_MENU);
+    g_need_refresh = 1;
+}
+
+/* ---------- 自动战斗 ---------- */
+static void auto_act(void) {
+    if (bt.enemyCount == 0) { win_battle(); return; }
+    BattleEnemy *cap = capture_target();
+    if (cap && bt.autoCapture) {
+        throw_orb(-1);
+        if (bt.active && bt.phase == BP_MENU) after_player_action();
+        return;
+    }
+    if (!bt.autoCapture) {                       /* 无自动捕：虚弱怪主动逃走清场 */
+        for (int i = 0; i < bt.enemyCount; i++) {
+            BattleEnemy *e = &bt.enemies[i];
+            if (!ENEMY[e->typeIdx].hasCap) continue;
+            int f = (int)(e->maxHp * 0.08f + 0.5f); if (f < 1) f = 1;
+            if (e->hp <= f && e->mercy) {
+                int idx = (int)(e - &bt.enemies[0]);
+                for (int j = idx; j < bt.enemyCount - 1; j++) bt.enemies[j] = bt.enemies[j + 1];
+                bt.enemyCount--; i--;
+                toast("虚弱的魔物逃走了…");
+            }
+        }
+        if (bt.enemyCount == 0) { win_battle(); return; }
+    }
+    if (g.hp * 1.0f / g.maxHp < 0.35f && g.potions > 0) { bt.itemIdx = 0; use_item(); return; }
+    int lo[16]; int nl = activeLoadoutKeys(lo, 16);
+    int chosen = -1;
+    for (int i = 1; i <= nl; i++) {
+        int k = lo[(bt.autoSpell + i) % nl];
+        if (g.mp >= spellCost(k)) { chosen = k; bt.autoSpell = (bt.autoSpell + i) % nl; break; }
+    }
+    if (chosen >= 0) { g.equipped = chosen; magic_cast(); }
+    else hero_strike();
+}
+
+/* ---------- 胜负/事件 ---------- */
+static void win_battle(void) {
+    if (bt.phase == BP_RESULT) return;
+    bt.phase = BP_RESULT; bt.tickMs = now_ms();
+    mage_persist();
+}
+static void next_wave(void) {
+    if (bt.done) { end_battle(); return; }
+    if (bt.mode == 1 && bt.wave >= bt.dungeonRounds) { finish_crawl(); return; }
+    if (bt.mode == 2 && bt.wave >= 3) {
+        int gd = 100 + 50 * g.mapChapter; g.gold += gd; g.crystals++; g.orbs++; g.seals++;
+        toast("遗迹探索成功！+%d金 +魔晶 +球 +卡", gd);
+        end_battle(); return;
+    }
+    if (bt.mode == 0 && bt.wave >= 10) { finish_expedition(); return; }
+    bt.wave++;
+    int forceEvent = (!bt.eventSeen && bt.wave >= 4);
+    if (bt.wave < 10 && (mage_rf(0, 1) < 0.45f || forceEvent)) {
+        bt.eventSeen = 1;
+        float r = mage_rf(0, 1);
+        bt.eventKind = (r < 0.32f) ? 0 : (r < 0.55f ? 1 : (r < 0.78f ? 2 : 3));
+        set_bphase(BP_EVENT); g_need_refresh = 1; return;
+    }
+    spawn_and_menu();
+}
+static void finish_crawl(void) {
+    const DungeonDef *D = &DUNGEONS[bt.dungeonId];
+    int gd = 120 + bt.dungeonRounds * 4 + g.mapChapter * 40; g.gold += gd; bt.goldGain += gd;
+    EbagItem it; rollEquip(D->dropRar > 0 ? D->dropRar : 2, &it);
+    if (g.nebag < 24) { g.ebag[g.nebag] = it; g.nebag++; }
+    int st = 1 + mage_ri(0, 3); if (st > 4) st = 4;
+    int stn = mage_ri(1, 3); g.stones[st] += stn;
+    if (mage_rf(0, 1) < 0.8f) { int id = mage_ri(0, 39); g.mbag[id] += mage_ri(1, 2); }
+    if (mage_rf(0, 1) < 0.6f) { int id = mage_ri(0, 19); g.pbag[id] += 1; }
+    for (int i = 0; i < 4; i++) g.dungeonOffers[i] = -1; g.ndoffers = 0;
+    toast("【%s】通关！+%d金 +%s", D->name, gd, it.name);
+    mage_persist(); end_battle();
+}
+static void finish_expedition(void) {
+    bt.done = 1; bt.phase = BP_RESULT; bt.tickMs = now_ms();
+    int ck = g.mapChapter; if (ck > 4) ck = 4; if (ck < 0) ck = 0;
+    toast("远征完成！%s 肃清，回城休整", CHAPTERS[ck]);
+    mage_persist();
+}
+static void apply_event(void) {
+    if (bt.eventKind < 0) { spawn_and_menu(); return; }
+    int k = bt.eventKind, ch = g.mapChapter;
+    if (k == 0) {                                   /* 宝箱 */
+        int gd = mage_ri(30, 60) + 40 * ch; g.gold += gd; bt.goldGain += gd;
+        int n = mage_ri(1, 3);
+        for (int i = 0; i < n; i++) {
+            if (mage_rf(0, 1) < 0.45f) { int id = mage_ri(0, 19); g.pbag[id]++; }
+            else { int id = mage_ri(0, 39); g.mbag[id]++; }
+        }
+        if (mage_rf(0, 1) < 0.30f) { int st = 1 + mage_ri(0, 3); if (st > 4) st = 4; g.stones[st] += mage_ri(1, 2); }
+        if (mage_rf(0, 1) < 0.20f) g.orbs += 2;
+        if (mage_rf(0, 1) < 0.12f) g.crystals++;
+        toast("宝箱开启！+%d金", gd);
+    } else if (k == 1) {                            /* 陷阱 */
+        int d = (int)(g.maxHp * mage_rf(0.10f, 0.18f) + 0.5f); g.hp -= d; if (g.hp < 1) g.hp = 1;
+        if (mage_rf(0, 1) < 0.5f) { int lost = mage_ri(15, 35); if (lost > g.gold) lost = g.gold; g.gold -= lost; }
+        toast("踩中陷阱！-%d HP", d);
+    } else if (k == 2) {                            /* 泉水 */
+        g.hp += (int)(g.maxHp * 0.5f + 0.5f); if (g.hp > g.maxHp) g.hp = g.maxHp;
+        g.mp += (int)(g.maxMp * 0.5f + 0.5f); if (g.mp > g.maxMp) g.mp = g.maxMp;
+        toast("泉水恢复了一半 HP/MP");
+    } else {                                        /* 药草 */
+        int h = mage_ri(3, 6); g.herbs += h;
+        if (mage_rf(0, 1) < 0.35f) g.crystals++;
+        int mid = mage_ri(0, 39); g.mbag[mid]++;
+        toast("采集到月光草 x%d", h);
+    }
+    mage_persist();
+    bt.eventKind = -1;
+    spawn_and_menu();
+}
+static void end_battle(void) {
+    bt.active = 0; bt.enemyCount = 0;
+    mage_set_scene(SC_CITY); g.cityMode = 0;
+    mage_persist();
+    g_need_refresh = 1;
+}
+
+/* ---------- 启动入口 ---------- */
+void battle_start_wild(int chapter) {
+    memset(&bt, 0, sizeof(bt));
+    g.mapChapter = chapter;
+    bt.active = 1; bt.mode = 0; bt.wave = 1;
+    bt.autoBattle = g.autoMode; bt.autoCapture = g.autoCapture;
+    bt.lastSpell = -1; bt.eventKind = -1; bt.itemIdx = 0; bt.magicIdx = 0;
+    bt.tickMs = now_ms();
+    spawn_and_menu();
+    mage_set_scene(SC_BATTLE); g_need_refresh = 1;
+}
+void battle_start_dungeon(int dungeonId) {
+    memset(&bt, 0, sizeof(bt));
+    bt.active = 1;
+    if (dungeonId < 0) { bt.mode = 2; }            /* 遗迹秘境 */
+    else {
+        bt.mode = 1; bt.dungeonId = dungeonId;
+        const DungeonDef *D = &DUNGEONS[dungeonId];
+        bt.dungeonRounds = mage_ri(D->minR, D->maxR);
+        if (g.level < D->reqLv) toast("%s 推荐Lv%d，强行进入会很苦", D->name, D->reqLv);
+    }
+    bt.wave = 1; bt.autoBattle = g.autoMode; bt.autoCapture = g.autoCapture;
+    bt.lastSpell = -1; bt.eventKind = -1; bt.itemIdx = 0; bt.magicIdx = 0;
+    bt.tickMs = now_ms();
+    spawn_and_menu();
+    mage_set_scene(SC_BATTLE); g_need_refresh = 1;
+}
+void battle_start_boss(int chapter) {
+    memset(&bt, 0, sizeof(bt));
+    g.mapChapter = chapter;
+    bt.active = 1; bt.mode = 0; bt.wave = 10;      /* 直接打 BOSS 波 */
+    bt.autoBattle = g.autoMode; bt.autoCapture = g.autoCapture;
+    bt.lastSpell = -1; bt.eventKind = -1; bt.itemIdx = 0; bt.magicIdx = 0;
+    bt.tickMs = now_ms();
+    spawn_group(); set_bphase(BP_MENU);
+    mage_set_scene(SC_BATTLE); g_need_refresh = 1;
+}
+
+/* ---------- 渲染 / 输入 / 自动推进 ---------- */
+static void battle_render(void) {
+    char hud[64];
+    snprintf(hud, sizeof(hud), "Lv%d 金%d 球%d 卡%d 药%d", g.level, g.gold, g.orbs, g.seals, g.potions);
+    lv_label_set_text(g_hud, hud);
+    s_init();
+    if (bt.mode == 1)      s_add("⚔ 副本 %s [%d/%d]\n", DUNGEONS[bt.dungeonId].name, bt.wave, bt.dungeonRounds);
+    else if (bt.mode == 2) s_add("⚔ 遗迹秘境 [%d/3]\n", bt.wave);
+    else                   s_add("⚔ 远征 [%d/10]\n", bt.wave);
+    s_add("你 Lv%d  HP %d/%d  MP %d/%d\n", g.level, g.hp, g.maxHp, g.mp, g.maxMp);
+    for (int i = 0; i < bt.enemyCount; i++) {
+        BattleEnemy *e = &bt.enemies[i];
+        if (e->hp <= 0) continue;
+        const MobDef *bd = &ENEMY[e->typeIdx];
+        s_add("%s Lv%d %d/%d", bd->n, e->lvl, e->hp, e->maxHp);
+        if (e->shield > 0) s_add(" 盾%d", e->shield);
+        if (e->brokenTurns > 0) s_add(" 破防");
+        if (e->boss) s_add(" [BOSS]"); else if (e->elite) s_add(" [精英]");
+        s_add("\n");
+    }
+    if (bt.enemyCount == 0) s_add("（无敌人）\n");
+    if (bt.phase == BP_MENU) {
+        s_add("———\nOK 攻击 · ↓魔法 · ↑道具\n");
+        if (bt.autoBattle) s_add("（自动战斗中，按任意键接管）\n");
+    } else if (bt.phase == BP_MAGIC) {
+        int lo[16]; int nl = activeLoadoutKeys(lo, 16);
+        int k = (bt.magicIdx < nl) ? lo[bt.magicIdx] : g.equipped;
+        s_add("———\n施法：%s\n威力%d 耗%d\n", spellName(k), spellPower(k), spellCost(k));
+        s_add("OK 释放 · ↓切换 · ↑返回\n");
+    } else if (bt.phase == BP_ITEM) {
+        const char *kn[3] = {"药水", "捕捉球", "封印卡"};
+        int kind = item_opt_kind(bt.itemIdx);
+        s_add("———\n道具：%s\n", kind >= 0 ? kn[kind] : "（空）");
+        s_add("OK 使用 · ↓切换 · ↑返回\n");
+    } else if (bt.phase == BP_RESULT) {
+        s_add("———\n【本场战果】\n金币+%d 经验+%d\n", bt.goldGain, bt.expGain);
+        if (bt.herbGain) s_add("月光草+%d ", bt.herbGain);
+        if (bt.matGain)  s_add("兽骨+%d\n", bt.matGain);
+        if (bt.potGain)  s_add("药水+%d\n", bt.potGain);
+        if (bt.done) s_add("远征完成！\n");
+        if (bt.bossEquip[0]) s_add("BOSS掉落：%s\n魔晶+%d 球+%d 卡+%d\n", bt.bossEquip, bt.bossCrystal, bt.bossOrb, bt.bossSeal);
+        s_add("OK 继续 · 长按回城\n");
+    } else if (bt.phase == BP_EVENT) {
+        const char *ev[4] = {"宝箱", "陷阱", "泉水", "稀有药草"};
+        s_add("———\n遭遇：%s\n", bt.eventKind >= 0 ? ev[bt.eventKind] : "?");
+        s_add("OK 探索 · 长按绕开\n");
+    } else if (bt.phase == BP_FAINT) {
+        s_add("———\n魔力耗尽，力竭…\nOK 回城休息（无惩罚）\n");
+    }
+    lv_label_set_text(g_scene_hint, "OK确认 · ↓切换 · ↑道具 · 长按返回");
+}
+static void battle_handle(int act) {
+    switch (bt.phase) {
+    case BP_MENU:
+        if (bt.autoBattle) { bt.autoBattle = 0; toast("手动接管"); break; }
+        if (act == ACT_OK) hero_strike();
+        else if (act == ACT_NEXT) {
+            int lo[16]; int nl = activeLoadoutKeys(lo, 16); if (nl == 0) { toast("没有魔法"); break; }
+            bt.magicIdx = 0; g.equipped = lo[0]; set_bphase(BP_MAGIC);
+        } else if (act == ACT_PREV) {
+            if (item_opt_count() == 0) { toast("没有道具"); break; }
+            bt.itemIdx = 0; set_bphase(BP_ITEM);
+        } else if (act == ACT_BACK) end_battle();
+        break;
+    case BP_MAGIC:
+        if (act == ACT_OK) { set_bphase(BP_MENU); magic_cast(); }
+        else if (act == ACT_NEXT) { int lo[16]; int nl = activeLoadoutKeys(lo, 16); if (nl == 0) break; bt.magicIdx = (bt.magicIdx + 1) % nl; g.equipped = lo[bt.magicIdx]; g_need_refresh = 1; }
+        else if (act == ACT_PREV || act == ACT_BACK) set_bphase(BP_MENU);
+        break;
+    case BP_ITEM:
+        if (act == ACT_OK) { set_bphase(BP_MENU); use_item(); }
+        else if (act == ACT_NEXT) { int c = item_opt_count(); if (c == 0) break; bt.itemIdx = (bt.itemIdx + 1) % c; g_need_refresh = 1; }
+        else if (act == ACT_PREV || act == ACT_BACK) set_bphase(BP_MENU);
+        break;
+    case BP_RESULT:
+        if (act == ACT_OK) next_wave();
+        else if (act == ACT_BACK) end_battle();
+        break;
+    case BP_EVENT:
+        if (act == ACT_OK) apply_event();
+        else if (act == ACT_BACK) { bt.eventKind = -1; spawn_and_menu(); }
+        break;
+    case BP_FAINT:
+        if (act == ACT_OK || act == ACT_BACK) {
+            g.hp = (int)(g.maxHp * 0.5f + 0.5f); if (g.hp < 1) g.hp = 1;
+            g.mp = (int)(g.maxMp * 0.5f + 0.5f);
+            if (bt.mode == 1) { for (int i = 0; i < 4; i++) g.dungeonOffers[i] = -1; g.ndoffers = 0; }
+            toast("力竭回城休息（无惩罚）");
+            end_battle();
+        }
+        break;
+    default: break;
+    }
+}
+void battle_tick(void) {
+    if (!bt.active) return;
+    uint32_t now = now_ms();
+    if (bt.phase == BP_MENU) {
+        if (bt.autoBattle && now - bt.tickMs > 600) { bt.tickMs = now; auto_act(); }
+    } else if (bt.phase == BP_RESULT) {
+        if (bt.autoBattle && now - bt.tickMs > 1400) { bt.tickMs = now; next_wave(); }
+    } else if (bt.phase == BP_EVENT) {
+        if (bt.autoBattle && now - bt.tickMs > 1000) { bt.tickMs = now; apply_event(); }
+    }
 }
 
 /* ===================== 入口 ===================== */

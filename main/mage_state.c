@@ -318,7 +318,4 @@ int traitIndex(const char *s) {
     return 0;
 }
 
-/* ===================== 战斗（里程碑占位，后续 1:1 实现） ===================== */
-void battle_start_wild(int chapter)    { (void)chapter; }
-void battle_start_dungeon(int dungeonId) { (void)dungeonId; }
-void battle_start_boss(int chapter)    { (void)chapter; }
+/* ===================== 战斗（实现见 mage.c，1:1 复刻 HTML 战斗逻辑） ===================== */
