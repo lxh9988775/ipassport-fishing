@@ -20,6 +20,7 @@ typedef struct {
     int skillIdx;         /* SKILLS 下标 */
     int traitIdx;         /* TRAITS 下标 */
     int evolved;          /* 0/1 */
+    int rar;              /* 稀有度 0..4（进化时提升） */
     int ivs[3];           /* 资质 0..20 */
     int hp, maxhp, atk;   /* 出战数值（按等级/资质计算） */
 } Partner;
