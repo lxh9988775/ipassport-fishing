@@ -4,7 +4,7 @@ idf_component_register(
          "mage_data.c"
          "mage.c"
          "mage_draw.c"
-         "mage_fx.c"
+         "mage_fx.c" "mage_hud.c"
     INCLUDE_DIRS "." ".." "../assets"
     REQUIRES bsp nvs_flash lvgl freertos
 )

@@ -17,6 +17,7 @@
 #include "lvgl.h"
 #include "mage_draw.h"
 #include "mage_fx.h"
+#include "mage_hud.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -292,6 +293,17 @@ static void build_ui(void) {
     lv_obj_move_to_index(fx_root, 0);
     mage_fx_attach(fx_root);
     lv_obj_add_flag(fx_root, LV_OBJ_FLAG_HIDDEN);   /* 非战斗时隐藏 */
+
+    /* 战斗 HUD（顶部血条 + 底部动作卡）：1:1 复刻 HTML drawBattleHUD/drawActionCards */
+    lv_obj_t *hud_root = lv_obj_create(g_root);
+    lv_obj_remove_style_all(hud_root);
+    lv_obj_set_size(hud_root, SCR_W, SCR_H);
+    lv_obj_set_pos(hud_root, 0, 0);
+    lv_obj_set_style_bg_opa(hud_root, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(hud_root, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_move_to_index(hud_root, 2);   /* 在 fx 层之上、普通文字之下 */
+    mage_hud_attach(hud_root);
+    lv_obj_add_flag(hud_root, LV_OBJ_FLAG_HIDDEN);
 }
 
 /* ===================== 通用小工具 ===================== */
@@ -775,30 +787,19 @@ static void refresh_ui(void) {
     else lv_label_set_text(g_scene_title, SCENE_NAME[g_scene]);
     lv_label_set_text(g_scene_body, s_b);
 
-    /* 战斗页：标题与 toast 一律隐藏，把整屏让给战斗演出层。
-     * HTML 原版画面上只有：顶部 HP 条、画面内的敌人血条/Lv、底部动作卡，
-     * 没有额外的大标题 —— 留着标题会占掉顶部 38px 压住画面。 */
-    set_hidden(g_scene_title, (g_scene == SC_BATTLE));
-    if (g_scene == SC_BATTLE) {
-        lv_obj_add_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
-        g_toast_until = 0;
+    /* 战斗页：隐藏通用 HUD/正文/提示，改用 1:1 原版 HUD；其余页面反过来隐藏原版 HUD。 */
+    {
+        const bool in_bt = (g_scene == SC_BATTLE);
+        mage_hud_show(in_bt);
+        set_hidden(g_hud, in_bt);
+        set_hidden(g_scene_body, in_bt);
+        set_hidden(g_scene_hint, in_bt);
+        set_hidden(g_scene_title, in_bt);
+        if (!in_bt) set_hidden(g_toast, !(now_ms() < g_toast_until));
     }
 
-    /* 战斗页：文字面板必须沉到屏幕底部，不能压住战斗画面。
-     * HTML 原版 drawBattle 是「画面占满 + 底部一张动作卡 + 顶部 HP 条」，
-     * 敌人血条/等级直接画在画面上；若这里还用通用的 y=38 顶部布局，
-     * 长文本会一路向下铺满，把演出层完全遮住（表现为纯文字 + 看不到战斗）。
-     * 故：战斗页固定 y=196 起的底部面板，并加半透明底板保证可读。 */
-    if (g_scene == SC_BATTLE) {
-        lv_obj_set_pos(g_scene_body, 6, 196);
-        lv_obj_set_style_bg_color(g_scene_body, C_PANEL, 0);
-        lv_obj_set_style_bg_opa(g_scene_body, LV_OPA_80, 0);
-        lv_obj_set_style_border_width(g_scene_body, 1, 0);
-        lv_obj_set_style_border_color(g_scene_body, C_GOLD, 0);
-        lv_obj_set_style_pad_all(g_scene_body, 2, 0);
-        lv_obj_set_style_text_line_space(g_scene_body, 0, 0);
-        lv_obj_move_to_index(g_scene_body, 3);
-    } else {
+
+    if (g_scene != SC_BATTLE) {
         lv_obj_set_pos(g_scene_body, 10, 38);
         lv_obj_set_style_bg_opa(g_scene_body, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(g_scene_body, 0, 0);
@@ -1925,65 +1926,63 @@ static void battle_art_update(void) {
  * 这里只保留必要信息，且必须能塞进底部 196..320 这 124px 面板内，
  * 否则会把画面顶出去导致「纯文字看不到战斗」。 */
 static void battle_render(void) {
-    char hud[64];
-    snprintf(hud, sizeof(hud), "Lv%d 金%d 球%d 卡%d 药%d", g.level, g.gold, g.orbs, g.seals, g.potions);
-    lv_label_set_text(g_hud, hud);
+    /* 1:1 复刻 HTML drawBattle()：画面占满，文字只在顶部血条与底部动作卡上，
+     * **战斗画面上不出现任何大段文字**（此前用一个大 label 把文字铺满屏幕，
+     * 是「看起来是纯文字游戏 + 看不到战斗画面」的根因）。 */
+    mage_hud_build();
+    const bool crawl = (bt.mode == 1);
+    int wmax = crawl ? bt.dungeonRounds : 10;
+    mage_hud_update(g.hp, g.maxHp, g.mp, g.maxMp,
+                    bt.wave, wmax, crawl,
+                    bt.autoBattle, g.autoCapture,
+                    activeLoadoutKeys(NULL, 0), g.orbs, g.seals, g.potions, bt.turn);
+
     battle_art_update();
+
+    /* 底部动作卡之上不再放任何文字；选中态与选项列表用 toast 提示，
+     * 与原版「卡片高亮 + 弹层」语义一致，且绝不遮挡画面。 */
     s_init();
-    /* 第 1 行：模式 + 我方状态（HP 条在顶部 HUD，敌人血条在画面上） */
-    if (bt.mode == 1)      s_add("副本 %s [%d/%d]\n", DUNGEONS[bt.dungeonId].name, bt.wave, bt.dungeonRounds);
-    else if (bt.mode == 2) s_add("遗迹 [%d/3]\n", bt.wave);
-    else                   s_add("远征 [%d/10]\n", bt.wave);
-    s_add("你 Lv%d HP%d/%d MP%d/%d\n", g.level, g.hp, g.maxHp, g.mp, g.maxMp);
-    /* 第 2 行：所有敌人挤成一行（最多显示 4 只） */
-    {
-        int shown = 0;
-        for (int i = 0; i < bt.enemyCount && shown < 4; i++) {
-            BattleEnemy *e = &bt.enemies[i];
-            if (e->hp <= 0) continue;
-            const MobDef *bd = &ENEMY[e->typeIdx];
-            s_add("%s%d/%d", bd->n, e->hp, e->maxHp);
-            if (e->boss) s_add("(BOSS)");
-            else if (e->elite) s_add("(精)");
-            if (e->shield > 0) s_add("盾%d", e->shield);
-            if (e->brokenTurns > 0) s_add("破");
-            s_add(" ");
-            shown++;
-        }
-        s_add("\n");
-        if (bt.enemyCount == 0) s_add("（无敌人）\n");
-    }
-    if (bt.phase == BP_MENU) {
-        s_add("OK 攻击 · ↓魔法 · ↑道具\n");
-        if (bt.autoBattle) s_add("自动战斗中·按键接管\n");
-    } else if (bt.phase == BP_MAGIC) {
+    switch (bt.phase) {
+    case BP_MAGIC: {
         int lo[16]; int nl = activeLoadoutKeys(lo, 16);
         int k = (bt.magicIdx < nl) ? lo[bt.magicIdx] : g.equipped;
-        s_add("施法 %s 威力%d 耗%d\n", spellName(k), spellPower(k), spellCost(k));
-        s_add("OK 释放 · ↓切换 · ↑返回\n");
-    } else if (bt.phase == BP_ITEM) {
+        s_add("%s 威力%d 耗%d", spellName(k), spellPower(k), spellCost(k));
+        break;
+    }
+    case BP_ITEM: {
         const char *kn[3] = {"药水", "捕捉球", "封印卡"};
         int kind = item_opt_kind(bt.itemIdx);
-        s_add("道具 %s\n", kind >= 0 ? kn[kind] : "（空）");
-        s_add("OK 使用 · ↓切换 · ↑返回\n");
-    } else if (bt.phase == BP_RESULT) {
-        s_add("金币+%d 经验+%d\n", bt.goldGain, bt.expGain);
-        if (bt.herbGain) s_add("草+%d ", bt.herbGain);
-        if (bt.matGain)  s_add("骨+%d ", bt.matGain);
-        if (bt.potGain)  s_add("药+%d\n", bt.potGain);
-        if (bt.done) s_add("远征完成！\n");
-        if (bt.bossEquip[0]) s_add("%s+魔晶%d 球%d 卡%d\n",
-                                   bt.bossEquip, bt.bossCrystal, bt.bossOrb, bt.bossSeal);
-        s_add("OK 继续 · 长按回城\n");
-    } else if (bt.phase == BP_EVENT) {
-        const char *ev[4] = {"宝箱", "陷阱", "泉水", "稀有药草"};
-        s_add("遭遇 %s\n", bt.eventKind >= 0 ? ev[bt.eventKind] : "?");
-        s_add("OK 探索 · 长按绕开\n");
-    } else if (bt.phase == BP_FAINT) {
-        s_add("魔力耗尽，力竭…\nOK 回城休息（无惩罚）\n");
+        s_add("%s", kind >= 0 ? kn[kind] : "（空）");
+        break;
     }
-    lv_label_set_text(g_scene_hint, "OK确认 · ↓切换 · ↑道具 · 长按返回");
+    case BP_RESULT: {
+        s_add("金币+%d 经验+%d", bt.goldGain, bt.expGain);
+        if (bt.done) s_add("\n远征完成！");
+        break;
+    }
+    case BP_EVENT: {
+        const char *ev[4] = {"宝箱", "陷阱", "泉水", "稀有药草"};
+        s_add("遭遇 %s", bt.eventKind >= 0 ? ev[bt.eventKind] : "?");
+        break;
+    }
+    case BP_FAINT:
+        s_add("魔力耗尽，力竭…");
+        break;
+    default:
+        break;
+    }
+
+    /* 非菜单态才把少量信息贴到画面上方的 toast 位置（y=34，不遮角色） */
+    if (bt.phase != BP_MENU && bt.phase != BP_MAGIC && bt.phase != BP_ITEM) {
+        lv_label_set_text(g_toast, s_b);
+        set_hidden(g_toast, false);
+        g_toast_until = 0;
+    } else {
+        set_hidden(g_toast, true);
+    }
+    lv_label_set_text(g_scene_hint, "");
 }
+
 static void battle_handle(int act) {
     switch (bt.phase) {
     case BP_MENU:
