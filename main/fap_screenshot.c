@@ -27,13 +27,14 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/usb_serial_jtag.h"
+#include "driver/usb_serial_jtag_vfs.h"
 #include "lvgl.h"
 #include "draw/snapshot/lv_snapshot.h"
 #include "esp_log.h"
 #include "bsp_display.h"
 #include "fap_screenshot.h"
 
-#include <unistd.h>
 #include <string.h>
 
 static const char *TAG = "fap_ss";
@@ -43,8 +44,8 @@ static const char *TAG = "fap_ss";
 #define SS_CMD              "FAP_SCREENSHOT_V1"
 #define SS_CMD_LEN          (sizeof(SS_CMD) - 1)
 #define SS_BUF_BYTES        (SS_W * SS_H * 2)
-#define SS_CHUNK            64           /* USB-CDC 单次写小块，降低溢出丢包 */
-#define SS_CHUNK_DELAY_MS   2            /* 每块之间的节流延时 */
+#define SS_CHUNK            256          /* 驱动内部有环形缓冲，块可稍大 */
+#define SS_CHUNK_DELAY_MS   1            /* 仅让出 CPU，不必长延时 */
 #define SS_TASK_PRIO        (3)          /* 低于 LVGL 的 4 */
 #define SS_TASK_STACK       (8192)
 
@@ -59,17 +60,17 @@ static bool s_buf_inited = false;
 static char s_win[SS_CMD_LEN];
 static size_t s_wpos;
 
+/* 走 USB-Serial-JTAG 驱动直写：驱动内部有环形缓冲 + TX 空闲中断，
+ * 不会像 stdout(阻塞式) 那样在主机读不及时把 CPU 卡死导致只传出一小段。 */
 static void ss_send_bytes(const uint8_t *p, size_t n)
 {
     size_t off = 0;
     while (off < n) {
         size_t chunk = n - off;
         if (chunk > SS_CHUNK) chunk = SS_CHUNK;
-        /* USB-CDC 缓冲很小：一次 write 后必须给固件侧/驱动侧时间把数据推完，
-         * 否则主机侧会在声明长度之前就读不到数据（"ended before the declared length"）。 */
-        ssize_t w = write(STDOUT_FILENO, p + off, chunk);
+        int w = usb_serial_jtag_write_bytes(p + off, chunk, portMAX_DELAY);
         if (w <= 0) {
-            vTaskDelay(pdMS_TO_TICKS(20));
+            vTaskDelay(pdMS_TO_TICKS(10));
             continue;                     /* 主机暂时不可写：重试同一块，绝不跳过 */
         }
         off += (size_t)w;
@@ -139,16 +140,11 @@ static void ss_task(void *arg)
     (void)arg;
     uint8_t rb[64];
     while (1) {
-        ssize_t n = read(STDIN_FILENO, rb, sizeof(rb));
-        if (n < 0) {                      /* 错误：退避，绝不忙等 */
-            vTaskDelay(pdMS_TO_TICKS(200));
-            continue;
+        int n = usb_serial_jtag_read_bytes(rb, sizeof(rb), pdMS_TO_TICKS(100));
+        if (n <= 0) {
+            continue;                      /* 超时无数据，正常空转 */
         }
-        if (n == 0) {
-            vTaskDelay(pdMS_TO_TICKS(10));
-            continue;
-        }
-        for (ssize_t i = 0; i < n; i++) {
+        for (int i = 0; i < n; i++) {
             char c = (char)rb[i];
             if (c == '\n' || c == '\r') { /* 行终止符重置窗口 */
                 s_wpos = 0;
@@ -186,5 +182,5 @@ void fap_screenshot_init(void)
         ESP_LOGE(TAG, "无法创建截屏任务");
         return;
     }
-    ESP_LOGI(TAG, "FAP_SCREENSHOT_V1 串口截屏就绪 (USB-CDC stdin/stdout, %dx%d)", SS_W, SS_H);
+    ESP_LOGI(TAG, "FAP_SCREENSHOT_V1 串口截屏就绪 (USB-Serial-JTAG 驱动直写, %dx%d)", SS_W, SS_H);
 }

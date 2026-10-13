@@ -6,7 +6,7 @@ idf_component_register(
          "mage_draw.c"
          "fap_screenshot.c"
     INCLUDE_DIRS "." ".." "../assets"
-    REQUIRES bsp nvs_flash lvgl freertos
+    REQUIRES bsp nvs_flash lvgl freertos esp_driver_usb_serial_jtag
 )
 
 # 中文子集字体：由 lv_font_conv 生成（源字体思源黑体 CN / SIL OFL 1.1）。
