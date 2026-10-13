@@ -92,7 +92,7 @@ def c_array_of(vals, per_line=16):
 def main():
     parts = []
     parts.append("/* 本文件由 tools/gen_mage_sprites.py 自动生成，请勿手改。")
-    parts.append(" * 源素材：mage-game/assets/*.png（与 HTML 原版 1:1 同一批图，不新增不重绘）")
+    parts.append(" * 源素材：mage-game/assets 目录下的 PNG（与 HTML 原版 1:1 同一批图，不新增不重绘）")
     parts.append(" * 格式：LV_COLOR_FORMAT_RGB565 小端色。")
     parts.append(" * 透明处理：alpha 已按背景色 0x0d0b1a 预乘烘焙进 RGB —— 本工程 LVGL 为 16 色深，")
     parts.append(" *   逐像素 alpha 不可用，预乘是视觉无损的稳妥做法。")

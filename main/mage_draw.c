@@ -24,7 +24,7 @@ typedef struct {
 
 static mage_img_t s_imgs[MAGE_SPRITE_COUNT];
 
-const mage_sprite_t *mage_sprite_def(const char *name)
+const void *mage_sprite_def(const char *name)
 {
     for (int i = 0; i < mage_sprite_count; i++) {
         if (strcmp(mage_sprites[i].name, name) == 0) {
@@ -46,7 +46,7 @@ const lv_image_dsc_t *mage_img(const char *name)
             memset(&im->dsc, 0, sizeof(im->dsc));
             im->dsc.header.magic  = LV_IMAGE_HEADER_MAGIC;
             im->dsc.header.cf     = LV_COLOR_FORMAT_RGB565;
-            im->dsc.header.flags  = LV_IMAGE_FLAGS_NONE;
+            im->dsc.header.flags  = 0;   /* v9.5 无 LV_IMAGE_FLAGS_NONE，用 0 */
             im->dsc.header.w      = def->w;
             im->dsc.header.h      = def->h;
             im->dsc.header.stride = LV_DRAW_BUF_STRIDE(def->w, LV_COLOR_FORMAT_RGB565);
@@ -81,8 +81,9 @@ bool mage_draw_sprite(lv_obj_t *parent, const char *name,
     }
 
     const float sq = (squash <= 0.0f) ? 1.0f : squash;
-    const int h = (int)((float)h_pix * sq);
-    int w = (int)((float)h * (float)img->w / (float)img->h);
+    int h = (int)((float)h_pix * sq);
+    /* 宽高要从 header 里取：lv_image_dsc_t 本身没有直接的 w/h 成员 */
+    int w = (int)((float)h * (float)img->header.w / (float)img->header.h);
     if (w < 1) w = 1;
     if (h < 1) h = 1;
 

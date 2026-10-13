@@ -15,7 +15,7 @@ extern "C" {
 /* 按名字取 LVGL 图片描述符；不存在返回 NULL */
 const lv_image_dsc_t *mage_img(const char *name);
 
-/* 按名字取原始贴图定义（宽高 + RGB565 指针） */
+/* 按名字取原始贴图定义（宽高 + RGB565 指针），返回 mage_sprite_t（见 mage_sprites.h） */
 const void *mage_sprite_def(const char *name);
 
 /* 画立绘：脚底中心 (cx, foot_y) 为锚点，高 h_pix，垂直压扁 squash，倾斜 tilt_deg。
