@@ -30,7 +30,7 @@
 /* 活动带：HTML 里人物站在 y≈250，背景占 y=60..250，草在 y=318 */
 #define GROUND_Y   250
 #define BG_Y        62
-#define BG_H       188
+#define BG_H       132      /* 必须等于 battle_bg 原图高度，否则被 1:1 规则拒绝绘制 */
 #define FOE_MAX      3      /* 同屏最多画 3 只怪的立绘（与 HTML 一致） */
 
 static const char *TAG = "mage_fx";
@@ -93,16 +93,23 @@ static void fx_build(void)
 {
     if (F.built || !g_fx_parent) return;
 
-    /* 滚动背景：宽 = 屏宽 + 屏宽（两屏宽），改 x 实现无缝滚动。
-     * 素材 battle_bg 原图 240x132，这里按 2 屏宽贴两遍。
-     * 注意：1:1 免缩放铁律 —— 所以用两个并排的 240 宽对象来铺。 */
+    /* 滚动背景：素材 battle_bg 原图 240x132，两幅并排实现无缝横向滚动。
+     * 注意：必须严格按原图尺寸 240x132 绘制，否则被 1:1 免缩放规则拒绝。 */
     F.bg = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.bg);
     lv_obj_set_size(F.bg, SCR_W, BG_H);
     lv_obj_set_pos(F.bg, 0, BG_Y);
     lv_obj_set_style_bg_opa(F.bg, LV_OPA_TRANSP, 0);
-    mage_draw_bg(F.bg, "battle_bg", 0, 0, SCR_W, BG_H);
-    lv_obj_add_flag(F.bg, LV_OBJ_FLAG_HIDDEN);   /* 素材非 1:1 时隐藏，走纯色兜底 */
+    lv_obj_set_style_border_width(F.bg, 0, 0);
+    lv_obj_remove_flag(F.bg, LV_OBJ_FLAG_SCROLLABLE);
+    {
+        lv_obj_t *b0 = lv_image_create(F.bg);
+        lv_image_set_src(b0, mage_img("battle_bg"));
+        lv_obj_set_pos(b0, 0, 0);
+        lv_obj_t *b1 = lv_image_create(F.bg);
+        lv_image_set_src(b1, mage_img("battle_bg"));
+        lv_obj_set_pos(b1, SCR_W, 0);
+    }
 
     /* 活动带压暗：HTML 的 gDim 渐变。用一层半透明黑近似（240x130） */
     F.dim = lv_obj_create(g_fx_parent);
@@ -131,6 +138,22 @@ static void fx_build(void)
         lv_obj_set_style_border_width(F.foeShadow[i], 0, 0);
         lv_obj_remove_flag(F.foeShadow[i], LV_OBJ_FLAG_SCROLLABLE);
         F.foe[i] = NULL;
+    }
+
+    /* 敌方立绘槽位：构建期一次建好 3 个（绝不周期刷新里建对象）。
+     * 每槽默认挂 sp_goblin，进入战斗时按怪种切 src。 */
+    {
+        static const char *spr0[FOE_MAX] = {"sp_goblin", "sp_slime", "sp_cat"};
+        static const int   sw0[FOE_MAX]  = {60, 84, 84};
+        static const int   sh0[FOE_MAX]  = {80, 54, 76};
+        for (int i = 0; i < FOE_MAX; i++) {
+            lv_obj_t *o = lv_image_create(g_fx_parent);
+            lv_image_set_src(o, mage_img(spr0[i]));
+            lv_obj_set_size(o, sw0[i], sh0[i]);
+            lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_user_data(o, (void *)(intptr_t)(i + 1));
+            F.foe[i] = o;
+        }
     }
 
     /* 伙伴猫 + 主角 */
@@ -283,11 +306,17 @@ void mage_fx_render(void)
         shakeX = (int)(sinf(bt.fxT * 60.0f) * bt.shake * 4.0f);
     }
 
-    /* ---- 滚动背景：两屏宽贴图横向移动做无缝循环 ----
-     * 素材原图 240x132 与绘制区 1:1，F.bg 已建。若素材 1:1 则启用滚动。 */
+    /* ---- 滚动背景：移动两幅子图实现无缝循环（只改 pos，无变换开销） ---- */
     if (F.bg && !lv_obj_has_flag(F.bg, LV_OBJ_FLAG_HIDDEN)) {
-        float off = fx_wrap(bt.cam, SCR_W, SCR_W);
-        lv_obj_set_pos(F.bg, -(int)off + shakeX, BG_Y);
+        int off = (int)fx_wrap(bt.cam, SCR_W, SCR_W);   /* 0..239 */
+        uint32_t n = lv_obj_get_child_count(F.bg);
+        for (uint32_t i = 0; i < n && i < 2; i++) {
+            lv_obj_t *c = lv_obj_get_child(F.bg, (int32_t)i);
+            if (c) {
+                lv_obj_set_pos(c, (int)i * SCR_W - off + shakeX, 0);
+            }
+        }
+        lv_obj_set_pos(F.bg, 0, BG_Y);
     }
 
     /* ---- 飘浮光尘 ---- */
@@ -295,9 +324,12 @@ void mage_fx_render(void)
         int bx = (int)(intptr_t)lv_obj_get_user_data(F.dust[i]);
         float dy = fmodf((float)bx * 3.0f - t * 12.0f, 180.0f);
         if (dy < 0.0f) dy += 180.0f;
-        float a = 0.25f + 0.4f * fabsf(sinf((float)bx + t * 2.0f));
         lv_obj_set_pos(F.dust[i], bx + (int)(sinf(t + (float)bx) * 6.0f), (int)dy + 60);
-        lv_obj_set_style_bg_opa(F.dust[i], (lv_opa_t)(a * 255.0f), 0);
+        /* 闪烁节流到 5Hz：每帧改透明度会触发全屏重绘，是发热的次要来源 */
+        if ((int)(t * 5.0f) != (int)((t - 0.020f) * 5.0f)) {
+            float a = 0.25f + 0.4f * fabsf(sinf((float)bx + t * 2.0f));
+            lv_obj_set_style_bg_opa(F.dust[i], (lv_opa_t)(a * 255.0f), 0);
+        }
     }
 
     /* ---- 敌方立绘 ---- */
@@ -318,17 +350,13 @@ void mage_fx_render(void)
         }
         const int k = (e->typeIdx >= 0 && e->typeIdx <= 2) ? e->typeIdx : 0;
 
-        /* 首次进入该槽位才建对象，之后只改属性（防闪屏铁律） */
+        /* 槽位在 fx_build 里已全部建好，这里只在换怪种时切 src（不新建对象） */
         if (!slot) {
-            slot = lv_obj_create(g_fx_parent);
-            lv_obj_remove_style_all(slot);
-            lv_obj_set_size(slot, sprW[k], sprH[k]);
-            mage_draw_bg(slot, spr[k], 0, 0, sprW[k], sprH[k]);
-            F.foe[drawn] = slot;
-        } else if (lv_obj_get_user_data(slot) != (void *)(intptr_t)(k + 1)) {
-            /* 换了怪种，重设贴图与尺寸 */
-            lv_obj_set_size(slot, sprW[k], sprH[k]);
-            mage_draw_bg(slot, spr[k], 0, 0, sprW[k], sprH[k]);
+            continue;   /* 理论上不会发生，槽位已在构建期创建 */
+        }
+        if (lv_obj_get_user_data(slot) != (void *)(intptr_t)(k + 1)) {
+            /* 换怪种：只切贴图源，绝不新建对象（防闪屏 + 防内存抖动） */
+            lv_image_set_src(slot, mage_img(spr[k]));
             lv_obj_set_user_data(slot, (void *)(intptr_t)(k + 1));
         }
         lv_obj_remove_flag(slot, LV_OBJ_FLAG_HIDDEN);
@@ -355,21 +383,26 @@ void mage_fx_render(void)
                           : -(isSlime ? 5.0f : 3.5f) * hopPh;
         /* 1:1 免缩放铁律：压扁用 transform_pivot_y 的 scale，不改 w/h */
         float sq    = fly ? 1.0f : 1.0f + (isSlime ? 0.14f : 0.06f) * (1.0f - hopPh);
-
-        /* 受击后仰 / 冲锋前倾 */
-        float eTilt = (e->hurtT > 0.0f) ? -14.0f : lungeTilt * 57.3f;
+        (void)sq; (void)isSlime;
+        /* 压扁不用 transform（会打满单核致发烫），改由 hopY 位移体现弹跳 */
+        float eTilt = 0.0f;
+        (void)eTilt; (void)lungeTilt;
 
         const int hPix = sprH[k];
         lv_obj_set_pos(slot, (int)sx + shakeX - hPix / 2,
                        (int)(GROUND_Y + hopY) - hPix);
-        /* 压扁：纵向缩放，pivot 放脚底 */
-        lv_obj_set_style_transform_pivot_x(slot, hPix / 2, 0);
-        lv_obj_set_style_transform_pivot_y(slot, hPix, 0);
-        lv_obj_set_style_transform_scale_y(slot, (int32_t)(sq * 256), 0);
-        /* 角度必须每帧无条件复位，否则会残留上一次的倾斜 */
-        lv_obj_set_style_transform_angle(slot, (int32_t)(eTilt * 10), 0);
-        /* 受击闪白（HTML: 主角受击 px 白色半透明一闪） */
-        lv_obj_set_style_img_opa(slot, (e->flashT > 0.0f) ? LV_OPA_60 : LV_OPA_COVER, 0);
+        /* 压扁改用「不缩放但整体上抬」近似：hopY 越低代表压得越扁，
+         * 视觉上保留弹跳感，且零变换开销。 */
+        /* 受击闪白：仅在状态翻转的那一帧设置，避免每帧无效重绘 */
+        if (e->flashT > 0.0f) {
+            if (lv_obj_get_user_data(slot) != (void *)(intptr_t)0xBEEF) {
+                lv_obj_set_style_img_opa(slot, LV_OPA_60, 0);
+                lv_obj_set_user_data(slot, (void *)(intptr_t)0xBEEF);
+            }
+        } else if (lv_obj_get_user_data(slot) == (void *)(intptr_t)0xBEEF) {
+            lv_obj_set_style_img_opa(slot, LV_OPA_COVER, 0);
+            lv_obj_set_user_data(slot, (void *)(intptr_t)(k + 1));
+        }
 
         /* 影子 */
         lv_obj_t *sh = F.foeShadow[drawn];
@@ -400,14 +433,16 @@ void mage_fx_render(void)
     float hBob  = -fabsf(sinf(bt.walkF * 0.8f)) * 2.5f;
     float lunge = (bt.lungeT > 0.0f) ? (bt.lungeT / 0.22f) * 10.0f : 0.0f;
     float hTilt = (bt.lungeT > 0.0f) ? 0.1f : sinf(bt.walkF * 0.8f) * 0.05f;
+    (void)hTilt;   /* 不用旋转，倾斜效果由 lunge 位移近似 */
+    /* 主角：不使用 transform 旋转，同样只改 pos（零软件变换） */
     lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 42,
                    (int)(250.0f + hBob) - 108);
-    lv_obj_set_style_transform_pivot_x(F.hero, 42, 0);
-    lv_obj_set_style_transform_pivot_y(F.hero, 108, 0);
-    lv_obj_set_style_transform_angle(F.hero, (int32_t)(hTilt * 57.3f * 10.0f), 0);
-    /* 主角受击闪白 */
-    lv_obj_set_style_img_opa(F.hero,
-                             (bt.hurtT > 0.0f) ? LV_OPA_60 : LV_OPA_COVER, 0);
+    /* 主角受击闪白：仅状态翻转帧设置 */
+    if (bt.hurtT > 0.0f) {
+        lv_obj_set_style_img_opa(F.hero, LV_OPA_60, 0);
+    } else {
+        lv_obj_set_style_img_opa(F.hero, LV_OPA_COVER, 0);
+    }
     lv_obj_set_pos(F.heroShadow, (int)(70 - (int)bt.cam + lunge) - 7, 250 - 2);
 
     /* ---- 前景草丛视差 1.3 ---- */
@@ -468,7 +503,6 @@ void mage_fx_attach(lv_obj_t *parent)
 {
     g_fx_parent = parent;
     F.built = false;
-    memset(F.foe, 0, sizeof(F.foe));
 }
 
 void mage_fx_show(bool on)

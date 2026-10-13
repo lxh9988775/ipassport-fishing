@@ -101,13 +101,9 @@ bool mage_draw_sprite_ret(lv_obj_t *parent, const char *name,
     const int x = cx - w / 2;
     const int y = foot_y - h;
 
-    if (tilt_deg != 0.0f) {
-        /* 旋转 pivot 放在脚底中心，模拟 HTML 里 translate(x,footY) 后再 rotate */
-        lv_obj_set_style_transform_rotation(o, (int32_t)(tilt_deg * 10), 0);
-        lv_obj_set_style_transform_pivot_x(o, w / 2, 0);
-        lv_obj_set_style_transform_pivot_y(o, h, 0);
-        lv_obj_set_style_transform_angle(o, 0, 0);
-    }
+    /* 不做任何 transform 旋转：ESP32-C3 软件变换会打满单核导致发烫死机。
+     * 需要倾斜时由调用方改 pos 近似。tilt_deg 参数保留仅为接口兼容。 */
+    (void)tilt_deg;
 
     lv_obj_set_pos(o, x, y);
     if (out) {
