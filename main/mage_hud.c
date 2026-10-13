@@ -181,10 +181,20 @@ void mage_hud_build(void)
 void mage_hud_show(bool on)
 {
     if (!g_hud_parent) return;
-    if (H.shown == (int8_t)on && (on ? H.built : 1)) return;
     if (on) {
         mage_hud_build();
         if (!H.built) return;
+    } else if (!H.built) {
+        /* 从未构建过：只需隐藏父容器即可，不能碰还不存在的 H.root */
+        if (H.shown != 0) {
+            H.shown = 0;
+            lv_obj_add_flag(g_hud_parent, LV_OBJ_FLAG_HIDDEN);
+        }
+        return;
+    }
+    /* 状态记忆：只有真正翻转时才调 LVGL（否则每 60ms 触发一次全屏 invalidate） */
+    if (H.shown == (int8_t)(on ? 1 : 0)) return;
+    if (on) {
         /* 关键：父容器 hud_root 在 build_ui 里被加了 HIDDEN，
          * 只切子对象 H.root 的 flag 父级仍隐藏 -> 整个 HUD 永远不显示。
          * 必须父子两个一起切。 */
@@ -194,7 +204,7 @@ void mage_hud_show(bool on)
         lv_obj_add_flag(H.root, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_hud_parent, LV_OBJ_FLAG_HIDDEN);
     }
-    H.shown = (int8_t)on;
+    H.shown = (int8_t)(on ? 1 : 0);
 }
 
 /* 每帧只改文本与条宽，不建对象。
@@ -209,7 +219,6 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
                      int turn)
 {
     if (!H.built) return;
-    char buf[64];
     char want[64];
     int w;
 
@@ -259,7 +268,6 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
         snprintf(H.turnTxt, sizeof(H.turnTxt), "%s", want);
         lv_label_set_text(H.turnTx, want);
     }
-    (void)buf;
 }
 
 bool mage_hud_ready(void)

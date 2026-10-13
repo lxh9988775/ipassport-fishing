@@ -167,7 +167,8 @@ static int  spellModLen(int slot);
  * 对象指针即身份，静态表足够（本文件对象总数 < 40）。
  */
 #define HIDDEN_TRACK_MAX 48
-static struct { const lv_obj_t *o; uint8_t hidden; } s_hidden_track[HIDDEN_TRACK_MAX];
+/* 用非 const 指针：与 lv_obj_t * 直接比较，避免 -Wpointer-sign（工程开 -Werror） */
+static struct { lv_obj_t *o; uint8_t hidden; } s_hidden_track[HIDDEN_TRACK_MAX];
 static uint8_t s_hidden_cnt = 0;
 
 static void set_hidden(lv_obj_t *o, bool h) {
@@ -346,7 +347,7 @@ static void build_ui(void) {
     /* 把 build_ui 里各处直接 add_flag 设定的初始隐藏状态登记进跟踪表，
      * 否则首次 set_hidden(...,false) 会被误判为「状态没变」而跳过。 */
     s_hidden_cnt = 0;
-    static const lv_obj_t *init_hidden[] = {
+    static lv_obj_t *init_hidden[] = {
         g_title_grp, g_name_grp, g_hud,
         g_toast,
     };
