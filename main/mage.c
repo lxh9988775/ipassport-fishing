@@ -1197,7 +1197,8 @@ static int capture_chance(BattleEnemy *e, int seal) {
         if (pr->traitIdx == traitIndex("lucky")) p += 0.10f;
         if (pr->traitIdx == traitIndex("flex"))  p += 0.15f;
     }
-    if (p < 0.02f) p = 0.02f; if (p > 0.98f) p = 0.98f;
+    if (p < 0.02f) p = 0.02f;
+    if (p > 0.98f) p = 0.98f;
     return (int)(p * 100);
 }
 
@@ -1210,6 +1211,7 @@ static void spawn_boss(void);
 static void finish_crawl(void);
 static void finish_expedition(void);
 static void throw_orb(int seal);
+static void end_battle(void);
 
 /* ---------- 伤害/击杀 ---------- */
 static void deal_to(BattleEnemy *e, int dmg) {
@@ -1573,7 +1575,8 @@ static void spawn_boss(void) {
     e->resist[0] = -1; e->resist[1] = -1;
     for (int k = 0; k < 2 && np > 0; k++) {
         int pi = mage_ri(0, np - 1); e->resist[k] = pl[pi];
-        for (int j = pi; j < np - 1; j++) pl[j] = pl[j + 1]; np--;
+        for (int j = pi; j < np - 1; j++) pl[j] = pl[j + 1];
+        np--;
     }
     e->resistKnown = 0;
     bt.storyShown = 0;
@@ -1654,7 +1657,8 @@ static void finish_crawl(void) {
     int stn = mage_ri(1, 3); g.stones[st] += stn;
     if (mage_rf(0, 1) < 0.8f) { int id = mage_ri(0, 39); g.mbag[id] += mage_ri(1, 2); }
     if (mage_rf(0, 1) < 0.6f) { int id = mage_ri(0, 19); g.pbag[id] += 1; }
-    for (int i = 0; i < 4; i++) g.dungeonOffers[i] = -1; g.ndoffers = 0;
+    for (int i = 0; i < 4; i++) g.dungeonOffers[i] = -1;
+    g.ndoffers = 0;
     toast("【%s】通关！+%d金 +%s", D->name, gd, it.name);
     mage_persist(); end_battle();
 }
@@ -1827,7 +1831,10 @@ static void battle_handle(int act) {
         if (act == ACT_OK || act == ACT_BACK) {
             g.hp = (int)(g.maxHp * 0.5f + 0.5f); if (g.hp < 1) g.hp = 1;
             g.mp = (int)(g.maxMp * 0.5f + 0.5f);
-            if (bt.mode == 1) { for (int i = 0; i < 4; i++) g.dungeonOffers[i] = -1; g.ndoffers = 0; }
+            if (bt.mode == 1) {
+                for (int i = 0; i < 4; i++) g.dungeonOffers[i] = -1;
+                g.ndoffers = 0;
+            }
             toast("力竭回城休息（无惩罚）");
             end_battle();
         }
