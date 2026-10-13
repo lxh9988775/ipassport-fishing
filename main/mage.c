@@ -157,7 +157,7 @@ static int spellModLen(int slot) { return slot == 0 ? 3 : slot == 1 ? 9 : 5; }
 
 /* 对照实验开关：0=关闭全屏贴图（调试用），1=开启 */
 #ifndef MAGE_ART_FULLSCREEN
-#define MAGE_ART_FULLSCREEN 0
+#define MAGE_ART_FULLSCREEN 1
 #endif
 
 /* ===================== 战斗引擎（M3，1:1 复刻 HTML 战斗逻辑）前向声明 ===================== */

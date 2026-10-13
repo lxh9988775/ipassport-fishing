@@ -17,7 +17,6 @@
 #include "nvs_flash.h"
 
 #include "mage_state.h"   /* mage_app_start() 声明 */
-#include "fap_screenshot.h" /* 真机串口截屏协议 FAP_SCREENSHOT_V1 */
 
 static const char *TAG = "mage_main";
 
@@ -50,15 +49,7 @@ void app_main(void) {
     /* 交给游戏应用层（内部注册按键回调 + 创建游戏任务）*/
     mage_app_start();
 
-    /* 真机串口截屏协议（社区投稿截图用，纯只读）
-     * 注意：调试期可用 FAP_SCREENSHOT=0 关掉。
-     * 该模块常驻抢占 USB-Serial-JTAG 控制台驱动，在本工程上疑似与 LVGL 渲染冲突。 */
-#ifndef FAP_SCREENSHOT
-#define FAP_SCREENSHOT 0
-#endif
-#if FAP_SCREENSHOT
-    fap_screenshot_init();
-#else
-    ESP_LOGW(TAG, "FAP_SCREENSHOT=0，串口截屏模块已停用");
-#endif
+    /* 串口截屏模块已从构建中移除（见 main/CMakeLists.txt 注释）：
+     * 它的 150KB 全屏静态缓冲会吃光 C3 的可用 RAM（147KB -> 84KB），
+     * 导致 LVGL 渲染时分配失败崩溃。 */
 }
