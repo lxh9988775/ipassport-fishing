@@ -197,8 +197,7 @@ static void build_ui(void) {
      * 必须建在所有文字之后并移到最底层，否则会盖住标题文字。 */
     lv_obj_t *t_bg = NULL, *t_hero = NULL;
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
-    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);
-    if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
+    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);    if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
 
     /* 命名组 */
@@ -1846,21 +1845,23 @@ static void battle_art_update(void) {
     /* 战斗背景（HTML: ctx.drawImage(bg,...) 铺满） */
     mage_draw_bg(g_battle_art, "battle_bg", 0, 0, SCR_W, 132);
 
-    /* 敌方立绘：goblin/slime/cat 三型，与 HTML spr 映射一致；最多画 3 个 */
+    /* 敌方立绘：goblin/slime/cat 三型，与 HTML spr 映射一致；最多画 3 个
+     * h 必须等于贴图原高（1:1 免缩放），宽由绘制层按原图比例算 */
     const char *spr[3] = {"sp_goblin", "sp_slime", "sp_cat"};
+    const int  sprh[3] = {80, 54, 76};
     int drawn = 0;
     for (int i = 0; i < bt.enemyCount && drawn < 3; i++) {
         const BattleEnemy *e = &bt.enemies[i];
         if (e->hp <= 0) continue;
-        const char *key = spr[(e->typeIdx >= 0 && e->typeIdx <= 2) ? e->typeIdx : 0];
+        const int k = (e->typeIdx >= 0 && e->typeIdx <= 2) ? e->typeIdx : 0;
         int cx = SCR_W * (drawn + 1) / 4;
-        if (mage_draw_sprite(g_battle_art, key, cx, 128, 52, 1.0f, 0.0f)) {
+        if (mage_draw_sprite(g_battle_art, spr[k], cx, 128, sprh[k], 1.0f, 0.0f)) {
             drawn++;
         }
     }
     /* 我方主角 + 伙伴猫（HTML: spHero 在左下，spCat 在右下） */
-    mage_draw_sprite(g_battle_art, "sp_hero", 46, 130, 62, 1.0f, 0.0f);
-    mage_draw_sprite(g_battle_art, "sp_cat", SCR_W - 40, 130, 40, 1.0f, 0.0f);
+    mage_draw_sprite(g_battle_art, "sp_hero", 46, 130, 108, 1.0f, 0.0f);
+    mage_draw_sprite(g_battle_art, "sp_cat", SCR_W - 42, 130, 76, 1.0f, 0.0f);
 }
 
 static void battle_render(void) {

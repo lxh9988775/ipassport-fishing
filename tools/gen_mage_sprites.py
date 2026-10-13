@@ -22,16 +22,17 @@ OUT_H = os.path.join(ROOT, "assets", "mage_sprites.h")
 # 8MB Flash 要同时装代码 + 1161 字中文子集字库 + 贴图，所以全屏大图按 1.0~1.25 倍、
 # 小立绘按 ~2 倍超采样即可（屏本身只有 240x320，再高纯浪费 Flash）。
 SPRITES = {
-    # 全屏背景/立绘：屏就是 240x320
-    "title": ("title_art.png", 240, 360),
-    "town":  ("town_art.png", 240, 360),
-    "battle_bg": ("battle_bg_k.png", 300, 200),
-    # 战斗立绘（HTML: 46~60px 高，这里给到 ~2x）
-    "sp_hero":   ("sp_hero_k.png", 120, 154),
-    "sp_goblin": ("sp_goblin_k.png", 100, 134),
-    "sp_slime":  ("sp_slime_k.png", 140, 90),
-    "sp_cat":    ("sp_cat_k.png", 150, 137),
-    # 图标/头像（HTML: 32~76px）
+    # 全屏背景：尺寸必须与屏幕 1:1（240x320），否则 LVGL 会走缩放变换、
+    # 需要额外的全屏 draw buffer，而 LV_MEM 只有几十 KB，必然分配失败 → Load access fault。
+    "title": ("title_art.png", 240, 320),
+    "town":  ("town_art.png", 240, 320),
+    "battle_bg": ("battle_bg_k.png", 240, 132),
+    # 战斗立绘：同样按屏上实际像素尺寸 1:1 生成，全程零缩放
+    "sp_hero":   ("sp_hero_k.png", 84, 108),
+    "sp_goblin": ("sp_goblin_k.png", 60, 80),
+    "sp_slime":  ("sp_slime_k.png", 84, 54),
+    "sp_cat":    ("sp_cat_k.png", 84, 76),
+    # 图标/头像（HTML: 32~76px），一律取偶数宽高
     "hero_icon": ("hero.png", 80, 80),
     "cat_icon":  ("catspirit.png", 56, 56),
     "goblin_icon": ("goblin.png", 56, 56),
@@ -121,7 +122,7 @@ def main():
 
         sym = s["name"]
         parts.append(f"/* ---- {sym}  {tw}x{th} ---- */")
-        parts.append(f"static const uint16_t {sym}_rgb[{tw * th}] = {{")
+        parts.append(f"static const uint16_t {sym}_rgb[{tw * th}] __attribute__((aligned(4))) = {{")
         parts.append(c_array_of(out))
         parts.append("};")
         parts.append("")

@@ -1,0 +1,33 @@
+Path of the Mage King - User Guide
+
+[Getting Started]
+1. Flash the firmware onto your FoloToy AI Passport, reboot, and pick "Path of the Mage King" from the app list.
+2. On the title screen, press OK to begin a new adventure and name your young mage.
+3. Progress is saved automatically to the device. Quit any time and continue later - no manual saving needed.
+
+[Controls (3-button hardware)]
+· Short press OK: confirm / interact / advance dialogue and battles
+· Short press Down: move cursor down / next item
+· Short press Up: move cursor up / previous item
+· Long press OK: go back one level (works on battle result screens and all lists)
+· You can never get stuck - long-press OK always exits the current screen
+
+[What's Inside]
+· Mage Town: Home (rest & recover), Magic Academy (upgrade spells), Adventurers' Guild (take quests), Forge (craft equipment), Magic Black Market (buy & sell), Residence (alchemy lab and magic research).
+· Wild Trials: explore 5 zones, defeat monsters, earn gold, EXP, moon grass, beast bones and magic crystals.
+· Capture Partners: use capture orbs or seal cards to befriend cat spirits, slimes and more. Partners fight alongside you, level up, and evolve.
+· Turn-based Battles: hit elemental weaknesses for 1.5x damage and break enemy guards; resistances reduce damage. Use potions, capture orbs and seal cards mid-battle, or toggle auto-battle / auto-capture / auto-spell.
+· Dungeons & Ruins: unlocked by meeting conditions, dropping rare equipment and crystals.
+· Expeditions & Events: special adventures with generous rewards.
+· Boss Battles: beat each chapter's boss to advance the story, win equipment, crystals, orbs and seal cards, and unlock the next chapter.
+· Monster Encyclopedia: records every monster you have met or captured.
+
+[Kid-friendly Design]
+· No death penalty: losing a battle just sends you back to town to rest - you keep all gold and partners.
+· Stats never decrease, perfect for children to play independently.
+· Full Chinese interface on a 2.4-inch portrait display, no internet required.
+
+[Firmware Info]
+· Target device: FoloToy AI Passport (ESP32-C3 package, full merged image included)
+· Version: v1.0
+· Source: https://github.com/lxh9988775/ipassport-fishing (mage-game branch)

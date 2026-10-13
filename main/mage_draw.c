@@ -97,6 +97,17 @@ bool mage_draw_sprite_ret(lv_obj_t *parent, const char *name,
     if (w < 1) w = 1;
     if (h < 1) h = 1;
 
+    /* 铁律：ESP32-C3 上绝不让 LVGL 做缩放变换。LVGL 的缩放路径要额外分配一块
+     * 与目标同尺寸的临时 draw buffer（LV_MEM 只有几十 KB），
+     * 分配失败返回 NULL 后被解引用 = Load access fault（MTVAL≈0x4）。
+     * 所以目标尺寸必须与原图逐像素一致，否则直接放弃这张图。 */
+    if (w != (int)img->header.w || h != (int)img->header.h) {
+        lv_obj_delete(o);
+        ESP_LOGW(TAG, "尺寸不匹配拒绝缩放 %s 目标%dx%d 原图%ux%u",
+                 name, w, h, (unsigned)img->header.w, (unsigned)img->header.h);
+        return false;
+    }
+
     lv_image_set_src(o, img);
     lv_obj_set_size(o, w, h);
 
@@ -136,6 +147,13 @@ bool mage_draw_bg_ret(lv_obj_t *parent, const char *name, int x, int y, int w, i
     }
     lv_obj_t *o = lv_image_create(parent);
     if (!o) {
+        return false;
+    }
+    /* 同 mage_draw_sprite_ret：背景图也必须与原图 1:1，禁止缩放 */
+    if (w != (int)img->header.w || h != (int)img->header.h) {
+        lv_obj_delete(o);
+        ESP_LOGW(TAG, "背景尺寸不匹配拒绝缩放 %s 目标%dx%d 原图%ux%u",
+                 name, w, h, (unsigned)img->header.w, (unsigned)img->header.h);
         return false;
     }
     lv_image_set_src(o, img);
