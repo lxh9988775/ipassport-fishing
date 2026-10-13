@@ -318,9 +318,16 @@ static void refresh_ui(void) {
     set_hidden(g_hud, !hud_on);
     for (int i = 0; i < 14; i++) set_hidden(g_stars[i], !title);
 
-    /* 离开城镇页时清掉主视觉，下次进入再重建（避免周期刷新里贴图无限叠加） */
+    /* 离开城镇页时销毁主视觉容器，下次进入重建。
+     * 注意：必须把 g_scene_art 本身置 NULL（它已被 lv_obj_clean 掏空，
+     * 不置 NULL 会让下一行 g_scene_grp 上残留一个游离容器，后续往里塞的
+     * 城镇贴图会变成不受控的游离对象，永久盖在战斗画面上 —— 这就是
+     * 「进战斗显示的却是城镇背景」的根因）。 */
     if (g_scene != SC_CITY && g_city_art_shown) {
-        if (g_scene_art) lv_obj_clean(g_scene_art);
+        if (g_scene_art) {
+            lv_obj_delete(g_scene_art);
+            g_scene_art = NULL;
+        }
         g_city_art = NULL;
         g_city_art_shown = false;
     }
@@ -362,14 +369,26 @@ static void refresh_ui(void) {
         /* 城镇主视觉：与 HTML 一致用 town_art 铺底，菜单文字压在其上。
          * refresh_ui 是周期调用的，故只在切到本页时建一次，避免贴图叠加。 */
         if (g_last_scene != SC_CITY || !g_city_art) {
-            lv_obj_clean(g_scene_art);
-            g_city_art = lv_obj_create(g_scene_grp);
+            /* g_scene_art 可能已在离开城镇时被删除（可能是 NULL）。
+             * 直接对它 lv_obj_clean 会空指针崩溃 -> 必须先判空并重建容器。 */
+            if (!g_scene_art) {
+                g_scene_art = lv_obj_create(g_scene_grp);
+                lv_obj_remove_style_all(g_scene_art);
+                lv_obj_set_size(g_scene_art, SCR_W, SCR_H);
+                lv_obj_set_pos(g_scene_art, 0, 0);
+                lv_obj_set_style_bg_opa(g_scene_art, LV_OPA_TRANSP, 0);
+                lv_obj_set_scrollbar_mode(g_scene_art, LV_SCROLLBAR_MODE_OFF);
+            } else {
+                lv_obj_clean(g_scene_art);
+            }
+            g_city_art = lv_obj_create(g_scene_art);
             lv_obj_remove_style_all(g_city_art);
             lv_obj_set_size(g_city_art, SCR_W, SCR_H);
             lv_obj_set_pos(g_city_art, 0, 0);
             lv_obj_set_style_bg_opa(g_city_art, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(g_city_art, 0, 0);
+            lv_obj_remove_flag(g_city_art, LV_OBJ_FLAG_SCROLLABLE);
             mage_draw_bg(g_city_art, "town", 0, 0, SCR_W, SCR_H);
-            lv_obj_move_to_index(g_city_art, 0);   /* 压在标题/正文/提示之下 */
             g_city_art_shown = true;
         }
         (void)g_city_art_shown;
