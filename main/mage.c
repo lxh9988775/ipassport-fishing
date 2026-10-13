@@ -15,6 +15,7 @@
 #include "bsp_display.h"
 #include "bsp_button.h"
 #include "lvgl.h"
+#include "mage_draw.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
@@ -76,6 +77,9 @@ typedef struct { bsp_btn_t btn; bsp_btn_ev_t ev; } btn_ev_t;
 
 static lv_obj_t *g_root = NULL;
 static lv_obj_t *g_title_grp = NULL, *g_name_grp = NULL, *g_scene_grp = NULL, *g_hud = NULL;
+/* 美术层容器：城镇主视觉（周期刷新时需防重复叠加，故单独持有并在切页时清理） */
+static lv_obj_t *g_scene_art = NULL, *g_city_art = NULL;
+static bool g_city_art_shown = false;
 static lv_obj_t *g_title_main = NULL, *g_title_sub = NULL, *g_title_tag = NULL;
 static lv_obj_t *g_menu0 = NULL, *g_menu1 = NULL, *g_title_foot = NULL, *g_title_hint = NULL;
 static lv_obj_t *g_name_prompt = NULL, *g_name_val = NULL, *g_name_hint = NULL;
@@ -185,8 +189,12 @@ static void build_ui(void) {
     g_title_main = mk_label(g_title_grp, "魔法帝之路", 0, 42, C_GOLD);
     g_title_sub  = mk_label(g_title_grp, "— MAGE OF THE MAGIC EMPEROR —", 0, 74, C_DIM);
     g_title_tag  = mk_label(g_title_grp, "在试炼中成长，于魔法中登顶", 0, 100, C_WHITE);
+    /* 标题页主视觉：与 HTML 一致用 title_art 全屏铺底，主标题文字压在其上 */
+    mage_draw_bg(g_title_grp, "title", 0, 0, SCR_W, SCR_H);
     g_menu0      = mk_label(g_title_grp, "  继续冒险", 0, 156, C_GRAY);
     g_menu1      = mk_label(g_title_grp, "  新的旅程", 0, 190, C_GRAY);
+    /* 主角立绘（HTML 标题页有 hero 小像） */
+    mage_draw_sprite(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f);
     g_title_foot = mk_label(g_title_grp, "v6.4 · 魔法帝之路", 0, 272, C_DIM);
     g_title_hint = mk_label(g_title_grp, "↑↓ 选择 · OK 确定", 0, 296, C_DIM);
 
@@ -208,6 +216,15 @@ static void build_ui(void) {
     lv_obj_set_pos(g_scene_grp, 0, 0);
     lv_obj_set_style_bg_opa(g_scene_grp, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(g_scene_grp, LV_SCROLLBAR_MODE_OFF);
+
+    /* 美术层：城镇主视觉的容器，创建后即置于最底（文字压在其上） */
+    g_scene_art = lv_obj_create(g_scene_grp);
+    lv_obj_remove_style_all(g_scene_art);
+    lv_obj_set_size(g_scene_art, SCR_W, SCR_H);
+    lv_obj_set_pos(g_scene_art, 0, 0);
+    lv_obj_set_style_bg_opa(g_scene_art, LV_OPA_TRANSP, 0);
+    lv_obj_set_scrollbar_mode(g_scene_art, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_move_to_index(g_scene_art, 0);
 
     g_scene_title = lv_label_create(g_scene_grp);
     use_cjk(g_scene_title);
@@ -285,6 +302,13 @@ static void refresh_ui(void) {
     set_hidden(g_hud, !hud_on);
     for (int i = 0; i < 14; i++) set_hidden(g_stars[i], !title);
 
+    /* 离开城镇页时清掉主视觉，下次进入再重建（避免周期刷新里贴图无限叠加） */
+    if (g_scene != SC_CITY && g_city_art_shown) {
+        if (g_scene_art) lv_obj_clean(g_scene_art);
+        g_city_art = NULL;
+        g_city_art_shown = false;
+    }
+
     if (title) {
         uint32_t t = now_ms();
         for (int i = 0; i < 14; i++) {
@@ -314,6 +338,20 @@ static void refresh_ui(void) {
     switch (g_scene) {
     case SC_CITY: {
         s_ttl[0] = '\0';
+        /* 城镇主视觉：与 HTML 一致用 town_art 铺底，菜单文字压在其上。
+         * refresh_ui 是周期调用的，故只在切到本页时建一次，避免贴图叠加。 */
+        if (g_last_scene != SC_CITY || !g_city_art) {
+            lv_obj_clean(g_scene_art);
+            g_city_art = lv_obj_create(g_scene_grp);
+            lv_obj_remove_style_all(g_city_art);
+            lv_obj_set_size(g_city_art, SCR_W, SCR_H);
+            lv_obj_set_pos(g_city_art, 0, 0);
+            lv_obj_set_style_bg_opa(g_city_art, LV_OPA_TRANSP, 0);
+            mage_draw_bg(g_city_art, "town", 0, 0, SCR_W, SCR_H);
+            lv_obj_move_to_index(g_city_art, 0);   /* 压在标题/正文/提示之下 */
+            g_city_art_shown = true;
+        }
+        (void)g_city_art_shown;
         if (g.cityMode == 0) {
             s_add("· 魔法小镇 ·\n");
             for (int i = 0; i < 7; i++)
@@ -1746,10 +1784,54 @@ void battle_start_boss(int chapter) {
 }
 
 /* ---------- 渲染 / 输入 / 自动推进 ---------- */
+
+/* 战斗画面美术层：HTML 用 battle_bg 全屏铺底 + 敌我立绘（drawSprite）。
+ * 文字战报仍走 s_init/s_add 叠在美术之上，与 HTML 的「背景+立绘+战报」结构一致。 */
+static lv_obj_t *g_battle_art = NULL;
+
+static void battle_art_rebuild(void) {
+    if (!g_battle_art) {
+        g_battle_art = lv_obj_create(g_root);
+        lv_obj_remove_style_all(g_battle_art);
+        lv_obj_set_size(g_battle_art, SCR_W, SCR_H);
+        lv_obj_set_pos(g_battle_art, 0, 0);
+        lv_obj_set_style_bg_opa(g_battle_art, LV_OPA_TRANSP, 0);
+        lv_obj_set_scrollbar_mode(g_battle_art, LV_SCROLLBAR_MODE_OFF);
+        /* 置于 HUD 之下、战报之上 */
+        lv_obj_move_foreground(g_battle_art);
+        lv_obj_move_to_index(g_battle_art, 1);
+    }
+    lv_obj_clean(g_battle_art);
+
+    /* 战斗背景（HTML: ctx.drawImage(bg,...) 铺满 240x320） */
+    mage_draw_bg(g_battle_art, "battle_bg", 0, 0, SCR_W, 132);
+
+    /* 敌方立绘：goblin/slime/cat 三型，与 HTML spr 映射一致；最多画 3 个 */
+    const char *spr[3] = {"sp_goblin", "sp_slime", "sp_cat"};
+    int drawn = 0;
+    for (int i = 0; i < bt.enemyCount && drawn < 3; i++) {
+        const BattleEnemy *e = &bt.enemies[i];
+        if (e->hp <= 0) continue;
+        const char *key = spr[(e->typeIdx >= 0 && e->typeIdx <= 2) ? e->typeIdx : 0];
+        int cx = SCR_W * (drawn + 1) / 4;
+        if (mage_draw_sprite(g_battle_art, key, cx, 128, 52, 1.0f, 0.0f)) {
+            drawn++;
+        }
+    }
+    /* 我方主角 + 伙伴猫（HTML: spHero 在左下，spCat 在右下） */
+    mage_draw_sprite(g_battle_art, "sp_hero", 46, 130, 62, 1.0f, 0.0f);
+    mage_draw_sprite(g_battle_art, "sp_cat", SCR_W - 40, 130, 40, 1.0f, 0.0f);
+}
+
 static void battle_render(void) {
     char hud[64];
     snprintf(hud, sizeof(hud), "Lv%d 金%d 球%d 卡%d 药%d", g.level, g.gold, g.orbs, g.seals, g.potions);
     lv_label_set_text(g_hud, hud);
+    /* 退出战斗后隐藏美术层，避免盖住城镇等页面 */
+    if (g_battle_art && !bt.active) {
+        lv_obj_add_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN);
+    }
+    battle_art_rebuild();
     s_init();
     if (bt.mode == 1)      s_add("⚔ 副本 %s [%d/%d]\n", DUNGEONS[bt.dungeonId].name, bt.wave, bt.dungeonRounds);
     else if (bt.mode == 2) s_add("⚔ 遗迹秘境 [%d/3]\n", bt.wave);
