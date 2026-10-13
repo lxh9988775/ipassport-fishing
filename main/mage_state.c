@@ -10,6 +10,8 @@
 #include "mage_state.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdarg.h>
+#include <math.h>
 #include "esp_random.h"
 #include "nvs_flash.h"
 #include "nvs.h"
@@ -65,6 +67,7 @@ void mage_defaults(void) {
     g.loadout[2] = spell_key(0, 2, 0);
     g.nload = 3;
     g.nebag = 0; g.ndoffers = 0;
+    for (int i = 0; i < 3; i++) { g.equip[i].rar = -1; g.equip[i].name[0] = '\0'; }
     g.name[0] = '\0';
     strcpy(g.scene, "TITLE");
 }
@@ -119,12 +122,18 @@ const char *spellName(int key) {
     snprintf(buf, sizeof(buf), "%s%s%s", MODS[m].pre, ELEMS[e].n, FORMS[f].n);
     return buf;
 }
-int spellPower(int key) {
-    int f, e, m; spell_split(key, &f, &e, &m);
+int spellPower2(int key, int lv) {
+    if (lv < 0) lv = 0;
+    int a = key;
+    int f = a / 45, e = (a % 45) / 5, m = a % 5;
+    if (f < 0 || f > 2 || e < 0 || e > 8 || m < 0 || m > 4) return 0;
     float p = (9 + g.level * 3 + g.rank * 5)
               * FORMS[f].pow * ELEMS[e].pow * MODS[m].pow
-              * (1 + 0.15f * (float)slv(key));
+              * (1 + 0.15f * (float)lv);
     return (int)(p + 0.5f);
+}
+int spellPower(int key) {
+    return spellPower2(key, slv(key));
 }
 int spellCost(int key) {
     int f, e, m; spell_split(key, &f, &e, &m);
@@ -240,6 +249,73 @@ void mage_persist(void) {
     nvs_commit(h);
     nvs_close(h);
     g_hasSave = 1;
+}
+
+/* ===================== 衍生查询（供 UI 场景，1:1 复刻 HTML 辅助） ===================== */
+int discoveredCount(void) {
+    int n = 0;
+    for (int i = 0; i < 135; i++) if (g.discovered[i]) n++;
+    return n;
+}
+int discoveredKeyAt(int i) {
+    int n = 0;
+    for (int k = 0; k < 135; k++) if (g.discovered[k]) { if (n == i) return k; n++; }
+    return -1;
+}
+int enemyIndex(const char *type) {
+    for (int i = 0; i < DEXORDER_COUNT; i++)
+        if (strcmp(DEXORDER[i], type) == 0) return i;
+    return -1;
+}
+int activeLoadoutKeys(int *out, int cap) {
+    int n = 0;
+    for (int i = 0; i < g.nload; i++) {
+        int k = g.loadout[i];
+        if (k >= 0 && k < 135 && g.discovered[k]) { if (n < cap) out[n] = k; n++; }
+    }
+    if (n == 0) {
+        int k = g.equipped;
+        if (k < 0 || k >= 135 || !g.discovered[k]) k = 0;
+        if (cap > 0) out[0] = k;
+        return 1;
+    }
+    return n;
+}
+int questProg(const QuestDef *q) {
+    if (q->type[0] == 'k') return g.kills - g.qBase;   /* kill 类：累计击杀 */
+    return g.herbs;                                     /* herb 类：月光草数 */
+}
+static char szone_buf[96];
+const char *speciesZones(int idx) {
+    if (idx < 0 || idx >= ENEMY_COUNT) return "—";
+    if (strcmp(DEXORDER[idx], "cat") == 0) return "全区域（小概率）";
+    szone_buf[0] = '\0'; int nz = 0;
+    for (int c = 0; c < 5; c++) {
+        for (int j = 0; j < ZONE_MOBS_N[c]; j++) {
+            if (strcmp(ZONE_MOBS[c][j], DEXORDER[idx]) == 0) {
+                if (nz > 0) strncat(szone_buf, " / ", sizeof(szone_buf) - strlen(szone_buf) - 1);
+                strncat(szone_buf, CHAPTERS[c], sizeof(szone_buf) - strlen(szone_buf) - 1);
+                nz++; break;
+            }
+        }
+    }
+    if (nz == 0) return "遗迹秘境";
+    return szone_buf;
+}
+int mage_can_craft(const RecipeDef *r) {
+    return g.herbs >= r->cH && g.mats >= r->cM && g.crystals >= r->cC;
+}
+int skillIndex(const char *s) {
+    if (!s) return 0;
+    static const char *K[7] = {"claw","swift","venom","leech","ember","frost","guard"};
+    for (int i = 0; i < 7; i++) if (strcmp(s, K[i]) == 0) return i;
+    return 0;
+}
+int traitIndex(const char *s) {
+    if (!s) return 0;
+    static const char *K[7] = {"fierce","tough","nimble","calm","lucky","flex","greedy"};
+    for (int i = 0; i < 7; i++) if (strcmp(s, K[i]) == 0) return i;
+    return 0;
 }
 
 /* ===================== 战斗（里程碑占位，后续 1:1 实现） ===================== */

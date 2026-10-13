@@ -1,0 +1,2611 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>魔法帝之路 · AIpassport</title>
+<style>
+  html,body{margin:0;height:100%;background:#0c0a16;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:"Segoe UI",sans-serif;color:#cfc;}
+  #wrap{display:flex;flex-direction:column;align-items:center;gap:8px;}
+  canvas{background:#15102a;image-rendering:pixelated;border:2px solid #3a2f5e;border-radius:6px;box-shadow:0 0 24px #000a;}
+  #pad{display:flex;gap:10px;}
+  .btn{flex:1;min-width:84px;padding:12px 0;font-size:14px;font-weight:700;color:#1a1430;background:#ffd93d;border:none;border-radius:8px;box-shadow:0 3px 0 #b8932a;user-select:none;}
+  .btn:active{transform:translateY(2px);box-shadow:0 1px 0 #b8932a;}
+  .btn small{display:block;font-weight:400;font-size:10px;color:#5a4a10;}
+  #hint{font-size:11px;color:#7a7090;max-width:240px;text-align:center;line-height:1.4;}
+</style></head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="240" height="320"></canvas>
+  <div id="pad">
+    <button class="btn" id="btnA">A<small>确定/攻击</small></button>
+    <button class="btn" id="btnB">B<small>切换</small></button>
+    <button class="btn" id="btnC">C<small>菜单/返回</small></button>
+  </div>
+  <div id="hint">键盘：Z=A · X=B · C=C ｜ 手机：点下方按钮</div>
+</div>
+<script>
+"use strict";
+const cv=document.getElementById('game'),ctx=cv.getContext('2d');
+const W=240,H=320;
+ctx.imageSmoothingEnabled=false;
+const PAL={bg:'#15102a',bg2:'#1d1636',gold:'#ffd93d',gold2:'#c9a227',frame:'#3a2f5e',txt:'#e8e2ff',dim:'#9a8fc0',red:'#ff6b6b',blue:'#5ec8f2',green:'#7fdc8a',purple:'#c06bff',pink:'#ff6bd6'};
+
+/* ---------- helpers ---------- */
+function px(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(x|0,y|0,w|0,h|0);}
+function box(x,y,w,h,fill,stroke){ctx.fillStyle=fill;ctx.fillRect(x|0,y|0,w|0,h|0);if(stroke){ctx.strokeStyle=stroke;ctx.lineWidth=1;ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);}}
+function txt(s,x,y,c,size,align,bold){ctx.fillStyle=c||'#fff';ctx.font=(bold?'bold ':'')+(size||10)+'px "Segoe UI",sans-serif';ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';ctx.fillText(s,x,y);ctx.textAlign='left';}
+function bar(x,y,w,h,r,c1,c2){box(x,y,w,h,c1);box(x,y,Math.max(0,Math.min(1,r)*w),h,c2);}
+function circ(x,y,r,fill,stroke){ctx.beginPath();ctx.arc(x,y,r,0,6.28);ctx.fillStyle=fill;ctx.fill();if(stroke){ctx.lineWidth=2;ctx.strokeStyle=stroke;ctx.stroke();}}
+function line(x1,y1,x2,y2,c,w){ctx.strokeStyle=c;ctx.lineWidth=w||1;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function ri(a,b){return Math.floor(Math.random()*(b-a+1))+a;}
+function rf(a,b){return Math.random()*(b-a)+a;}
+function pick(a){return a[Math.floor(Math.random()*a.length)];}
+function lerpHex(a,b,f){a=a.replace('#','');b=b.replace('#','');const ar=parseInt(a.slice(0,2),16),ag=parseInt(a.slice(2,4),16),ab=parseInt(a.slice(4,6),16);const br=parseInt(b.slice(0,2),16),bg=parseInt(b.slice(2,4),16),bb=parseInt(b.slice(4,6),16);const r=Math.round(ar+(br-ar)*f),g=Math.round(ag+(bg-ag)*f),bl=Math.round(ab+(bb-ab)*f);return 'rgb('+r+','+g+','+bl+')';}
+function txtOut(s,x,y,c,size,align,bold,oc){ctx.font=(bold?'bold ':'')+(size||10)+'px "Segoe UI",sans-serif';ctx.textAlign=align||'left';ctx.textBaseline='alphabetic';if(oc){ctx.fillStyle=oc;ctx.fillText(s,x-1,y);ctx.fillText(s,x+1,y);ctx.fillText(s,x,y-1);ctx.fillText(s,x,y+1);}ctx.fillStyle=c;ctx.fillText(s,x,y);ctx.textAlign='left';}
+function drawStar(cx,cy,r,c){ctx.fillStyle=c;ctx.beginPath();for(let i=0;i<10;i++){const ang=-Math.PI/2+i*Math.PI/5;const rad=i%2?r*0.45:r;const X=cx+Math.cos(ang)*rad,Y=cy+Math.sin(ang)*rad;if(i===0)ctx.moveTo(X,Y);else ctx.lineTo(X,Y);}ctx.closePath();ctx.fill();}
+
+/* ---------- game data ---------- */
+const RANKS=['见习魔法师','初级魔法师','中级魔法师','高级魔法师','大魔法师','魔导师','魔法帝'];
+const RANK_KILLS=[6,16,30,48,70,96,1e9];
+const FORMS=[{n:'弹',pow:1.0,cost:1,range:140,des:'单体远距'},{n:'光束',pow:1.25,cost:1.4,range:170,des:'直线远距'},{n:'爆发',pow:1.6,cost:1.8,range:110,des:'范围'}];
+const ELEMS=[{n:'火',c:'#ff6b3d',pow:1.10},{n:'水',c:'#4db8ff',pow:1.00},{n:'雷',c:'#ffe14d',pow:1.15},{n:'风',c:'#7cfc9b',pow:0.95},{n:'土',c:'#c89b6b',pow:1.05},{n:'冰',c:'#aee7ff',pow:1.00},{n:'光',c:'#fff3b0',pow:1.10},{n:'暗',c:'#b06bff',pow:1.20},{n:'虚无',c:'#ff6bd6',pow:1.25}];
+const MODS=[{n:'普通',pre:'',pow:1,cost:1.0,des:'标准威力'},{n:'强力',pre:'强力·',pow:1.5,cost:1.6,des:'伤害x1.5 耗魔+'},{n:'广域',pre:'广域·',pow:0.9,cost:1.4,des:'命中全体'},{n:'连发',pre:'连发·',pow:0.7,cost:1.2,des:'最多3目标'},{n:'古代',pre:'古代·',pow:2.4,cost:3.2,des:'古代魔法·伤害x2.4 耗魔极高'}];
+/* 魔法阶级：随修饰槽位提升（初级→中级→高级→国家级→古代）。
+   低等级也能研究/学习最高级魔法，但耗魔巨大放不出来——魔力上限随等级成长，这就是"学得起用不起"的代价 */
+const TIER_NAMES=['初级','中级','高级','国家级','古代'];
+const RARITY=[{k:'N',c:'#cfcfcf',w:50,cap:0.95},{k:'R',c:'#5ec8f2',w:30,cap:0.8},{k:'SR',c:'#c06bff',w:14,cap:0.62},{k:'SSR',c:'#ffd93d',w:5,cap:0.45},{k:'UR',c:'#ff6bd6',w:1,cap:0.3}];
+const CAT_NAMES=['绒绒','雪丸','琉璃','夜歌','栗子','月见','噗噗','小柚'];
+/* ============ 怪物生态表 ============
+   capturable : 是否可被收服
+   cap        : 捕捉要求 {tool:'orb'|'seal', hp:需压到的血量比例上限}
+   names      : 收服后的专属命名池（取代单一的猫灵名）
+   skills     : 天生技能（出战生效，见 partnerStrike）
+   traits     : 特性池（收服时随机抽 1 条，被动生效）
+   evo        : 进化 {lvl:可进化等级, title:进化后缀, rarityTo:进化后稀有度上限}
+   dex        : 图鉴描述
+   区域限定由 ZONE_MOBS 决定：某怪只在指定章节刷出；猫灵全图 26%。 */
+const ENEMY={
+  goblin:{n:'哥布林',hp:11,atk:2,chase:30,gold:[4,9],exp:9,h:40,capturable:false,dex:'森林里的淘气小鬼，最爱偷月光草。'},
+  slime:{n:'史莱姆',hp:8,atk:2,chase:18,gold:[2,6],exp:7,h:24,capturable:true,cap:{tool:'orb'},
+    names:['咕咕','布丁','果冻','嘟嘟'],skills:['claw'],traits:['tough','nimble'],evo:{lvl:14,title:'·王',rarityTo:2},
+    dex:'试炼森林的凝胶生物，软乎乎却很黏人。'},
+  cat:{n:'猫灵',hp:14,atk:2,chase:34,gold:[6,12],exp:11,h:32,capturable:true,cap:{tool:'orb'},
+    names:CAT_NAMES,skills:['swift','leech'],traits:['nimble','lucky','flex'],evo:{lvl:16,title:'·月影',rarityTo:3},
+    dex:'通体如月华的灵猫，处处可遇的幸运伙伴。'},
+  bat:{n:'洞穴蝙蝠',hp:9,atk:2,chase:40,gold:[3,8],exp:8,h:22,fly:true,capturable:true,cap:{tool:'orb'},
+    names:['嗡嗡','夜影','小蝠','漆漆'],skills:['swift'],traits:['nimble','fierce'],evo:{lvl:15,title:'·暗翼',rarityTo:2},
+    dex:'幽暗洞窟的倒挂居民，飞行迅捷。'},
+  skel:{n:'骷髅兵',hp:14,atk:3,chase:26,gold:[5,10],exp:10,h:40,capturable:false,dex:'洞窟深处复活的枯骨战士。'},
+  magma:{n:'熔岩史莱姆',hp:10,atk:3,chase:18,gold:[4,9],exp:9,h:26,capturable:true,cap:{tool:'orb'},
+    names:['岩浆','红豆','火灵','炭炭'],skills:['ember'],traits:['fierce','tough'],evo:{lvl:16,title:'·炽核',rarityTo:3},
+    dex:'灰烬火山的炽热凝胶，碰一下就烫手。'},
+  sala:{n:'火蜥蜴',hp:15,atk:3,chase:30,gold:[6,12],exp:11,h:38,capturable:false,dex:'火山岩缝里的烈焰蜥，性子很暴。'},
+  wolf:{n:'霜牙雪狼',hp:13,atk:3,chase:36,gold:[5,11],exp:10,h:32,capturable:true,cap:{tool:'orb',hp:0.4},
+    names:['雪刃','银鬃','北风','霜霜'],skills:['frost','claw'],traits:['fierce','nimble'],evo:{lvl:18,title:'·极光',rarityTo:3},
+    dex:'霜风雪原的孤狼，需打到虚弱（血<40%）才肯低头。'},
+  frost:{n:'冰晶灵',hp:10,atk:2,chase:24,gold:[4,9],exp:9,h:28,fly:true,capturable:true,cap:{tool:'seal'},
+    names:['冰晶','凛','霜花','碎碎'],skills:['frost'],traits:['calm','flex'],evo:{lvl:17,title:'·极寒',rarityTo:3},
+    dex:'雪原飘浮的冰之精灵，仅霜风雪原出没，须用魔法封印卡收服。'},
+  golem:{n:'遗迹魔像',hp:22,atk:4,chase:20,gold:[8,15],exp:13,h:46,capturable:true,cap:{tool:'seal',hp:0.25},
+    names:['石王','磐','古岩','镇镇'],skills:['guard'],traits:['tough','greedy'],evo:{lvl:22,title:'·泰坦',rarityTo:4},
+    dex:'浮空遗迹的守卫，仅封印卡可在血<25%时收服。'},
+  ghost:{n:'远古怨灵',hp:12,atk:3,chase:32,gold:[7,13],exp:12,h:34,fly:true,capturable:true,cap:{tool:'seal',hp:0.3},
+    names:['怨','幽幽','魂','渺'],skills:['leech'],traits:['calm','lucky'],evo:{lvl:20,title:'·虚空',rarityTo:4},
+    dex:'遗迹游荡的古老亡魂，须封印卡且血<30%方可收服。'}
+};
+/* ============ 怪物大扩充：+39 种（总数 50+），参数化立绘（drawMobArt）驱动 ============
+   art: {shape:'blob|quad|biped|float', c:主色, c2:暗部, eye:瞳色, ear:0/1/2, horn:0/1/2, wing:0/1, tail:0/1} */
+function M(n,hp,atk,h,cap,cfg){return {n,hp,atk,chase:cfg.fl?40:28,gold:[Math.max(2,Math.round(hp*0.4)),Math.max(4,Math.round(hp*0.8))],exp:hp+3,h,capturable:cap,cap:cap?(cap===true?{tool:'orb'}:cap):null,
+  names:cfg.nm,skills:cfg.sk||['claw'],traits:cfg.tr||['tough'],evo:cfg.evo||null,dex:cfg.dex,art:cfg.art,fly:!!cfg.fl};}
+const MORE_MOBS={
+  /* —— 试炼森林 +8 —— */
+  hornet:M('环纹黄蜂',9,2,22,true,{fl:1,nm:['嗡针','黄黄','旋风','刺刺'],sk:['swift'],tr:['nimble','fierce'],evo:{lvl:14,title:'·蜂后',rarityTo:2},art:{shape:'float',c:'#ffd93d',c2:'#b8860b',wing:1,tail:1,eye:'#2a1a3a'},dex:'花丛间的暴脾气巡飞兵，蜇人很疼。'}),
+  mush:M('蘑菇怪',10,2,24,true,{nm:['菇菇','伞伞','孢孢','胖伞'],sk:['guard'],tr:['tough','calm'],evo:{lvl:15,title:'·巨伞',rarityTo:2},art:{shape:'blob',c:'#e07a5f',c2:'#8a3b2a',ear:0,horn:0,eye:'#2a1a3a'},dex:'撑着毒伞的小家伙，孢子会让人昏昏欲睡。'}),
+  boar:M('獠牙野猪',15,3,32,false,{nm:[],sk:['claw'],tr:['fierce'],art:{shape:'quad',c:'#8a6248',c2:'#4a3222',horn:2,tail:1,eye:'#3a1a1a'},dex:'横冲直撞的森林莽夫，别站它正面。'}),
+  treant:M('小树精',14,2,38,true,{nm:['枝枝','叶叶','根须','老皮'],sk:['guard'],tr:['tough','calm'],evo:{lvl:18,title:'·古树',rarityTo:3},cap:{tool:'seal',hp:0.35},art:{shape:'biped',c:'#5a8a4a',c2:'#2e5228',horn:1,eye:'#ffd93d'},dex:'会走路的树苗，森林的记忆藏在年轮里。'}),
+  frog:M('沼泽蛙',9,2,22,true,{nm:['呱呱','泥泥','跳跳','泡芙'],sk:['leech'],tr:['flex','calm'],evo:{lvl:13,title:'·沼王',rarityTo:2},art:{shape:'blob',c:'#6ab04c',c2:'#38682a',eye:'#ffd93d'},dex:'舌头比脑子快的两栖小可爱。'}),
+  deer:M('斑鹿',12,2,34,true,{nm:['点点','鹿鹿','风蹄','茸茸'],sk:['swift'],tr:['nimble','lucky'],evo:{lvl:17,title:'·林王',rarityTo:3},cap:{tool:'orb',hp:0.4},art:{shape:'quad',c:'#c8a878',c2:'#7a5f3a',horn:1,tail:1,eye:'#2a1a3a'},dex:'林间的疾风，见到人先歪头三秒。'}),
+  snail:M('雾蜗牛',8,2,20,true,{nm:['黏黏','雾雾','慢慢','壳壳'],sk:['guard'],tr:['calm','flex'],art:{shape:'blob',c:'#a8b8d8',c2:'#5a6a8a',horn:2,eye:'#2a1a3a'},dex:'背着壳的慢性子，雾天的信号兵。'}),
+  fox:M('灵狐',13,2,30,true,{nm:['小狐','火火','绒尾','慧慧'],sk:['swift','leech'],tr:['lucky','nimble'],evo:{lvl:16,title:'·九尾',rarityTo:3},cap:{tool:'orb',hp:0.45},art:{shape:'quad',c:'#ff9a5a',c2:'#c85a2a',ear:2,tail:1,eye:'#ffd93d'},dex:'尾尖带火光的机灵狐狸，传说能听懂人话。'}),
+  /* —— 幽暗洞窟 +8 —— */
+  spider:M('穴居狼蛛',12,3,26,true,{nm:['八八','夜织','毒牙','网网'],sk:['venom'],tr:['fierce','nimble'],evo:{lvl:16,title:'·蛛后',rarityTo:3},cap:{tool:'orb',hp:0.4},art:{shape:'blob',c:'#4a4a6a',c2:'#22224a',eye:'#ff5555',horn:2},dex:'洞顶结网的猎手，八只眼睛都在盯着你。'}),
+  kobold:M('狗头人',11,3,30,true,{nm:['汪汪','矿镐','小狡','洞穴'],sk:['claw'],tr:['greedy','fierce'],evo:{lvl:15,title:'·酋长',rarityTo:2},art:{shape:'biped',c:'#b8824a',c2:'#6a4a26',ear:2,eye:'#ffd93d'},dex:'举着镐子挖矿的狗头人，财迷但胆小。'}),
+  ghoul:M('食尸鬼',16,3,36,false,{nm:[],sk:['leech'],tr:['fierce'],art:{shape:'biped',c:'#7a8a6a',c2:'#3a4a34',eye:'#7cfc9b',horn:1},dex:'啃食遗迹残骸的恶鬼，气味先到。'}),
+  ooze:M('毒泥怪',12,3,26,true,{nm:['泥团','毒毒','沼沼','烂烂'],sk:['venom'],tr:['tough','flex'],evo:{lvl:15,title:'·毒渊',rarityTo:2},art:{shape:'blob',c:'#7a9a3a',c2:'#3e5220',eye:'#c8ff5a'},dex:'一滩会蠕动的毒泥，踩上去嘎吱响。'}),
+  glowfish:M('灯眼鱼',10,3,24,true,{fl:1,nm:['灯灯','闪闪','饵饵','浮浮'],sk:['leech'],tr:['calm','lucky'],art:{shape:'float',c:'#5ec8f2',c2:'#2a6a8a',eye:'#fff3b0',tail:1},dex:'头顶灯笼的洞窟游鱼，是活的路灯。'}),
+  stal:M('石笋魔',18,4,42,false,{nm:[],sk:['guard'],tr:['tough'],art:{shape:'biped',c:'#8a8aa0',c2:'#4a4a5e',horn:2,eye:'#7fd4ff'},dex:'钟乳石成精了，站着不动就是一块石头。'}),
+  weasel:M('洞鼬',10,3,22,true,{nm:['溜溜','钻钻','细尾','贼贼'],sk:['swift'],tr:['nimble','greedy'],evo:{lvl:14,title:'·风鼬',rarityTo:2},art:{shape:'quad',c:'#c8b8a0',c2:'#6a5a48',ear:1,tail:1,eye:'#2a1a3a'},dex:'偷蛋专业户，钻洞比谁都快。'}),
+  shade:M('暗影',12,3,30,true,{fl:1,cap:{tool:'seal',hp:0.35},nm:['影影','墨墨','暗暗','飘飘'],sk:['leech'],tr:['calm','lucky'],evo:{lvl:18,title:'·深渊',rarityTo:3},art:{shape:'float',c:'#3a3050',c2:'#1a1428',eye:'#b06bff'},dex:'从阴影里渗出的一小片黑暗。'}),
+  /* —— 灰烬火山 +8 —— */
+  imp:M('小恶魔',14,4,26,true,{nm:['坏坏','角角','焰焰','皮皮'],sk:['ember'],tr:['fierce','greedy'],evo:{lvl:17,title:'·焰魔',rarityTo:3},cap:{tool:'orb',hp:0.4},art:{shape:'biped',c:'#e05545',c2:'#8a2418',horn:2,wing:1,tail:1,eye:'#ffd93d'},dex:'火山缝里蹦出来的捣蛋鬼，会喷小火苗。'}),
+  cinder:M('烬羽鸦',12,4,24,true,{fl:1,nm:['鸦鸦','烬烬','火羽','黑炭'],sk:['ember'],tr:['nimble','fierce'],evo:{lvl:16,title:'·焚天',rarityTo:3},art:{shape:'float',c:'#4a3a3a',c2:'#1e1414',wing:1,tail:1,eye:'#ff8a3d'},dex:'羽毛末端永远带着火星的乌鸦。'}),
+  lavadog:M('熔岩犬',16,4,30,true,{nm:['岩牙','火犬','熔熔','炭炭'],sk:['ember','claw'],tr:['fierce','tough'],evo:{lvl:19,title:'·狱炎',rarityTo:3},cap:{tool:'orb',hp:0.35},art:{shape:'quad',c:'#e0722a',c2:'#8a3208',horn:1,tail:1,eye:'#ffe14d'},dex:'毛皮裂缝里流淌着岩浆的猎犬。'}),
+  obsid:M('黑曜傀儡',22,5,44,false,{nm:[],sk:['guard'],tr:['tough'],art:{shape:'biped',c:'#2a2a34',c2:'#101018',horn:2,eye:'#ff6b3d'},dex:'黑曜石铸成的无意识兵器，硬得离谱。'}),
+  phoenix:M('幼凤凰',15,4,32,true,{fl:1,cap:{tool:'seal',hp:0.3},nm:['翎翎','焰羽','小凰','浴火'],sk:['ember'],tr:['lucky','fierce'],evo:{lvl:22,title:'·不死',rarityTo:4},art:{shape:'float',c:'#ffb03d',c2:'#c85a10',wing:1,tail:1,eye:'#fff3b0'},dex:'传说鸟的雏鸟，烧焦的地方会重新发芽。'}),
+  geo:M('地火虫',13,4,26,true,{nm:['地火','蚓蚓','烫烫','红纹'],sk:['ember'],tr:['tough','calm'],art:{shape:'blob',c:'#c85a2a',c2:'#6a2a10',eye:'#ffe14d'},dex:'在岩层里游动的火蚯蚓，冬眠期是暖手宝。'}),
+  ashwisp:M('灰烬幽浮',12,4,26,true,{fl:1,cap:{tool:'seal',hp:0.35},nm:['灰灰','散散','烟烟','烬影'],sk:['leech'],tr:['calm'],art:{shape:'float',c:'#9a8a8a',c2:'#4a3e3e',eye:'#ffb03d'},dex:'火烧遗迹上空徘徊的灰烬之魂。'}),
+  slag:M('熔渣兽',20,5,40,false,{nm:[],sk:['claw','ember'],tr:['fierce','tough'],art:{shape:'quad',c:'#6a4a3a',c2:'#2e1c14',horn:2,eye:'#ff6b3d'},dex:'熔炉废渣堆出来的野兽，浑身冒烟。'}),
+  /* —— 霜风雪原 +8 —— */
+  yeti:M('雪怪',20,4,44,true,{nm:['白白','大雪','毛毛','吼吼'],sk:['claw','guard'],tr:['tough','flex'],evo:{lvl:20,title:'·冰川',rarityTo:3},cap:{tool:'orb',hp:0.35},art:{shape:'biped',c:'#e8f0f8',c2:'#8aa8c8',horn:0,eye:'#4db8ff'},dex:'雪堆里站起来三米高的白色巨影。'}),
+  icefox:M('冰狐',13,4,28,true,{nm:['冰冰','霜尾','雪绒','银铃'],sk:['frost'],tr:['lucky','nimble'],evo:{lvl:17,title:'·极北',rarityTo:3},cap:{tool:'orb',hp:0.4},art:{shape:'quad',c:'#c8e8ff',c2:'#6a9ac8',ear:2,tail:1,eye:'#4db8ff'},dex:'踏雪无痕的冰蓝狐狸，尾巴扫过结出霜花。'}),
+  peng:M('冰企鹅',11,4,24,true,{nm:['企企','冰冰','滑滑','燕服'],sk:['guard'],tr:['flex','calm'],evo:{lvl:14,title:'·帝企鹅',rarityTo:2},art:{shape:'biped',c:'#e8ecf4',c2:'#3a4258',eye:'#ffd93d'},dex:'走起来摇摇摆摆，滑起来谁也追不上。'}),
+  hail:M('雹精',12,4,22,true,{fl:1,nm:['雹雹','圆圆','冷冷','砰砰'],sk:['frost'],tr:['nimble','calm'],art:{shape:'float',c:'#aee7ff',c2:'#5a9ac8',eye:'#fff',tail:1},dex:'一团有脾气的冰雹，天生就会砸人。'}),
+  mam:M('幼猛犸',22,5,40,true,{cap:{tool:'seal',hp:0.3},nm:['长长','毛球','象象','古古'],sk:['guard','claw'],tr:['tough'],evo:{lvl:24,title:'·远古',rarityTo:4},art:{shape:'quad',c:'#a8886a',c2:'#5a4232',horn:2,tail:1,eye:'#2a1a3a'},dex:'冰层里醒来史前小象，卷鼻子讨吃的。'}),
+  owl:M('雪枭',12,4,26,true,{fl:1,nm:['枭枭','雪羽','夜目','咕咕'],sk:['swift'],tr:['calm','lucky'],art:{shape:'float',c:'#e8e8f4',c2:'#8a8aa8',ear:2,eye:'#ffd93d',wing:1},dex:'暴风雪里唯一睁得开眼的邮差。'}),
+  sealf:M('冰海豹',14,4,26,true,{nm:['豹豹','圆圆','冰皮','咕噜'],sk:['leech'],tr:['flex','calm'],evo:{lvl:16,title:'·冰海王',rarityTo:2},art:{shape:'blob',c:'#d8e8f4',c2:'#7a9ab8',eye:'#2a1a3a',horn:0},dex:'冰面上打滚的胖家伙，肚皮弹性极佳。'}),
+  banshee:M('风雪妖',15,5,32,true,{fl:1,cap:{tool:'seal',hp:0.3},nm:['呜呜','风铃','雪泣','寒歌'],sk:['frost','leech'],tr:['calm'],evo:{lvl:21,title:'·极风',rarityTo:4},art:{shape:'float',c:'#b8d8e8',c2:'#5a7a92',eye:'#fff3b0',wing:1},dex:'哭声能引来暴风雪的妖精，耳朵很灵。'}),
+  /* —— 浮空遗迹 +7 —— */
+  rune:M('符文傀儡',22,5,42,true,{cap:{tool:'seal',hp:0.3},nm:['符符','纹纹','古字','铭铭'],sk:['guard'],tr:['tough','calm'],evo:{lvl:24,title:'·天工',rarityTo:4},art:{shape:'biped',c:'#7a9ac8',c2:'#3a4a6a',horn:1,eye:'#7fd4ff'},dex:'刻满发光符文的古代卫兵，还认老主人的口令。'}),
+  mimic:M('宝箱怪',18,5,30,true,{cap:{tool:'orb',hp:0.3},nm:['馋馋','箱箱','假假','咔咔'],sk:['claw'],tr:['greedy','fierce'],evo:{lvl:20,title:'·吞金',rarityTo:3},art:{shape:'blob',c:'#a8794a',c2:'#5a3a1f',eye:'#ffd93d',horn:1},dex:'伪装成宝箱的贪吃魔物——开箱前先戳戳。'}),
+  eyemon:M('巨眼魔',16,5,30,true,{fl:1,cap:{tool:'seal',hp:0.35},nm:['独眼','盯盯','球球','瞳瞳'],sk:['leech'],tr:['calm','fierce'],evo:{lvl:22,title:'·万目',rarityTo:4},art:{shape:'float',c:'#b06bff',c2:'#5a2a8a',eye:'#fff3b0',wing:1},dex:'一只巨大的眼睛悬浮在走廊尽头，看谁谁发麻。'}),
+  wraith:M('亡魂骑士',20,5,38,false,{nm:[],sk:['claw','leech'],tr:['fierce'],art:{shape:'biped',c:'#6a7a9a',c2:'#2e3a52',horn:2,eye:'#7fd4ff'},dex:'仍在执行一千年前的守卫命令的亡灵。'}),
+  sentinel:M('守卫像',26,5,48,false,{nm:[],sk:['guard'],tr:['tough'],art:{shape:'biped',c:'#c8c8d8',c2:'#6a6a80',horn:1,eye:'#ffd93d'},dex:'遗迹大厅尽头的石像，剑上有新磨的痕迹。'}),
+  drake:M('幼龙',24,5,40,true,{cap:{tool:'seal',hp:0.25},nm:['小龙','角角','鳞鳞','云翼'],sk:['ember','claw'],tr:['fierce','lucky'],evo:{lvl:26,title:'·真龙',rarityTo:4},art:{shape:'quad',c:'#5ab84a',c2:'#2a6a2a',horn:2,wing:1,tail:1,eye:'#ffd93d'},dex:'还没学会喷火的龙——但甩尾巴已经很疼了。'}),
+  sphinx:M('斯芬克斯',22,5,38,true,{fl:1,cap:{tool:'seal',hp:0.3},nm:['谜谜','狮身','翼语','古歌'],sk:['guard','swift'],tr:['calm','lucky'],evo:{lvl:25,title:'·谜语者',rarityTo:4},art:{shape:'quad',c:'#d8b86a',c2:'#8a6a2a',horn:1,wing:1,eye:'#fff3b0'},dex:'守着遗迹图书馆的谜之兽，答对题才放行。'})
+};
+Object.assign(ENEMY,MORE_MOBS);
+/* 每张地图的专属怪物表（扩充后每章 9-10 种；猫灵仍全图小概率出没） */
+const ZONE_MOBS=[
+  ['slime','goblin','hornet','mush','frog','snail','fox','deer','treant'],
+  ['bat','skel','spider','kobold','ooze','glowfish','weasel','shade','ghoul'],
+  ['magma','sala','imp','cinder','lavadog','geo','ashwisp','phoenix','slag'],
+  ['wolf','frost','yeti','icefox','peng','hail','owl','sealf','banshee','mam'],
+  ['golem','ghost','rune','mimic','eyemon','wraith','drake','sphinx','sentinel']
+];
+const NAMES=[{n:'阿岚'},{n:'小遥'},{n:'米娅'},{n:'卡尔'},{n:'露娜'},{n:'星野'},{n:'菲娅'}];
+/* ============ 随机副本 / 地下迷宫 / 古代遗迹：30 张随机地图 ============
+   每次野外试炼只随机刷出 1~2 张（ensureDungeonOffers），通过或死亡后刷新。
+   pool=怪物池（含新怪），minR~maxR=通关所需轮数（20~70），dropRar=稀有掉落品质下限，
+   reqLv=推荐等级（强行进入不拦，但会很难）。保持 data-driven，后续加图只需往这里塞对象。 */
+const DUNGEONS=[
+  /* —— 副本（10） —— */
+  {name:'翠木副本',kind:'副本',desc:'试炼森林深处的训练场',pool:['slime','goblin','hornet','mush','frog'],minR:20,maxR:35,dropRar:2,reqLv:1},
+  {name:'幽穴副本',kind:'副本',desc:'洞窟外缘的巡逻线',pool:['bat','skel','spider','kobold','ooze'],minR:22,maxR:38,dropRar:2,reqLv:3},
+  {name:'熔岩副本',kind:'副本',desc:'火山脚下的试炼炉',pool:['magma','sala','imp','cinder','lavadog'],minR:24,maxR:40,dropRar:2,reqLv:5},
+  {name:'霜原副本',kind:'副本',desc:'雪原边境的演武场',pool:['wolf','frost','yeti','icefox','peng'],minR:26,maxR:42,dropRar:2,reqLv:7},
+  {name:'遗迹副本',kind:'副本',desc:'浮空遗迹的守卫室',pool:['golem','ghost','rune','mimic','eyemon'],minR:28,maxR:44,dropRar:3,reqLv:9},
+  {name:'暗影副本',kind:'副本',desc:'只有月亮照不到的角落',pool:['shade','ghost','weasel','skel','ooze'],minR:22,maxR:38,dropRar:2,reqLv:3},
+  {name:'毒沼副本',kind:'副本',desc:'瘴气弥漫的泥潭',pool:['frog','ooze','spider','snail','mush'],minR:24,maxR:40,dropRar:2,reqLv:4},
+  {name:'烈风副本',kind:'副本',desc:'高处的气流训练场',pool:['owl','hail','peng','deer','weasel'],minR:26,maxR:42,dropRar:2,reqLv:6},
+  {name:'炽核副本',kind:'副本',desc:'岩浆奔流的核心带',pool:['lavadog','imp','cinder','obsid','slag'],minR:28,maxR:44,dropRar:3,reqLv:8},
+  {name:'月华副本',kind:'副本',desc:'月光眷顾的清修地',pool:['fox','icefox','frost','sealf','owl'],minR:26,maxR:42,dropRar:2,reqLv:6},
+  /* —— 地下迷宫（10） —— */
+  {name:'迷雾回廊',kind:'地下迷宫',desc:'永远走不出的白雾',pool:['snail','mush','spider','shade','weasel'],minR:30,maxR:50,dropRar:2,reqLv:5},
+  {name:'骸骨迷宫',kind:'地下迷宫',desc:'白骨砌成的死路',pool:['skel','ghoul','wraith','stal','bat'],minR:32,maxR:52,dropRar:3,reqLv:7},
+  {name:'熔脉迷宫',kind:'地下迷宫',desc:'地火奔涌的岩道',pool:['magma','geo','slag','cinder','lavadog'],minR:34,maxR:54,dropRar:3,reqLv:9},
+  {name:'冰封迷宫',kind:'地下迷宫',desc:'亘古不化的寒窟',pool:['yeti','icefox','banshee','hail','mam'],minR:34,maxR:54,dropRar:3,reqLv:10},
+  {name:'符文迷宫',kind:'地下迷宫',desc:'刻满发光符文的廊道',pool:['rune','mimic','sentinel','eyemon','ghost'],minR:36,maxR:56,dropRar:3,reqLv:11},
+  {name:'荆棘迷宫',kind:'地下迷宫',desc:'藤蔓缠绕的活路',pool:['treant','boar','deer','frog','mush'],minR:30,maxR:48,dropRar:2,reqLv:5},
+  {name:'蛛网迷宫',kind:'地下迷宫',desc:'黏腻的死亡之网',pool:['spider','ooze','snail','weasel','shade'],minR:32,maxR:50,dropRar:2,reqLv:6},
+  {name:'焰心迷宫',kind:'地下迷宫',desc:'通往火山心脏的险路',pool:['phoenix','imp','lavadog','obsid','slag'],minR:38,maxR:58,dropRar:3,reqLv:12},
+  {name:'风雪迷宫',kind:'地下迷宫',desc:'暴风雪中的迷失',pool:['peng','owl','hail','sealf','banshee'],minR:34,maxR:52,dropRar:3,reqLv:10},
+  {name:'深渊迷宫',kind:'地下迷宫',desc:'向下再向下，没有尽头',pool:['glowfish','stal','ghoul','wraith','eyemon'],minR:36,maxR:56,dropRar:3,reqLv:11},
+  /* —— 古代遗迹（10） —— */
+  {name:'远古祭坛',kind:'古代遗迹',desc:'被遗忘的祭祀之地',pool:['rune','sentinel','drake','ghost','golem'],minR:40,maxR:60,dropRar:3,reqLv:13},
+  {name:'失落神殿',kind:'古代遗迹',desc:'诸神离去后的空殿',pool:['sphinx','mimic','wraith','eyemon','rune'],minR:42,maxR:62,dropRar:3,reqLv:14},
+  {name:'龙之巢穴',kind:'古代遗迹',desc:'幼龙盘踞的灼热巢',pool:['drake','lavadog','imp','obsid','phoenix'],minR:44,maxR:64,dropRar:3,reqLv:15},
+  {name:'冰封王座',kind:'古代遗迹',desc:'雪原尽头的王座厅',pool:['yeti','mam','icefox','banshee','sentinel'],minR:42,maxR:62,dropRar:3,reqLv:14},
+  {name:'森之圣域',kind:'古代遗迹',desc:'世界树根脉的秘境',pool:['treant','fox','deer','slime','hornet'],minR:38,maxR:58,dropRar:3,reqLv:12},
+  {name:'熔火炼狱',kind:'古代遗迹',desc:'地心烈焰的封印所',pool:['magma','sala','obsid','slag','geo'],minR:46,maxR:66,dropRar:4,reqLv:16},
+  {name:'虚空回响',kind:'古代遗迹',desc:'听见自己回声的虚无',pool:['shade','ghost','wraith','eyemon','ghoul'],minR:44,maxR:64,dropRar:3,reqLv:15},
+  {name:'星陨遗迹',kind:'古代遗迹',desc:'坠星砸出的环形坑',pool:['sentinel','rune','sphinx','golem','mimic'],minR:46,maxR:66,dropRar:4,reqLv:16},
+  {name:'不死深渊',kind:'古代遗迹',desc:'亡者永不沉眠',pool:['ghoul','wraith','ghost','skel','shade'],minR:48,maxR:68,dropRar:4,reqLv:17},
+  {name:'终焉之塔',kind:'古代遗迹',desc:'登顶者方配称魔法帝',pool:['drake','sphinx','sentinel','rune','phoenix'],minR:50,maxR:70,dropRar:4,reqLv:18}
+];
+const CHAPTERS=['试炼森林','幽暗洞窟','灰烬火山','霜风雪原','浮空遗迹'];
+/* 难度档位：影响怪物血/攻、BOSS 血攻、以及玩家受伤倍率。默认「普通」。 */
+const DIFFS=[
+  {n:'轻松',hp:0.7,atk:0.7,bossAtk:0.7,dmgTaken:0.7},
+  {n:'普通',hp:1.0,atk:1.0,bossAtk:1.0,dmgTaken:1.0},
+  {n:'困难',hp:1.5,atk:1.3,bossAtk:1.5,dmgTaken:1.25},
+  {n:'炼狱',hp:2.1,atk:1.6,bossAtk:1.9,dmgTaken:1.4},
+];
+function diffC(){return DIFFS[state.diff]||DIFFS[1];}
+/* 元素相性（八方旅人式）：el=自身属性 wk=弱点属性。弱点魔法命中削盾，盾空=破防（硬直+易伤）。
+   ELEMS 下标：0火 1水 2雷 3风 4土 5冰 6光 7暗 8虚无 */
+const ELEM_OF={cat:6,slime:4,goblin:7,bat:7,skel:7,magma:0,sala:0,wolf:5,frost:5,golem:4,ghost:7};
+const WEAK_OF={cat:[2],slime:[2],goblin:[0],bat:[2],skel:[0,6],magma:[1],sala:[1],wolf:[0],frost:[0],golem:[2],ghost:[6]};
+/* 新怪的元素/弱点（ELEMS 下标：0火 1水 2雷 3风 4土 5冰 6光 7暗）：在基础表上并入 MORE_MOBS / 章节怪的数据 */
+Object.assign(ELEM_OF,{hornet:3,mush:4,boar:4,treant:4,frog:1,deer:3,snail:4,fox:3,
+  spider:7,kobold:4,ghoul:7,ooze:1,glowfish:6,stal:4,weasel:7,shade:7,
+  imp:0,cinder:0,lavadog:0,obsid:4,phoenix:0,geo:0,ashwisp:0,slag:0,
+  yeti:5,icefox:5,peng:5,hail:5,mam:4,owl:3,sealf:1,banshee:7,
+  rune:4,mimic:7,eyemon:7,wraith:7,sentinel:6,drake:0,sphinx:6});
+Object.assign(WEAK_OF,{hornet:[2],mush:[0],boar:[2],treant:[0],frog:[2],deer:[0],snail:[0],fox:[6],
+  spider:[6],kobold:[0],ghoul:[6],ooze:[2],glowfish:[7],stal:[2],weasel:[0],shade:[6],
+  imp:[1],cinder:[1],lavadog:[1],obsid:[2],phoenix:[1],geo:[4],ashwisp:[6],slag:[1],
+  yeti:[0],icefox:[0],peng:[2],hail:[6],mam:[0],owl:[6],sealf:[2],banshee:[6],
+  rune:[2],mimic:[0],eyemon:[6],wraith:[6],sentinel:[7],drake:[1],sphinx:[7]});
+/* 各章 BOSS（第 10 场远征战）：放大立绘 + 3 层破防盾 + 必掉高品质装备 */
+const BOSSES=[{type:'goblin',n:'哥布林王'},{type:'skel',n:'骸骨领主'},{type:'magma',n:'熔岩巨像'},{type:'wolf',n:'霜牙狼王'},{type:'golem',n:'遗迹守卫神'}];
+/* 主线剧情台词（首次进入章节 / 击败 BOSS 时触发） */
+const STORY_ENTER=['【第一封印】试炼森林的雾气里，哥布林王抢走了「森之符」——没有它，整片林地正在凋零。成为魔法师的第一步，就是踏碎那个嘲笑着人类的王座。',
+  '【第二封印】幽暗洞窟的白骨深处，骸骨领主正用亡者拼凑一支军队。上一任见习魔法师再没能走出来……这一次，换你终结它。',
+  '【第三封印】灰烬火山的核心在颤抖，熔岩巨像睁开了熔金之眼——它是古代锻造术的失败品，却吞下了三块「炎之心」。封印松动，大陆正被烤焦。',
+  '【第四封印】霜风雪原的冰湖下，霜牙狼王咬碎了「冬之铃」。它每嚎叫一次，春天就晚到一年。这一次，你要让嚎声永远停息。',
+  '【终焉封印】浮空遗迹的最顶层，遗迹守卫神睁开了所有眼睛。它守着「魔法帝之冠」——击败它，你才配得上「魔法师」这三个字。'];
+const STORY_BOSS=['哥布林王在符文的碎裂声中倒下，森之符重新发光，森林第一次为你让开了道路。',
+  '骸骨领主散成满地白霜，洞窟深处传来新的低语——火山的大门，开了。',
+  '熔岩巨像的核心彻底熄灭，灰烬里浮出一颗完整的炎之心。雪原的寒风，忽然温柔了些。',
+  '霜牙狼王俯首退入冰湖，冬之铃落回你掌心，远方的春天正在赶来。',
+  '守卫神的核心碎裂成星尘，魔法帝之冠缓缓降下——你不再是见习生，你是真正踏过五道封印的魔法师了。'];
+/* 装备系统：武器+攻 / 护甲+减伤 / 饰品+法强。品质=稀有度档位 */
+const EQ_SLOTS={w:{n:'武器',names:['橡木杖','秘银法杖','贤者之杖','星陨神杖']},a:{n:'护甲',names:['粗布袍','月光法袍','星辰法袍','龙鳞法袍']},t:{n:'饰品',names:['铜戒指','蓝晶坠','魔女耳环','贤者之石']}};
+function rollEquip(minRar){const sk=['w','a','t'][ri(0,2)];const sl=EQ_SLOTS[sk];
+  let rar=rollRarity();if(rar<minRar)rar=minRar;if(Math.random()<0.25)rar=Math.min(RARITY.length-1,rar+1);
+  const it={slot:sk,rar,name:sl.names[Math.min(rar,sl.names.length-1)]};
+  if(sk==='w')it.atk=(rar+1)*6;if(sk==='a')it.def=(rar+1)*3;if(sk==='t')it.pow=1+0.12*(rar+1);/* 装备加成加重：没装备打章节 BOSS 会非常吃力（装备门禁） */
+  return it;}
+function eqAtk(){const it=state.equip&&state.equip.w;return it?it.atk:0;}
+function eqDef(){const it=state.equip&&state.equip.a;return it?it.def:0;}
+function eqPow(){const it=state.equip&&state.equip.t;return it?it.pow:1;}
+/* ============ 物品图鉴：药品 20 种 + 材料 40 种（含稀有度） ============
+   稀有度 0..3 = 普通/稀有/史诗/传说；药品战斗可用，材料为收集+后续合成/锻造素材 */
+const IRARITY=[{k:'普通',c:'#cfcfcf',w:58},{k:'稀有',c:'#5ec8f2',w:26},{k:'史诗',c:'#c06bff',w:12},{k:'传说',c:'#ffd93d',w:4}];
+function rollIRar(luck){const r=Math.random()*100-(luck||0);let acc=0;for(let i=0;i<IRARITY.length;i++){acc+=IRARITY[i].w;if(r<acc)return i;}return 0;}
+const POTIONS=[
+  {n:'体力药水',hp:0.4,mp:0.3,des:'回复40%HP+30%MP'},
+  {n:'治疗药水',hp:0.55,des:'回复55%HP'},
+  {n:'魔力药水',mp:0.6,des:'回复60%MP'},
+  {n:'大红药水',hp:0.75,des:'回复75%HP'},
+  {n:'大蓝药水',mp:0.85,des:'回复85%MP'},
+  {n:'全愈圣水',hp:1,mp:1,des:'HP/MP 全满',ir:2},
+  {n:'解毒草膏',cure:1,des:'解除中毒并回20%HP',hp:0.2},
+  {n:'火焰免疫剂',res:0,des:'本战火抗大幅提升',ir:1},
+  {n:'寒冰免疫剂',res:5,des:'本战冰抗大幅提升',ir:1},
+  {n:'雷霆免疫剂',res:2,des:'本战雷抗大幅提升',ir:1},
+  {n:'力量药剂',atkB:1.3,des:'本战物理攻击 ×1.3',ir:1},
+  {n:'魔力催化剂',powB:1.3,des:'本战魔法威力 ×1.3',ir:1},
+  {n:'铁壁药剂',defB:5,des:'本战减伤 +5',ir:1},
+  {n:'疾风之靴药',spd:1,des:'本战能量回复加快',ir:1},
+  {n:'经验药水',expB:60,des:'立即获得 60 经验',ir:1},
+  {n:'月光精华',hp:0.5,mp:0.5,des:'回复50%HP+50%MP',ir:2},
+  {n:'龙血合剂',atkB:1.5,des:'本战物理攻击 ×1.5',ir:2},
+  {n:'贤者之露',powB:1.5,des:'本战魔法威力 ×1.5',ir:2},
+  {n:'不死鸟之羽',rev:1,des:'本战力竭时原地复活一次',ir:3},
+  {n:'魔法帝之血',hp:1,mp:1,atkB:1.4,powB:1.4,des:'全满+本战全伤 ×1.4',ir:3}
+];
+const MATERIALS=[
+  /* 普通 16 */
+  {n:'月光草',des:'炼金基础材料'},{n:'兽骨',des:'常见锻造素材'},{n:'野兽皮毛',des:'柔软保温'},{n:'坚硬树枝',des:'可做杖柄'},
+  {n:'小石子',des:'路边随处可见'},{n:'黏滑黏液',des:'史莱姆的残留'},{n:'蝙蝠翅膀',des:'轻薄 membrane'},{n:'破损骨头',des:'咔咔作响'},
+  {n:'黑曜砂',des:'火山细砂'},{n:'火蜥鳞片',des:'耐火'},{n:'雪绒毛',des:'雪原特产'},{n:'碎冰晶',des:'一捏就化'},
+  {n:'遗迹碎石',des:'古老建材'},{n:'锈蚀铁片',des:'年代久远'},{n:'蜘蛛丝',des:'坚韧细密'},{n:'蜂蜜凝胶',des:'甜丝丝'},
+  /* 稀有 14 */
+  {n:'银矿石',des:'泛着冷光',ir:1},{n:'魔力水晶渣',des:'含微弱魔力',ir:1},{n:'狼王断牙',des:'雪狼掉落',ir:1},{n:'火焰花蕊',des:'摸着烫手',ir:1},
+  {n:'冰霜核心',des:'永不融化',ir:1},{n:'雷击木',des:'遭过天雷',ir:1},{n:'怨灵烛芯',des:'幽幽发亮',ir:1},{n:'毒腺囊',des:'小心处理',ir:1},
+  {n:'古代齿轮',des:'仍在转动',ir:1},{n:'秘银碎片',des:'锻杖良材',ir:1},{n:'妖精粉尘',des:'闪闪发光',ir:1},{n:'龙鳞末',des:'传说生物的痕迹',ir:1},
+  {n:'深海水珠',des:'永不干涸',ir:1},{n:'风之羽',des:'轻若无物',ir:1},
+  /* 史诗 7 */
+  {n:'魔导核心',des:'古代科技的心脏',ir:2},{n:'炎之心片',des:'火山 BOSS 掉落',ir:2},{n:'冬之铃碎片',des:'清脆余音',ir:2},{n:'森之符残页',des:'字迹已模糊',ir:2},
+  {n:'贤者之石屑',des:'炼金术巅峰',ir:2},{n:'星辰金属',des:'坠星的馈赠',ir:2},{n:'幻兽之血',des:'蕴含庞大魔力',ir:2},
+  /* 传说 3 */
+  {n:'魔法帝之冠残片',des:'只在最深处出现',ir:3},{n:'世界树嫩芽',des:'传说生命的起点',ir:3},{n:'混沌原核',des:'万物之源的一粒尘埃',ir:3}
+];
+/* 魔石：魔法升级货币（下标 1..4 对应 中级/高级/国家级/古代魔法） */
+const STONE_NAMES=['','中级魔石','高级魔石','国家级魔石','古代魔石'];
+const STONE_C=['','#5ec8f2','#c06bff','#ffd93d','#ff6bd6'];
+function rarityOfMat(id){return MATERIALS[id]?(MATERIALS[id].ir||0):0;}
+/* 天生技能：出战伙伴命中时生效（见 partnerStrike） */
+const SKILLS={
+  claw:{n:'利爪',d:'出战物理伤害 +15%'},
+  swift:{n:'疾风',d:'出战有几率二连击'},
+  venom:{n:'毒牙',d:'命中使敌人中毒，持续掉血'},
+  leech:{n:'吸血',d:'命中回复主人少量生命'},
+  ember:{n:'余烬',d:'附带火焰伤害（+10%）'},
+  frost:{n:'霜咬',d:'附带冰霜减速与 +5% 伤害'},
+  guard:{n:'守护',d:'出战时为英雄附上护盾，抵消部分伤害'}
+};
+/* 特性：收服时随机 1 条，被动生效 */
+const TRAITS={
+  fierce:{n:'凶暴',d:'出战伤害 +12%'},
+  tough:{n:'坚壁',d:'主人受到伤害 -10%'},
+  nimble:{n:'灵巧',d:'出战有几率二连击'},
+  calm:{n:'沉静',d:'战斗后主人魔力回复更快'},
+  lucky:{n:'幸运',d:'被你捕捉时概率 +10%'},
+  flex:{n:'柔软',d:'被你捕捉时概率 +15%'},
+  greedy:{n:'贪吃',d:'出战击杀金币掉落 +20%'}
+};
+const DEXORDER=Object.keys(ENEMY);
+/* 某怪物在哪些章节出没（由 ZONE_MOBS 推导；猫灵全图） */
+function speciesZones(type){
+  if(type==='cat')return '全区域（小概率）';
+  const zs=[];ZONE_MOBS.forEach((m,i)=>{if(m.indexOf(type)>=0)zs.push(CHAPTERS[i]);});
+  if(zs.length===0)zs.push('遗迹秘境');
+  return zs.join(' / ');
+}
+
+/* ---------- state ---------- */
+let state=null;
+function newState(){return{
+  scene:'TITLE', name:'', rank:0, level:1, exp:0,
+  maxHp:80, hp:80, maxMp:50, mp:50, gold:30, kills:0, cats:0,
+  orbs:3, potions:2, herbs:2, mats:1, crystals:0, seals:1,
+  spell:[0,0,0], equipped:'0-0-0', loadout:['0-0-0','0-1-0','0-2-0'], discovered:{'0-0-0':'火弹','0-1-0':'水弹','0-2-0':'雷弹'},
+  pbag:{}, mbag:{}, stones:[0,0,0,0], dungeonOffers:null,
+  partners:[], activePartner:0,
+  equip:{w:null,a:null,t:null}, ebag:[],
+  bossKilled:{}, storySeen:{},
+  autoMode:true, autoCapture:true, sound:true, diff:1,
+  dex:{seen:{},caught:{}},
+  map:{chapter:0, layer:0},
+  studyCnt:0, atkBonus:0, weaponLv:0, armorLv:0, spellLv:{},
+  accepted:-1, qBase:0, questDone:0, arank:0
+};}
+function normalizeState(s){
+  /* 兜底入口：存档根本不是对象（null/字符串/数字）→ 全新档 */
+  if(s==null||typeof s!=='object'||Array.isArray(s))s={};
+  /* NaN / 缺失数值兜底（旧版本 bug 可能已把 NaN 写进存档） */
+  ['hp','mp','maxHp','maxMp','gold','level','rank','kills','exp','herbs','mats','crystals','orbs','potions','atkBonus','seals'].forEach(k=>{if(typeof s[k]!=='number'||!isFinite(s[k]))s[k]=0;});
+  if(s.maxHp<=0)s.maxHp=50;if(s.maxMp<=0)s.maxMp=30;if(s.level<=0)s.level=1;
+  const d=newState();
+  /* 关键：null 和 undefined 一律回填默认值（旧档可能存有 null——JSON 把 NaN 序列化成 null 的历史遗留）。
+     equip 槽位/副本报价 dungeOffers 等本身合法为 null 的字段不受影响：它们在 d 里的默认值就是 null 或后文有专门检查 */
+  for(const k in d){if(s[k]===undefined||s[k]===null)s[k]=d[k];}
+  if(typeof s.name!=='string')s.name='';
+  if(!s.map||typeof s.map!=='object'||Array.isArray(s.map))s.map={chapter:0,layer:0};
+  if(typeof s.map.chapter!=='number'||!isFinite(s.map.chapter))s.map.chapter=0;
+  if(typeof s.map.layer!=='number'||!isFinite(s.map.layer))s.map.layer=0;
+  if(s.discovered==null||typeof s.discovered!=='object'||Array.isArray(s.discovered))s.discovered=d.discovered;
+  if(!s.discovered['0-0-0'])s.discovered['0-0-0']='火弹';
+  if(!s.discovered['0-1-0'])s.discovered['0-1-0']='水弹';
+  if(!s.discovered['0-2-0'])s.discovered['0-2-0']='雷弹';
+  if(!s.equipped||!s.discovered[s.equipped])s.equipped='0-0-0';
+  if(!Array.isArray(s.loadout))s.loadout=['0-0-0','0-1-0','0-2-0'];
+  s.loadout=s.loadout.filter(k=>s.discovered[k]);
+  if(s.loadout.length===0)s.loadout=[s.equipped||'0-0-0'];
+  if(s.loadout.indexOf(s.equipped)<0)s.equipped=s.loadout[0];
+  if(!s.dex||typeof s.dex!=='object')s.dex={seen:{},caught:{}};
+  if(!s.dex.seen)s.dex.seen={};if(!s.dex.caught)s.dex.caught={};
+  /* 伙伴数组元素必须是合法对象：脏档可能存有 null/数字元素（曾致 .type 裸读崩溃） */
+  if(!Array.isArray(s.partners))s.partners=[];
+  s.partners=s.partners.filter(p=>p&&typeof p==='object'&&!Array.isArray(p));
+  s.partners.forEach(p=>{if(!p.type)p.type='cat';if(!p.skill)p.skill='claw';if(!p.trait)p.trait='tough';if(p.evolved===undefined)p.evolved=false;if(p.exp===undefined)p.exp=0;if(!p.ivs)p.ivs=[10,10,10];});
+  /* 出战位越界收敛：放生/坏档后 activePartner 指向空位 → 伙伴永远站桩不出手的真凶 */
+  if(!Array.isArray(s.partners))s.partners=[];
+  if(s.activePartner==null||typeof s.activePartner!=='number'||!isFinite(s.activePartner))s.activePartner=0;
+  if(s.activePartner<0||s.activePartner>=s.partners.length)s.activePartner=0;
+  if(!s.equip||typeof s.equip!=='object')s.equip={w:null,a:null,t:null};
+  ['w','a','t'].forEach(k=>{if(!(k in s.equip))s.equip[k]=null;});
+  if(!Array.isArray(s.ebag))s.ebag=[];
+  /* 装备条目必须是带合法 slot/rar 的对象（脏档可能存 null 或缺字段 → RARITY[undefined] 崩溃） */
+  s.ebag=s.ebag.filter(it=>it&&typeof it==='object'&&!Array.isArray(it)&&['w','a','t'].indexOf(it.slot)>=0);
+  s.ebag.forEach(it=>{if(typeof it.rar!=='number'||!isFinite(it.rar)||it.rar<0||it.rar>3)it.rar=0;if(typeof it.name!=='string')it.name='神秘装备';});
+  /* 已装备的三个槽位同样净化 rar/name（EQUIP 界面裸读 RARITY[it.rar].c） */
+  if(!s.equip||typeof s.equip!=='object')s.equip={w:null,a:null,t:null};
+  ['w','a','t'].forEach(k=>{const it=s.equip[k];if(it==null||typeof it!=='object'||Array.isArray(it)){s.equip[k]=null;return;}
+    if(['w','a','t'].indexOf(it.slot)<0)it.slot=k;
+    if(typeof it.rar!=='number'||!isFinite(it.rar)||it.rar<0||it.rar>3)it.rar=0;
+    if(typeof it.name!=='string')it.name='神秘装备';});
+  /* 魔法合成槽 spell = [形态,元素,阶级] 三个界内下标（脏值 → FORMS[NaN].n 崩溃） */
+  if(!Array.isArray(s.spell)||s.spell.length!==3)s.spell=[0,0,0];
+  const spBounds=[FORMS.length,ELEMS.length,MODS.length];
+  for(let i=0;i<3;i++){const v=s.spell[i];s.spell[i]=(typeof v==='number'&&isFinite(v))?Math.min(spBounds[i]-1,Math.max(0,Math.floor(v))):0;}
+  if(!s.bossKilled||typeof s.bossKilled!=='object')s.bossKilled={};
+  if(!s.storySeen||typeof s.storySeen!=='object')s.storySeen={};
+  if(!s.pbag||typeof s.pbag!=='object')s.pbag={};
+  if(!s.mbag||typeof s.mbag!=='object')s.mbag={};
+  if(!Array.isArray(s.stones))s.stones=[];/* 魔石下标 1~4（古代=4），数组必须 5 格：旧版截成 4 格导致 stones[4]=undefined→NaN→存档变 null 的连环崩 */
+  for(let i=0;i<5;i++){const v=s.stones[i];s.stones[i]=(typeof v==='number'&&isFinite(v)&&v>0)?Math.floor(v):0;}
+  if(!s.spellLv||typeof s.spellLv!=='object'||Array.isArray(s.spellLv))s.spellLv={};
+  for(const k in s.spellLv){const v=s.spellLv[k];if(typeof v!=='number'||!isFinite(v))s.spellLv[k]=0;else if(v<0)s.spellLv[k]=0;}
+  [s.pbag,s.mbag].forEach(b=>{if(b)for(const k in b){const v=b[k];if(typeof v!=='number'||!isFinite(v)||v<0)b[k]=0;}});
+  /* 副本报价必须是界内数字 id 数组（脏档可能存 null/越界元素 → DUNGEONS[id].kind 裸读崩溃） */
+  if(!Array.isArray(s.dungeonOffers))s.dungeonOffers=null;
+  if(s.dungeonOffers){s.dungeonOffers=s.dungeonOffers.filter(id=>typeof id==='number'&&isFinite(id)&&id>=0&&id<DUNGEONS.length).map(id=>Math.floor(id));if(s.dungeonOffers.length===0)s.dungeonOffers=null;}
+  return s;
+}
+function save(){try{localStorage.setItem('mage_save_v1',JSON.stringify(state));}catch(e){}}
+function load(){try{const r=localStorage.getItem('mage_save_v1');return r?JSON.parse(r):null;}catch(e){return null;}}
+
+/* ---------- magic helpers ---------- */
+/* 安全读取：魔法等级 / 魔石数量——存档脏值（null/NaN/undefined）一律按 0，杜绝 "Cannot read properties of null" */
+function slv(k){return (state.spellLv&&typeof state.spellLv[k]==='number'&&isFinite(state.spellLv[k]))?state.spellLv[k]:0;}
+function slvSet(k,v){if(!state.spellLv||typeof state.spellLv!=='object'||Array.isArray(state.spellLv))state.spellLv={};state.spellLv[k]=v;}
+function stoneN(i){return (Array.isArray(state.stones)&&typeof state.stones[i]==='number'&&isFinite(state.stones[i]))?Math.max(0,Math.floor(state.stones[i])):0;}
+function spellName(key){const a=key.split('-').map(Number);return MODS[a[2]].pre+ELEMS[a[1]].n+FORMS[a[0]].n;}
+function spellPower(key){const a=key.split('-').map(Number);const f=FORMS[a[0]],el=ELEMS[a[1]],m=MODS[a[2]];return Math.round((9+state.level*3+state.rank*5)*f.pow*el.pow*m.pow*(1+0.15*slv(key)));}
+function spellCost(key){const a=key.split('-').map(Number);const tier=a[2]||0;return Math.round(3*FORMS[a[0]].pow*MODS[a[2]].cost+tier*8);/* 阶级越高耗魔越夸张：初级3 → 古代弹 39+，低等级"学得起放不起" */}
+function spellElem(key){return ELEMS[key.split('-').map(Number)[1]].c;}
+function activeLoadout(){const lo=(state.loadout||[]).filter(k=>state.discovered[k]);return lo.length?lo:[state.equipped||'0-0-0'];}
+function spellDesc(key){const a=key.split('-').map(Number);return FORMS[a[0]].des+'·'+ELEMS[a[1]].n+'属性·'+MODS[a[2]].des;}
+function expNeed(){return Math.round(16+state.level*11);/* 升级曲线放慢 ~1.8 倍：升级要靠副本/BOSS 的额外经验撑，而不是无脑平刷 */}
+function promoteReady(){return state.rank<RANKS.length-1 && state.kills>=RANK_KILLS[state.rank] && state.questDone>=state.rank+1;}
+
+/* ---------- audio ---------- */
+const SFX={
+  ctx:null,
+  init(){if(this.ctx)return;try{this.ctx=new (window.AudioContext||window.webkitAudioContext)();}catch(e){}},
+  tone(freq,dur,type,vol,slide){if(!state||!state.sound||!this.ctx)return;const t=this.ctx.currentTime;const o=this.ctx.createOscillator(),g=this.ctx.createGain();o.type=type||'square';o.frequency.setValueAtTime(freq,t);if(slide)o.frequency.exponentialRampToValueAtTime(slide,t+dur);g.gain.setValueAtTime((vol||0.12),t);g.gain.exponentialRampToValueAtTime(0.001,t+dur);o.connect(g).connect(this.ctx.destination);o.start(t);o.stop(t+dur);},
+  move(){this.tone(420,0.05,'square',0.06);},
+  confirm(){this.tone(720,0.06,'square',0.09);},cancel(){this.tone(220,0.08,'square',0.07);},
+  hit(){this.tone(180,0.07,'sawtooth',0.10,90);},magic(){this.tone(620,0.12,'triangle',0.10,980);},
+  potion(){this.tone(520,0.10,'sine',0.10,780);},fail(){this.tone(140,0.12,'square',0.09,90);},
+  capture(){this.tone(660,0.08,'square',0.10);setTimeout(()=>this.tone(990,0.12,'square',0.10),90);},
+  coin(){this.tone(880,0.05,'square',0.07);},level(){this.tone(523,0.1,'square',0.1);setTimeout(()=>this.tone(659,0.1,'square',0.1),100);setTimeout(()=>this.tone(784,0.15,'square',0.1),200);}
+};
+let bgmTimer=null;
+function startBGM(){if(bgmTimer||!state||!state.sound)return;const seq=[262,330,392,330];let i=0;bgmTimer=setInterval(()=>{if(state&&state.sound)SFX.tone(seq[i%4],0.22,'triangle',0.025);i++;},420);}
+
+/* ---------- sprites ---------- */
+function portrait(name,x,y,w,h){const img=Assets[name];if(img){ctx.drawImage(img,x,y,w,h);}else{px(x,y,w,h,'#444');}}
+function shadow(cx,cy,r){ctx.fillStyle='rgba(0,0,0,.35)';ctx.beginPath();ctx.ellipse(cx,cy+1,r,r*0.32,0,0,6.28);ctx.fill();}
+function drawHero(x,footY,t,hurt){
+  x=x|0;const step=Math.sin(t*8);const bob=Math.abs(step)>0.7?-1:0;footY=(footY+bob)|0;
+  shadow(x,footY,10);
+  const lc=step>0?2:0;
+  px(x-6+lc,footY-8,4,8,'#2c3f86');px(x+2-lc,footY-8,4,8,'#2c3f86');
+  px(x-6+lc,footY-2,4,2,'#1e2950');px(x+2-lc,footY-2,4,2,'#1e2950');
+  px(x-9,footY-26,4,16,'#6e2a52');px(x-9,footY-26,4,3,'#8a3a68');
+  px(x-6,footY-26,12,18,'#3a5bbf');px(x-6,footY-26,12,4,'#4f74d6');
+  px(x-6,footY-11,12,2,'#ffd93d');
+  px(x-7,footY-10,14,3,'#2c3f86');
+  px(x-4,footY-34,9,9,'#f0c79a');px(x-2,footY-30,2,2,'#2a2438');px(x+2,footY-30,2,2,'#2a2438');
+  px(x-7,footY-36,15,3,'#5a35a8');px(x-5,footY-43,11,7,'#6a3fb0');px(x-3,footY-45,6,3,'#7d4fc2');
+  drawStar(x+1,footY-40,2,'#ffd93d');
+  px(x+8,footY-38,2,30,'#8b5a2b');
+  const glow=0.5+0.5*Math.sin(t*3);
+  ctx.globalAlpha=0.22+0.3*glow;ctx.fillStyle='#5ec8f2';ctx.beginPath();ctx.arc(x+9,footY-40,7+glow*3,0,6.28);ctx.fill();ctx.globalAlpha=1;
+  px(x+7,footY-42,5,5,'#5ec8f2');px(x+8,footY-41,2,2,'#dff6ff');
+  if(hurt){ctx.globalAlpha=0.45;px(x-9,footY-45,20,45,'#ff6b6b');ctx.globalAlpha=1;}
+}
+function drawCat(x,footY,t,border){
+  x=x|0;footY=footY|0;
+  px(x-5,footY-15,10,11,'#fdfdfd');px(x-5,footY-19,3,5,'#fdfdfd');px(x+2,footY-19,3,5,'#fdfdfd');
+  px(x-4,footY-18,1,2,'#ff9ec4');px(x+3,footY-18,1,2,'#ff9ec4');
+  px(x+5,footY-13,3,9,'#fdfdfd');
+  px(x-3,footY-12,6,2,'#ffd93d');
+  px(x-3,footY-13,2,2,'#333');px(x+1,footY-13,2,2,'#333');
+  if(border===true)px(x-7,footY-21,14,20,'#000');
+}
+/* ---- 参数化立绘：按 ENEMY[type].art 配置画出八方旅人风像素怪（脚底 = footY） ----
+   art: {shape:'blob|quad|biped|float', c:主色, c2:暗部, eye:瞳色, ear:0/1/2, horn:0/1/2, wing:0/1, tail:0/1, sz:可选体型0.8~1.2}
+   ═══ 怪物立绘底层规范（永久生效，加新怪只准填 art 字段，严禁绕过本函数另画） ═══
+   ① 锚点统一：x=水平中心，footY=接地面，四种 shape 共用同一地平线；
+   ② 包围盒统一：身体宽≤34 高≤34，配件（耳/角/翼）默认体型下最高到 footY-46；sz 放大时整体等比，不会单个配件失控；
+   ③ 接地统一：地面系怪脚底恰好踩 footY，脚下统一椭圆投影；float 固定悬浮+随高度缩放的投影；
+   ④ 光影统一：描边=主色-55%，暗面=-35%，受光面=+30%，眼底高光 #fff；
+   ⑤ 比例统一：身体尺寸由 MOB_SHAPE_SPEC 按形状锁定，眼睛恒在头部上 1/3；
+   ⑥ 动画统一：呼吸幅度 4%，相位按主色哈希错开（同屏不会齐刷刷起伏）。 */
+function mobShade(c,f){c=c.replace('#','');let r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16);if(f>=0){r=Math.round(r+(255-r)*f);g=Math.round(g+(255-g)*f);b=Math.round(b+(255-b)*f);}else{r=Math.round(r*(1+f));g=Math.round(g*(1+f));b=Math.round(b*(1+f));}return 'rgb('+r+','+g+','+b+')';}
+/* 形状规范表：bw=体宽 bh=体高 top=立绘顶距脚底（含头/悬浮）。加新 shape 必须先在此登记，否则回落 biped */
+const MOB_SHAPE_SPEC={
+  blob :{bw:22,bh:26,top:26},
+  float:{bw:18,bh:20,top:22,hover:8},
+  quad :{bw:18,bh:14,top:25},
+  biped:{bw:14,bh:16,top:27}
+};
+function drawMobArt(art,x,footY,t){
+  x=x|0;footY=footY|0;
+  const c=art.c||'#999',c2=art.c2||mobShade(c,-0.35),eye=art.eye||'#222';
+  const spec=MOB_SHAPE_SPEC[art.shape]||MOB_SHAPE_SPEC.biped;
+  const S=Math.max(0.75,Math.min(1.25,art.sz||1)); /* 规范②：体型钳制 0.75~1.25 */
+  const ph=((c.charCodeAt(1)||3)*7+(c.charCodeAt(3)||5)*13)%628/100; /* 规范⑥：相位哈希 */
+  const br=1+Math.sin(t*4+ph)*0.04;
+  const W2=spec.bw/2,BH=spec.bh;
+  const hov=spec.hover?(spec.hover+Math.sin(t*2.3+ph)*2):0; /* 规范③：float 悬浮高度固定带浮动 */
+  /* 规范③：统一椭圆接地投影（float 随悬浮高度缩小投影） */
+  ctx.fillStyle='rgba(0,0,0,.30)';
+  ctx.beginPath();ctx.ellipse(x,footY-1,W2*0.62*S*(spec.hover?Math.max(0.5,1-hov/18):1),3*S,0,0,6.28);ctx.fill();
+  ctx.save();ctx.translate(x,footY-hov);ctx.scale(S,S*br);
+  const OL=mobShade(c,-0.55),HI=mobShade(c,0.30);
+  /* 头顶锚点：blob/float=身体顶(-BH)；quad/biped=头顶(-top)。耳/角/翼全挂这里，保证横向对齐 */
+  const hT=(art.shape==='blob'||art.shape==='float')?-BH:-spec.top;
+  if(art.shape==='blob'){
+    ctx.fillStyle=OL;ctx.beginPath();ctx.ellipse(0,-BH/2-0.5,W2+1,BH/2+1,0,0,6.28);ctx.fill();
+    ctx.fillStyle=c;ctx.beginPath();ctx.ellipse(0,-BH/2,W2,BH/2,0,0,6.28);ctx.fill();
+    ctx.fillStyle=HI;ctx.beginPath();ctx.ellipse(-W2*0.28,-BH*0.68,W2*0.42,BH*0.26,0,0,6.28);ctx.fill();
+    ctx.fillStyle=c2;px(-W2+1,-4,W2*2-2,3);
+  }else if(art.shape==='float'){
+    ctx.fillStyle=OL;ctx.beginPath();ctx.ellipse(0,-BH/2-0.5,W2,BH/2+1,0,0,6.28);ctx.fill();
+    ctx.fillStyle=c;ctx.beginPath();ctx.ellipse(0,-BH/2,W2-1,BH/2,0,0,6.28);ctx.fill();
+    ctx.fillStyle=HI;px(-W2*0.5|0,-BH*0.72|0,4,5);
+    px(-3,-2,2,3,c2);px(1,-2,2,3,c2); /* 底部小须 */
+  }else if(art.shape==='quad'){
+    const bT=hT+8; /* 身体顶 */
+    ctx.fillStyle=c;px(W2-4,hT,9,9);                    /* 头（右前） */
+    ctx.fillStyle=mobShade(c,-0.4);px(W2+4,hT+2,2,4);   /* 吻部暗面 */
+    ctx.fillStyle=OL;px(-W2-1,bT-1,W2*2+2,BH-2);        /* 身体描边 */
+    ctx.fillStyle=c;px(-W2,bT,W2*2,BH-4);               /* 身体 */
+    ctx.fillStyle=c2;px(-W2,-6,W2*2,3);                 /* 腹部暗面 */
+    ctx.fillStyle=HI;px(-W2,bT,W2*2,3);                 /* 背部受光 */
+    ctx.fillStyle=mobShade(c,-0.3);px(-W2+1,-4,3,4);px(W2-4,-4,3,4); /* 腿（踩地） */
+  }else{ /* biped 双足 */
+    const bT=-BH-2;
+    ctx.fillStyle=OL;px(-W2-1,bT-1,W2*2+2,BH);          /* 身体描边 */
+    ctx.fillStyle=c;px(-W2,bT,W2*2,BH-3);               /* 身体 */
+    ctx.fillStyle=c2;px(-W2,-6,W2*2,3);                 /* 腹部暗面 */
+    ctx.fillStyle=HI;px(-W2,bT,W2*2,3);                 /* 肩部受光 */
+    ctx.fillStyle=OL;px(-W2-2,hT,W2*2+4,10);            /* 头描边 */
+    ctx.fillStyle=c;px(-W2-1,hT+1,W2*2+2,8);            /* 头 */
+    ctx.fillStyle=HI;px(-W2,hT+2,W2*2,3);
+    ctx.fillStyle=mobShade(c,-0.3);px(-W2+1,-4,3,4);px(W2-4,-4,3,4); /* 腿（踩地） */
+  }
+  /* 耳（锚点=头顶 hT，左右对称） */
+  if(art.ear===1){ctx.fillStyle=mobShade(c,-0.2);tri(-5,hT,4,6);tri(5,hT,4,6);}
+  else if(art.ear===2){ctx.fillStyle=mobShade(c,-0.2);tri(-6,hT-2,6,9);tri(6,hT-2,6,9);ctx.fillStyle=mobShade(c,0.25);tri(-5,hT-1,3,5);tri(5,hT-1,3,5);}
+  /* 角 */
+  if(art.horn===1){ctx.fillStyle='#e8e0c8';px(-3,hT-6,2,6);px(2,hT-6,2,6);}
+  else if(art.horn===2){ctx.fillStyle='#e8e0c8';tri(-4,hT-6,4,9);tri(3,hT-6,4,9);}
+  /* 背翼（在身体后，翼尖最高 hT-13，规范②内） */
+  if(art.wing){
+    ctx.fillStyle=mobShade(c,-0.5);tri(0,hT+5,13,17);tri(0,hT+5,-13,17);
+    ctx.fillStyle=mobShade(c,0.25);tri(0,hT+7,9,13);tri(0,hT+7,-9,13);
+  }
+  /* 尾（锚点=身体左下，贴地） */
+  if(art.tail){ctx.fillStyle=mobShade(c,-0.2);if(art.shape==='quad'){px(-W2-3,-BH*0.55,4,3);px(-W2-5,-BH*0.55-2,3,5);}else{px(-W2-1,-BH*0.4,4,3);px(-W2-3,-BH*0.4-3,3,4);}}
+  /* 眼（规范⑤：恒在头部上 1/3；quad 眼随头偏右） */
+  const eyY=art.shape==='quad'||art.shape==='biped'?hT+4:-BH*0.65;
+  const ex=art.shape==='quad'?W2+1:0;
+  ctx.fillStyle=eye;px(-3+ex,eyY,2,2);px(2+ex,eyY,2,2);
+  ctx.fillStyle='#fff';px(-3+ex,eyY,1,1);px(2+ex,eyY,1,1);
+  if(art.shape!=='blob'&&art.shape!=='float'){ctx.fillStyle=mobShade(c,-0.4);px(ex-1,eyY+4,3,1);}
+  ctx.restore();
+}
+/* 统一分发：有 art 配置走 drawMobArt，否则走手绘（旧 11 种），都没有兜底哥布林。
+   旧手绘怪同样补统一接地投影，保证新旧怪站在同一地平线上观感一致 */
+function drawMob(type,x,footY,t){const a=ENEMY[type]&&ENEMY[type].art;if(a){drawMobArt(a,x,footY,t);return;}const f=(PIXDRAW[type]||drawGoblin);ctx.fillStyle='rgba(0,0,0,.30)';ctx.beginPath();ctx.ellipse(x,footY-1,10,3,0,0,6.28);ctx.fill();f(x,footY,t);}
+/* ---- 各地图专属怪（八方旅人风：深色描边 + 双色明暗渐变 + 眼部高光 + 待机微动画；脚底 = footY） ---- */
+function drawGoblin(x,footY,t){
+  x=x|0;footY=footY|0;const step=Math.sin(t*6)>0?1:-1;
+  px(x-7,footY-18,14,15,'#1c2e14');px(x-8,footY-26,16,9,'#1c2e14');
+  px(x-6,footY-17,12,13,'#5a8f3a');px(x-6,footY-17,12,4,'#74ab4e');px(x-6,footY-8,12,4,'#436f2c');
+  px(x-7,footY-25,14,8,'#254018');px(x-6,footY-24,12,6,'#6fa84a');
+  px(x-9,footY-27,4,4,'#1c2e14');px(x+5,footY-27,4,4,'#1c2e14');
+  px(x-8,footY-26,3,3,'#5a8f3a');px(x+5,footY-26,3,3,'#5a8f3a');
+  px(x-4,footY-22,3,3,'#0f0f14');px(x+2,footY-22,3,3,'#0f0f14');px(x-3,footY-21,1,1,'#ff5a5a');px(x+3,footY-21,1,1,'#ff5a5a');
+  px(x-2,footY-18,4,1,'#2c4420');
+  px(x-4+step,footY-4,4,4,'#436f2c');px(x+1-step,footY-4,4,4,'#436f2c');
+  px(x+6,footY-19,2,14,'#3a2412');px(x+5,footY-20,4,2,'#8b5a2b');px(x+4,footY-6,6,2,'#9a6a38');
+}
+function drawSlime(x,footY,t){
+  x=x|0;footY=footY|0;const sq=Math.sin(t*4);const w=13+sq*1.5|0,hh=12-sq*1.5|0;
+  px(x-7,footY-12,14,12,'#153815');
+  px(x-(w>>1),footY-hh,w,hh,'#3f9f4f');px(x-(w>>1)+1,footY-hh,w-2,3,'#7ed88a');px(x-(w>>1)+1,footY-4,w-2,3,'#2c7a3a');
+  px(x-4,footY-9,3,3,'#0f2418');px(x+2,footY-9,3,3,'#0f2418');px(x-4,footY-9,1,1,'#dff6ff');px(x+3,footY-9,1,1,'#dff6ff');
+  px(x-2,footY-4,5,1,'#1f5c2c');
+  px(x-8,footY-9,2,3,'#7ed88a');px(x+7,footY-8,2,2,'#7ed88a');
+  const g=0.3+0.3*Math.sin(t*4);ctx.globalAlpha=g;circ(x,footY-16,2,'#b8ffc4');ctx.globalAlpha=1;
+}
+function drawBat(x,footY,t){
+  x=x|0;footY=footY|0;const w=Math.sin(t*9)*3|0;
+  ctx.fillStyle='#241a33';tri(x-6,footY-12-w,8,6);tri(x+6,footY-12-w,8,6);
+  px(x-5,footY-15,10,9,'#0f0a18');
+  px(x-4,footY-14,8,7,'#5a4472');px(x-4,footY-14,8,2,'#7a5f96');px(x-4,footY-9,8,2,'#3a2c50');
+  px(x-3,footY-17,2,3,'#241a33');px(x+1,footY-17,2,3,'#241a33');
+  px(x-3,footY-12,2,2,'#0f0f14');px(x+1,footY-12,2,2,'#0f0f14');px(x-3,footY-12,1,1,'#ff7a7a');px(x+2,footY-12,1,1,'#ff7a7a');
+  px(x-1,footY-9,2,1,'#fff');
+  ctx.fillStyle='#3f3055';tri(x-5,footY-12-w,7,5);tri(x+5,footY-12-w,7,5);
+}
+function drawSkel(x,footY,t){
+  x=x|0;footY=footY|0;const sway=Math.sin(t*3)>0?1:0;
+  px(x-5,footY-13,10,13,'#1a1a24');
+  px(x-4,footY-12,3,11,'#ddd6c2');px(x+1,footY-12,3,11,'#b8b09a');px(x-4,footY-8,8,2,'#8f8878');
+  px(x-4,footY-21,8,9,'#0f0f18');
+  px(x-3,footY-20,6,8,'#e8e2d0');px(x-3,footY-20,6,2,'#fff');px(x-3,footY-15,6,3,'#c9c0aa');
+  px(x-3,footY-18,2,2,'#0f0f14');px(x+1,footY-18,2,2,'#0f0f14');px(x-3,footY-18,1,1,'#7cf');px(x+2,footY-18,1,1,'#7cf');
+  px(x-2,footY-14,4,1,'#0f0f14');
+  px(x-7+sway,footY-18,3,8,'#b8b09a');px(x+4-sway,footY-18,3,8,'#ddd6c2');
+  px(x+7,footY-24,2,15,'#3a2412');px(x+6,footY-25,4,3,'#b0b8c8');px(x+6,footY-25,4,1,'#e8ecf4');
+}
+function drawMagma(x,footY,t){
+  x=x|0;footY=footY|0;const sq=Math.sin(t*5)*1.2;const bob=sq|0;
+  px(x-7,footY-13+bob,14,13,'#160a08');
+  px(x-6,footY-12+bob,12,12-sq,'#2a1614');px(x-6,footY-12+bob,12,3,'#4a2822');px(x-6,footY-4+bob,12,3,'#1a0c0a');
+  px(x-4,footY-9+bob,8,5,'#ff7b2e');px(x-2,footY-7+bob,4,3,'#ffd93d');px(x-3,footY-8+bob,2,1,'#fff3b0');
+  px(x-4,footY-11,3,3,'#0f0a08');px(x+1,footY-11,3,3,'#0f0a08');px(x-3,footY-10,1,1,'#fff');px(x+2,footY-10,1,1,'#fff');
+  px(x-5,footY-14+bob,10,2,'#3a1a14');
+  const g=0.4+0.4*Math.sin(t*6);ctx.globalAlpha=g;px(x-7,footY-15+bob,14,2,'#ff7b2e');circ(x,footY-3+bob,3,'#ff9a4d');ctx.globalAlpha=1;
+}
+function drawSala(x,footY,t){
+  x=x|0;footY=footY|0;const wag=Math.sin(t*7)*2|0;
+  px(x-9,footY-11,18,11,'#180c08');
+  px(x-8,footY-10,12,7,'#c2452a');px(x-8,footY-10,12,2,'#e06a3f');px(x-8,footY-5,12,2,'#7a2c1c');
+  px(x-10,footY-17,7,7,'#0f0806');px(x-9,footY-16,6,6,'#d85838');
+  px(x-6,footY-14,2,2,'#ffd93d');px(x-9,footY-15,1,1,'#fff');
+  px(x+3,footY-18,3,18,'#0f0806');px(x+4,footY-18,3,18,'#a83a24');px(x+4,footY-18,3,3,'#e06a3f');
+  px(x+6+wag,footY-20,2,3,'#e06a3f');
+  px(x-2,footY-8,7,2,'#5c1c10');
+  const g=0.3+0.3*Math.sin(t*7);ctx.globalAlpha=g;px(x-9,footY-19,7,2,'#ffd93d');ctx.globalAlpha=1;
+}
+function drawWolf(x,footY,t){
+  x=x|0;footY=footY|0;const br=Math.sin(t*2.5)>0;
+  px(x-13,footY-16,22,12,'#0e1520');
+  px(x-12,footY-9,12,7,'#c9d4e2');px(x-12,footY-9,12,2,'#eef4fa');px(x-12,footY-4,12,2,'#8fa0b4');
+  px(x-16,footY-15,8,7,'#0e1520');px(x-15,footY-14,7,6,'#c9d4e2');px(x-15,footY-14,3,3,'#eef4fa');
+  px(x-17,footY-18,2,4,'#0e1520');px(x-13,footY-18,2,4,'#0e1520');px(x-17,footY-17,2,3,'#c9d4e2');px(x-13,footY-17,2,3,'#c9d4e2');
+  px(x-14,footY-12,2,2,'#0f0f14');px(x-11,footY-12,2,2,'#0f0f14');px(x-14,footY-12,1,1,'#7cf');px(x-10,footY-12,1,1,'#7cf');
+  px(x-17,footY-8,2,2,'#c9d4e2');
+  px(x+8,footY-13,2,13,(br?'#aebccd':'#b8c4d4'));px(x-1,footY-13,2,13,(br?'#b8c4d4':'#aebccd'));
+  px(x-6,footY-13,4,2,'#eef4fa');px(x-8,footY-11,6,1,'#aebccd');
+}
+function drawFrost(x,footY,t){
+  x=x|0;footY=footY|0;const g=0.5+0.5*Math.sin(t*4);const fl=Math.sin(t*2.6)*2;
+  ctx.globalAlpha=0.3+0.3*g;circ(x,footY-13+fl,10,'#aee7ff');ctx.globalAlpha=1;
+  ctx.fillStyle='#0e2836';tri(x,footY-19+fl,7,15);tri(x-7,footY-9+fl,6,10);tri(x+7,footY-9+fl,6,10);
+  ctx.fillStyle='#d8f4ff';tri(x,footY-20+fl,5,14);tri(x-6,footY-10+fl,4,9);tri(x+6,footY-10+fl,4,9);
+  circ(x-2,footY-14+fl,1.4,'#0e2836');circ(x+2,footY-14+fl,1.4,'#0e2836');
+  ctx.globalAlpha=g;circ(x,footY-24+fl,1.6,'#fff');ctx.globalAlpha=1;
+}
+function drawGolem(x,footY,t){
+  x=x|0;footY=footY|0;
+  px(x-10,footY-19,20,18,'#141210');
+  px(x-9,footY-18,18,17,'#7a7468');px(x-9,footY-18,18,4,'#948c7c');px(x-9,footY-5,18,4,'#565045');
+  px(x-11,footY-14,4,10,'#0f0d0b');px(x+7,footY-14,4,10,'#0f0d0b');
+  px(x-10,footY-14,3,9,'#6a6458');px(x+8,footY-14,3,9,'#6a6458');
+  px(x-7,footY-27,14,10,'#0f0d0b');px(x-6,footY-26,12,9,'#8a8478');px(x-6,footY-26,12,2,'#a09a8c');
+  px(x-4,footY-24,3,3,'#0f2a33');px(x+2,footY-24,3,3,'#0f2a33');px(x-4,footY-24,2,2,'#5ec8f2');px(x+3,footY-24,2,2,'#5ec8f2');
+  px(x-4,footY-20,8,1,'#4a4438');
+  const g=0.4+0.4*Math.sin(t*3);ctx.globalAlpha=g;px(x-3,footY-16,6,2,'#5ec8f2');px(x-8,footY-10,16,1,'#5ec8f2');ctx.globalAlpha=1;
+}
+function drawGhost(x,footY,t){
+  x=x|0;footY=footY|0;const fl=Math.sin(t*3)*2;
+  footY=footY+fl|0;
+  px(x-7,footY-19,14,16,'#171226');
+  ctx.globalAlpha=0.85;
+  px(x-6,footY-18,12,14,'#8a7ab8');px(x-6,footY-18,12,3,'#a89ad4');px(x-6,footY-9,12,3,'#5a4a8a');
+  px(x-4,footY-22,8,5,'#171226');px(x-3,footY-21,6,4,'#8a7ab8');
+  px(x-6,footY-8,2,3,'#8a7ab8');px(x-2,footY-7,2,4,'#8a7ab8');px(x+2,footY-8,2,3,'#8a7ab8');
+  px(x-4,footY-17,3,4,'#0f0a1a');px(x+1,footY-17,3,4,'#0f0f14');px(x-4,footY-17,2,3,'#ffec9e');px(x+2,footY-17,2,3,'#ffec9e');
+  px(x-2,footY-11,4,1,'#3a2a5a');px(x-5,footY-13,10,1,'#6a5a9a');
+  ctx.globalAlpha=1;
+}
+const PIXDRAW={goblin:drawGoblin,slime:drawSlime,bat:drawBat,skel:drawSkel,magma:drawMagma,sala:drawSala,wolf:drawWolf,frost:drawFrost,golem:drawGolem,ghost:drawGhost,cat:(x,y)=>drawCat(x,y,bt?bt.t:0)};
+
+/* ---------- battle scene ambient ---------- */
+const bStars=[];for(let i=0;i<42;i++)bStars.push({x:Math.random()*W,y:Math.random()*95,r:Math.random()<0.2?2:1,s:Math.random()*6.28});
+const bDust=[];for(let i=0;i<10;i++)bDust.push({x:Math.random()*W,y:rf(70,240),sp:rf(5,14),tw:Math.random()*6.28});
+function tri(cx,base,w,h){ctx.beginPath();ctx.moveTo(cx-w/2,base);ctx.lineTo(cx,base-h);ctx.lineTo(cx+w/2,base);ctx.closePath();ctx.fill();}
+function pine(cx,base,h){
+  ctx.fillStyle='#1d2c26';tri(cx,base,h*0.7,h*0.5);
+  ctx.fillStyle='#233b2c';tri(cx,base-h*0.28,h*0.62,h*0.5);
+  ctx.fillStyle='#2c4a35';tri(cx,base-h*0.55,h*0.48,h*0.55);
+}
+
+/* ---------- toasts ---------- */
+let toasts=[];
+function toast(msg,color){toasts=[{msg:msg,c:color||PAL.gold,t:1.6}];}
+function drawToasts(){if(state.scene==='BATTLE'||!toasts.length)return;if(state.scene==='PARTNERS'&&(partMenuOpen||partRelConf))return;const t=toasts[toasts.length-1];ctx.globalAlpha=clamp(t.t/0.4,0,1);box(8,H-36,W-16,16,'rgba(10,8,20,.92)',PAL.frame);txt(t.msg,W/2,H-28,t.c||'#fff',9,'center',true);ctx.globalAlpha=1;}
+
+/* ---------- assets ---------- */
+const Assets={};
+/* 抠洋红底：采样四角底色 → 距离透明化（软边） → 裁剪内容包围盒；失败则回退原图 */
+function processSprite(img){
+  try{
+    const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
+    const g=c.getContext('2d');g.drawImage(img,0,0);
+    g.fillStyle='#ff00ff';g.fillRect(c.width*0.55,c.height*0.87,c.width*0.45,c.height*0.13);/* 抹掉右下角水印 */
+    const d=g.getImageData(0,0,c.width,c.height);const p=d.data;const cw=c.width,ch=c.height;
+    let r=0,gr=0,b=0;[[2,2],[cw-3,2],[2,ch-3],[cw-3,ch-3]].forEach(([x,y])=>{const i=(y*cw+x)*4;r+=p[i];gr+=p[i+1];b+=p[i+2];});r/=4;gr/=4;b/=4;
+    let minX=cw,minY=ch,maxX=0,maxY=0;
+    for(let y=0;y<ch;y++)for(let x=0;x<cw;x++){const i=(y*cw+x)*4;
+      const dist=Math.sqrt((p[i]-r)*(p[i]-r)+(p[i+1]-gr)*(p[i+1]-gr)+(p[i+2]-b)*(p[i+2]-b));
+      if(dist<95)p[i+3]=0;else if(dist<145)p[i+3]=Math.round(255*(dist-95)/50);
+      if(p[i+3]>20){if(x<minX)minX=x;if(x>maxX)maxX=x;if(y<minY)minY=y;if(y>maxY)maxY=y;}}
+    g.putImageData(d,0,0);
+    const pad=3;minX=Math.max(0,minX-pad);minY=Math.max(0,minY-pad);maxX=Math.min(cw-1,maxX+pad);maxY=Math.min(ch-1,maxY+pad);
+    const t=document.createElement('canvas');t.width=maxX-minX+1;t.height=maxY-minY+1;
+    t.getContext('2d').drawImage(c,minX,minY,t.width,t.height,0,0,t.width,t.height);
+    return t;
+  }catch(e){return img;}
+}
+/* 把图片右下角水印用左侧同尺寸区块盖掉（背景图用） */
+function patchMark(img){
+  try{
+    const c=document.createElement('canvas');c.width=img.width;c.height=img.height;
+    const g=c.getContext('2d');g.drawImage(img,0,0);
+    const w=Math.round(c.width*0.28),h=Math.round(c.height*0.12),x=c.width-w,y=c.height-h;
+    g.drawImage(c,x-w,y,w,h,x,y,w,h);
+    return c;
+  }catch(e){return img;}
+}
+function loadAssets(){
+  const list=[['hero','assets/hero.png'],['catspirit','assets/catspirit.png'],['goblin','assets/goblin.png'],['titleArt','assets/title_art.png'],['townArt','assets/town_art.png']];
+  list.forEach(([k,src])=>{const im=new Image();im.onload=()=>Assets[k]=im;im.src=src;});
+  /* 战斗用 HD-2D 素材：已离线抠成透明底（assets/prep_sprites.py），浏览器零处理，file:// 下也不会失败 */
+  const bg=new Image();bg.onload=()=>Assets.battleBg=bg;bg.src='assets/battle_bg_k.png';
+  [['spHero','assets/sp_hero_k.png'],['spGoblin','assets/sp_goblin_k.png'],['spSlime','assets/sp_slime_k.png'],['spCat','assets/sp_cat_k.png']].forEach(([k,src])=>{
+    const im=new Image();im.onload=()=>Assets[k]=im;im.src=src;});
+}
+/* 画立绘：锚点为脚底中心；sx>0 水平挤压（弹跳落地感），kx>0 击退/突进倾斜，失败返回 false 走代码兜底 */
+function drawSprite(key,x,footY,hPix,squash,tilt){
+  const s=Assets[key];if(!s)return false;
+  const sq=squash||1;
+  const w=hPix*(s.width/s.height)/sq;
+  const h=hPix*sq;
+  ctx.save();
+  ctx.translate(x,footY);
+  if(tilt)ctx.rotate(tilt);
+  ctx.drawImage(s,-w/2,-h,w,h);
+  ctx.restore();
+  return true;
+}
+
+/* ================= SCENES ================= */
+const SCENES={};
+
+/* ---- TITLE ---- */
+let titleSel=0, titleAnim=0;
+let titleDust=[]; for(let i=0;i<16;i++)titleDust.push({x:Math.random()*W,y:Math.random()*H,sp:rf(4,12),tw:Math.random()*6.28,r:rf(0.6,1.8)});
+let titleStars=[]; for(let i=0;i<48;i++)titleStars.push({x:Math.random()*W,y:Math.random()*H,s:Math.random()*6.28,r:Math.random()<0.22?2:1});
+SCENES.TITLE={
+  onBtn(b){
+    const hasSave=!!load();
+    if(!hasSave)titleSel=1;
+    if(b==='B'){ if(hasSave){titleSel=(titleSel+1)%2;SFX.move();} }
+    else if(b==='A'){
+      if(hasSave&&titleSel===0){const s=load();state=normalizeState(s);state.scene='CITY';cityMode='map';save();SFX.confirm();toast('欢迎回来，'+state.name);}
+      else if(titleSel===1||!hasSave){state=newState();state.scene='NAME';SFX.confirm();}
+    }
+  },
+  update(dt){
+    titleAnim+=dt;
+    for(const p of titleDust){p.y-=p.sp*dt;p.tw+=dt*2.2;if(p.y<-4){p.y=H+4;p.x=Math.random()*W;}}
+  },
+  draw(){
+    const t=titleAnim;
+    const art=Assets.titleArt;
+    if(art){
+      /* 八方旅人风立绘满屏铺底，缓慢呼吸缩放 + 轻微漂移（电影感） */
+      const sh=art.height*0.94;/* 裁掉底部水印 */
+      const zoom=1.0+0.025*Math.sin(t*0.22);
+      const dh=345*zoom, dw=dh*art.width/sh;
+      const dx=(W-dw)/2, dy=66+Math.sin(t*0.17)*3;
+      ctx.drawImage(art,0,0,art.width,sh,dx,dy,dw,dh);
+      /* 顶部压暗衬标题 */
+      for(let y=0;y<64;y+=2){ctx.fillStyle='rgba(10,6,20,'+(0.55*(1-y/64)).toFixed(3)+')';ctx.fillRect(0,y,W,2);}
+      /* 底部压暗衬菜单 */
+      for(let y=0;y<145;y++){ctx.fillStyle='rgba(10,6,20,'+(0.72*(y/145)).toFixed(3)+')';ctx.fillRect(0,H-145+y,W,1);}
+      /* 左右暗角 */
+      ctx.fillStyle='rgba(8,5,16,.3)';ctx.fillRect(0,0,12,H);ctx.fillRect(W-12,0,12,H);
+    }else{
+      /* 立绘未加载时的兜底夜空 */
+      for(let y=0;y<H;y+=2){ctx.fillStyle=lerpHex('#241a52','#0a0818',y/H);ctx.fillRect(0,y,W,2);}
+      for(const s of titleStars){const a=0.35+0.65*Math.abs(Math.sin(s.s+t*1.5));ctx.globalAlpha=a;ctx.fillStyle='#fff';ctx.fillRect(s.x|0,s.y|0,s.r,s.r);}
+      ctx.globalAlpha=1;
+      drawHero(W/2,170,t,false);
+    }
+    /* 上升金尘 */
+    for(const p of titleDust){const a=0.25+0.5*Math.abs(Math.sin(p.tw));ctx.globalAlpha=a;px(p.x,p.y,p.r,p.r,PAL.gold);}
+    ctx.globalAlpha=1;
+    /* 标题辉光 + 标题 */
+    const pulse=0.5+0.5*Math.sin(t*2);
+    for(let r=3;r>=1;r--){ctx.globalAlpha=0.07*pulse;ctx.fillStyle=PAL.gold;ctx.beginPath();ctx.arc(W/2,40,36+r*9,0,6.28);ctx.fill();}
+    ctx.globalAlpha=1;
+    txtOut('魔法帝之路',W/2,42,PAL.gold,23,'center',true,'#1a0e04');
+    txt('— MAGE OF THE MAGIC EMPEROR —',W/2,62,'#e8d9ae',7,'center');
+    /* 标语 */
+    txtOut('在试炼中成长，于魔法中登顶',W/2,170,'#ffe9b0',10,'center',true,'rgba(20,10,4,.9)');
+    /* 菜单 */
+    const hasSave=!!load();
+    const opts=[hasSave?'继续冒险':'（暂无存档）','新的旅程'];
+    for(let i=0;i<2;i++){
+      const sel=(i===titleSel);const y=192+i*30;
+      box(42,y,W-84,26,sel?'rgba(58,44,92,.92)':'rgba(22,16,42,.85)',sel?PAL.gold:PAL.frame);
+      if(sel)px(42,y,3,26,PAL.gold);
+      if(sel)txt('▶',52,y+17,PAL.gold,12,'left',true);
+      const col=sel?'#fff':(i===0&&!hasSave?PAL.dim:'#ddd');
+      txt(opts[i],W/2+(sel?6:0),y+17,col,11,'center',true);
+    }
+    txt('v6.4 · 魔法帝之路',W/2,276,'#c9b890',8,'center');
+    txt('B 选择 · A 确定',W/2,H-10,'#b8a888',8,'center');
+  }
+};
+
+/* ---- NAME ---- */
+let nameIdx=0, nameT=0;
+SCENES.NAME={
+  onBtn(b){
+    if(b==='A'){state.name=NAMES[nameIdx].n;state.scene='CITY';cityMode='map';save();SFX.confirm();toast(state.name+'，开始你的魔法之旅！');}
+    else if(b==='B'){nameIdx=(nameIdx+1)%NAMES.length;nameT=0;SFX.move();}
+    else if(b==='C'){state.scene='TITLE';SFX.cancel();}
+  },
+  update(dt){nameT+=dt;},
+  draw(){
+    const t=nameT;
+    const art=Assets.titleArt;
+    px(0,0,W,H,PAL.bg);
+    if(art){
+      /* 封面立绘铺底（裁水印），整体压暗成剪影氛围 */
+      const sh=art.height*0.94;
+      const dh=H+24, dw=dh*art.width/sh;
+      const dx=(W-dw)/2, dy=(H-dh)/2;
+      ctx.drawImage(art,0,0,art.width,sh,dx,dy,dw,dh);
+    }
+    px(0,0,W,H,'rgba(10,6,20,.66)');
+    for(let y=0;y<60;y++){ctx.fillStyle='rgba(10,6,20,'+(0.45*(1-y/60)).toFixed(3)+')';ctx.fillRect(0,y,W,1);}
+    /* 上升金尘 */
+    for(const p of titleDust){const a=0.15+0.35*Math.abs(Math.sin(p.tw));ctx.globalAlpha=a;px(p.x,p.y,p.r,p.r,PAL.gold);}
+    ctx.globalAlpha=1;
+    /* 标题 */
+    txtOut('为你的角色命名',W/2,44,'#ffe9b0',15,'center',true,'rgba(20,10,4,.9)');
+    txt('— NAME YOUR HERO —',W/2,60,'#c9b890',7,'center');
+    /* 头像金框卡 */
+    const fx=W/2-42,fy=76;
+    box(fx-4,fy-4,92,92,'rgba(16,12,30,.9)',PAL.gold2);
+    box(fx-1,fy-1,86,86,null,PAL.gold);
+    ctx.fillStyle=PAL.gold;
+    [[fx-7,fy-7],[fx+85,fy-7],[fx-7,fy+85],[fx+85,fy+85]].forEach(c=>ctx.fillRect(c[0],c[1],6,6));
+    portrait('hero',fx+5,fy+5,76,76);
+    /* 名字（大字 + 辉光），切换时淡入 */
+    const na=clamp(t*4,0,1);
+    const pulse=0.5+0.5*Math.sin(t*2.4);
+    ctx.globalAlpha=0.18*na*pulse;ctx.fillStyle=PAL.gold;ctx.beginPath();ctx.arc(W/2,204,44,0,6.28);ctx.fill();ctx.globalAlpha=1;
+    ctx.globalAlpha=na;
+    txtOut('◀',66,204,'#c9a227',14,'center',true,'rgba(20,10,4,.9)');
+    txtOut('▶',W-66,204,'#c9a227',14,'center',true,'rgba(20,10,4,.9)');
+    txtOut(NAMES[nameIdx].n,W/2,208,'#ffd93d',24,'center',true,'#1a0e04');
+    ctx.globalAlpha=1;
+    /* 圆点指示器 */
+    for(let i=0;i<NAMES.length;i++){
+      const dx2=W/2-(NAMES.length-1)*7+i*14;
+      if(i===nameIdx)circ(dx2,224,3.5,PAL.gold);else circ(dx2,224,2,'#4a3f70');
+    }
+    /* 操作按钮 */
+    const by=250;
+    box(50,by,W-100,32,'rgba(28,20,50,.92)',PAL.gold);
+    px(50,by,3,32,PAL.gold);px(W-53,by,3,32,PAL.gold);
+    txt('A 确定  ·  C 返回',W/2,by+21,'#fff',12,'center',true);
+    txt('B 切换名字',W/2,by+48,PAL.dim,9,'center');
+  }
+};
+
+/* ---- CITY (town hub) ---- */
+let cityMode='map', locSel=0, funcSel=0, cityT=0;
+let cityDust=[]; for(let i=0;i<12;i++)cityDust.push({x:Math.random()*W,y:Math.random()*H,sp:rf(4,10),tw:Math.random()*6.28,r:rf(0.6,1.6)});
+const LOCATIONS=[
+  {n:'魔法学院',d:'修行 · 学魔法 · 晋升',act(){state.scene='ACAD';SFX.confirm();}},
+  {n:'野外试炼',d:'多区域野外 · 遗迹秘境',act(){state.scene='WILD';SFX.confirm();}},
+  {n:'冒险者公会',d:'委托任务 · 冒险者等级',act(){state.scene='GUILD';SFX.confirm();}},
+  {n:'住宅',d:'休息 · 炼金 · 魔法研究',act(){state.scene='HOME';SFX.confirm();}},
+  {n:'锻造房',d:'武器 · 法袍锻造',act(){state.scene='FORGE';SFX.confirm();}},
+  {n:'魔法黑市',d:'素材 · 魔法书交易',act(){state.scene='MARKET';SFX.confirm();}},
+  {n:'魔物图鉴',d:'收录 · 出没 · 捕捉条件',act(){state.scene='DEX';SFX.confirm();}}
+];
+const FUNCS=[
+  {n:'角色',scene:'STATUS',icon:'hero'},{n:'伙伴',scene:'PARTNERS',icon:'cat'},
+  {n:'魔法书',scene:'BOOK',icon:'star'},{n:'炼金',scene:'ALCHEMY',icon:'flask'},
+  {n:'背包',scene:'BAG',icon:'bag'},{n:'装备',scene:'EQUIP',icon:'gear'},
+  {n:'魔法升级',scene:'MUPGRADE',icon:'star'},{n:'系统',scene:'MENU',icon:'gear'}
+];
+
+/* ---- EQUIP（装备管理）---- */
+let eqSel=0;
+SCENES.EQUIP={
+  onBtn(b){
+    if(b==='C'){state.scene='CITY';cityMode='func';SFX.cancel();return;}
+    if(!state.ebag.length){if(b)SFX.fail();return;}
+    if(b==='B'){eqSel=(eqSel+1)%state.ebag.length;SFX.move();}
+    else if(b==='A'){
+      const it=state.ebag[eqSel];if(!it)return;
+      const old=state.equip[it.slot];
+      state.equip[it.slot]=it;state.ebag.splice(eqSel,1);
+      if(old)state.ebag.push(old);
+      eqSel=Math.min(eqSel,Math.max(0,state.ebag.length-1));
+      SFX.confirm();toast('已装备 '+it.name);save();
+    }
+  },
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);drawTownBg('.6');px(0,0,W,H,'rgba(10,7,24,.55)');
+    frameBox(10,10,W-20,H-50,'装 备');
+    ['w','a','t'].forEach((k,i)=>{
+      const it=state.equip[k];const y=36+i*20;
+      txt(EQ_SLOTS[k].n,28,y,'#c8b878',9,'left',true);
+      txt(it?it.name:'（空）',72,y,it?RARITY[it.rar].c:'#666',9,'left',true);
+      if(it){const st=it.atk?('攻+'+it.atk):it.def?('减伤'+it.def):('法强+'+Math.round((it.pow-1)*100)+'%');txt(st,W-28,y,PAL.gold2,8,'right',true);}
+    });
+    px(20,96,W-40,1,PAL.frame);
+    if(!state.ebag.length){txt('背包里没有备用装备',W/2,122,PAL.dim,9,'center');
+      txt('击败各章 BOSS 必掉高品质装备！',W/2,140,'#ffd93d',8,'center');}
+    else{
+      txt('背包（B 选择 · A 装备）：',28,108,PAL.dim,8,'left');
+      let y=124;
+      state.ebag.slice(0,9).forEach((it,i)=>{
+        const sel=i===eqSel;
+        txt((sel?'▶ ':'  ')+it.name,28,y,RARITY[it.rar].c,9,'left',true);
+        txt(EQ_SLOTS[it.slot].n,W-28,y,'#999',8,'right',true);y+=14;});
+    }
+    txt('C 返回城镇',W/2,H-18,PAL.dim,9,'center');
+  }
+};
+/* ---- 八方旅人风功能图标：中心坐标 (cx,cy)，整体缩放 s，24x24 设计稿 ---- */
+function drawIconArt(kind,cx,cy,s){
+  ctx.save();ctx.translate(cx,cy);ctx.scale(s,s);
+  if(kind==='hero'){
+    /* 法杖光球（右上，带辉光） */
+    ctx.fillStyle='rgba(127,255,225,.28)';ctx.beginPath();ctx.arc(9,-6,4.2,0,6.28);ctx.fill();
+    circ(9,-6,2.2,'#8ffce0');circ(9,-6,1,'#fff');
+    px(8.4,-4,1.3,13,'#8a6a3a');px(8.4,-4,1.3,2,'#a8854d');
+    /* 尖顶帽 */
+    ctx.fillStyle='#6a48c8';tri(0,-9,13,9);
+    px(-8.5,-9.5,17,2.6,'#5a3aa8');px(-8.5,-9.5,17,0.8,'#7c58d8');
+    ctx.fillStyle='#ffd93d';tri(0.6,-14,3.4,3);/* 帽上金星 */
+    /* 脸 */
+    px(-4,-8.6,8,6,'#f2cfa0');
+    px(-2.6,-6.6,1.3,1.7,'#2a1a3a');px(1.3,-6.6,1.3,1.7,'#2a1a3a');
+    px(-1,-4.4,2,0.8,'#d8a878');/* 嘴 */
+    /* 法袍 */
+    ctx.fillStyle='#3a5bbf';ctx.beginPath();ctx.moveTo(-7,-2.6);ctx.lineTo(7,-2.6);ctx.lineTo(9.5,11);ctx.lineTo(-9.5,11);ctx.closePath();ctx.fill();
+    px(-9.5,10,19,1.2,'#2a3f8f');
+    px(-5,-2.6,10,1.4,'#2a3f8f');/* 衣领 */
+    px(-0.7,0,1.4,9,'#ffd76a');px(-1.8,3,3.6,1.6,'#ffd76a');/* 金襟 */
+  }else if(kind==='cat'){
+    /* 耳朵 */
+    ctx.fillStyle='#fdfdfd';tri(-5.5,-2,5.4,6);tri(5.5,-2,5.4,6);
+    ctx.fillStyle='#ffb8c8';tri(-5.5,-2.6,2.6,3.2);tri(5.5,-2.6,2.6,3.2);
+    /* 头 */
+    px(-7,-4,14,10.5,'#fdfdfd');
+    circ(-6.2,1.2,3,'#fdfdfd');circ(6.2,1.2,3,'#fdfdfd');
+    px(-7,5,14,1,'#e8e0f0');
+    /* 眼睛（蓝宝石色） */
+    px(-4.4,0,1.7,2.4,'#4a9fe8');px(2.7,0,1.7,2.4,'#4a9fe8');
+    px(-4,-0.4,1.7,0.8,'#fff');px(3.1,-0.4,1.3,0.8,'#fff');
+    px(-0.8,2.2,1.6,1.2,'#ff9ab0');/* 鼻 */
+    /* 腮红 */
+    ctx.fillStyle='rgba(255,150,170,.45)';ctx.fillRect(-6.4,2.4,2.2,1.4);ctx.fillRect(4.2,2.4,2.2,1.4);
+    /* 铃铛 */
+    circ(0,7.4,2,'#ffd93d','#c8932a');px(-0.4,7.8,0.8,0.8,'#8a5f10');
+  }else if(kind==='star'){
+    /* 摊开的魔法书 */
+    ctx.fillStyle='#4a2d86';px(-10,7.6,20,3.2,'#4a2d86');px(-10,7.6,20,1,'#6a48c8');
+    ctx.fillStyle='#efe8ff';ctx.beginPath();ctx.moveTo(-9.5,7.6);ctx.lineTo(0,4.6);ctx.lineTo(0,10);ctx.lineTo(-9.5,10.6);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(9.5,7.6);ctx.lineTo(0,4.6);ctx.lineTo(0,10);ctx.lineTo(9.5,10.6);ctx.closePath();ctx.fill();
+    ctx.fillStyle='#cfc4e8';px(-8,7,3,0.7,'#cfc4e8');px(-4.5,6,3,0.7,'#cfc4e8');px(2,6,3,0.7,'#cfc4e8');px(5.5,7,3,0.7,'#cfc4e8');
+    /* 悬浮发光星（四芒） */
+    ctx.fillStyle='rgba(255,217,61,.22)';ctx.beginPath();ctx.arc(0,-5.6,5.4,0,6.28);ctx.fill();
+    ctx.fillStyle='#ffd93d';
+    ctx.beginPath();ctx.moveTo(0,-11.2);ctx.lineTo(1.5,-6.2);ctx.lineTo(0,-1.6);ctx.lineTo(-1.5,-6.2);ctx.closePath();ctx.fill();
+    ctx.beginPath();ctx.moveTo(-4.2,-6.2);ctx.lineTo(0,-7.5);ctx.lineTo(4.2,-6.2);ctx.lineTo(0,-4.9);ctx.closePath();ctx.fill();
+    circ(0,-6.2,1.4,'#ffe98a');
+  }else if(kind==='flask'){
+    /* 玻璃颈 + 瓶口 */
+    ctx.fillStyle='rgba(205,232,255,.45)';ctx.fillRect(-1.6,-10.5,3.2,6.5);
+    px(-3.2,-11.6,6.4,1.7,'#cfe6ff');
+    /* 辉光 + 球形瓶身 */
+    ctx.fillStyle='rgba(90,205,255,.16)';ctx.beginPath();ctx.arc(0,2,9,0,6.28);ctx.fill();
+    circ(0,2,7,'rgba(150,225,255,.30)');
+    circ(0,3,4.8,'#2fa8e8');circ(0,5,4.2,'#2fa8e8');
+    /* 高光与气泡 */
+    px(-3.6,-1.6,2,4,'rgba(255,255,255,.55)');
+    circ(-1.6,0.4,1.1,'rgba(255,255,255,.85)');circ(2.2,1.6,0.8,'rgba(255,255,255,.7)');circ(0.6,-1.2,0.6,'rgba(255,255,255,.7)');
+  }else if(kind==='bag'){
+    /* 提绳 */
+    px(-2.4,-9,4.8,3.4,'#6a4a2a');px(-1.2,-10.4,2.4,1.2,'#8a6238');
+    /* 袋身 */
+    px(-7.4,-6,14.8,13.4,'#8a5f36');
+    circ(-7,1.2,3.4,'#8a5f36');circ(7,1.2,3.4,'#8a5f36');
+    px(-7.4,6.6,14.8,1.2,'#5a3a1f');
+    /* 盖布 */
+    px(-7.4,-6.6,14.8,5.4,'#a8794a');px(-7.4,-1.6,14.8,1,'#6a4526');px(-7.4,-6.6,14.8,0.9,'#c09468');
+    /* 金扣 */
+    px(-1.9,-2.4,3.8,3.4,'#ffd76a');px(-0.6,-1.2,1.2,1.4,'#5a3a1f');
+    /* 缝线 */
+    ctx.fillStyle='rgba(255,225,160,.5)';ctx.fillRect(-6,-0.2,1,1);ctx.fillRect(-3,-0.2,1,1);ctx.fillRect(0,-0.2,1,1);ctx.fillRect(3,-0.2,1,1);ctx.fillRect(5.4,-0.2,1,1);
+  }else if(kind==='gear'){
+    /* 齿（轴对齐4 + 斜角4） */
+    px(-2,-11,4,4.4,'#a8a8bc');px(-2,6.6,4,4.4,'#a8a8bc');px(-11,-2,4.4,4,'#a8a8bc');px(6.6,-2,4.4,4,'#a8a8bc');
+    px(-7.6,-7.6,3.6,3.6,'#a8a8bc');px(4,-7.6,3.6,3.6,'#a8a8bc');px(-7.6,4,3.6,3.6,'#a8a8bc');px(4,4,3.6,3.6,'#a8a8bc');
+    /* 环体 */
+    circ(0,0,6.8,'#c9c9d8');circ(0,0,3.1,'#2a2150');
+    circ(0,0,6.8,'rgba(0,0,0,0)','#8a8aa0');
+    /* 高光 */
+    px(-4.6,-4.6,2.2,2.2,'rgba(255,255,255,.75)');px(2.6,3,1.4,1.4,'rgba(255,255,255,.35)');
+  }
+  ctx.restore();
+}
+function drawLocIcon(kind,x,y){
+  if(kind==='home'){px(x+2,y+5,9,7,'#c9a06a');px(x,y+2,13,4,'#8a5a3a');px(x+5,y+7,3,5,'#5a3c2a');px(x+9,y+7,2,2,'#ffe14d');}
+  else if(kind==='forest'){px(x+5,y+8,3,4,'#7a5a3a');px(x+3,y+1,7,4,'#4a9a4a');px(x+2,y+4,9,4,'#3d8a3d');px(x+4,y+2,2,2,'#7cfc9b');}
+  else if(kind==='flask'){px(x+4,y+1,4,2,'#7cf');px(x+3,y+3,6,2,'#7cf8');px(x+2,y+5,8,6,'#5ec8f2');px(x+4,y+7,2,2,'#fff');}
+}
+function drawCityHeader(){
+  px(0,0,W,46,'rgba(10,8,20,.78)');
+  line(0,46,W,46,PAL.gold2,1);
+  box(4,5,36,36,'#241d40',PAL.gold2);
+  portrait('hero',6,7,32,32);
+  txt(state.name,46,17,'#fff',12,'left',true);
+  txt(RANKS[state.rank]+' · Lv'+state.level,46,30,PAL.gold,8,'left');
+  bar(46,35,66,5,state.hp/state.maxHp,'#3a1a1a',PAL.red);
+  bar(118,35,50,5,state.mp/state.maxMp,'#1a2a3a',PAL.blue);
+  circ(W-82,13,4,PAL.gold,'#b8932a');
+  txt(state.gold,W-74,17,PAL.gold,11,'left',true);
+  txt('击杀'+state.kills+' · '+CHAPTERS[state.map.chapter],W-6,31,PAL.dim,7,'right');
+}
+/* ---- 八方旅人风功能卡：深靛渐变底 + 双层描金框 + 四角金饰 + 选中流光辉光 ---- */
+function drawFuncCard(x,y,sel,t,icon,label,cw){
+  const w=cw||64,h=84;
+  /* 落地阴影 */
+  ctx.fillStyle='rgba(0,0,0,.4)';ctx.fillRect(x+2,y+h-1,w-4,3);
+  /* 卡底：垂直渐变 */
+  const g=ctx.createLinearGradient(0,y,0,y+h);
+  g.addColorStop(0,sel?'#3d2f68':'#292050');g.addColorStop(1,sel?'#241b48':'#120d2c');
+  ctx.fillStyle=g;ctx.fillRect(x,y,w,h);
+  /* 选中：图标背后金色辉光 */
+  if(sel){
+    const gg=ctx.createRadialGradient(x+w/2,y+32,4,x+w/2,y+32,32);
+    gg.addColorStop(0,'rgba(255,214,110,'+(0.22+0.08*Math.sin(t*3)).toFixed(3)+')');
+    gg.addColorStop(1,'rgba(255,214,110,0)');
+    ctx.fillStyle=gg;ctx.fillRect(x+2,y+2,w-4,h-4);
+  }
+  /* 双层描金边框 */
+  ctx.strokeStyle='#0a0818';ctx.lineWidth=1;ctx.strokeRect(x+0.5,y+0.5,w-1,h-1);
+  ctx.strokeStyle=sel?'#ffd76a':'#7a5f2a';ctx.strokeRect(x+1.5,y+1.5,w-3,h-3);
+  ctx.strokeStyle=sel?'rgba(255,215,106,.45)':'rgba(122,95,42,.35)';ctx.strokeRect(x+3.5,y+3.5,w-7,h-7);
+  /* 四角金饰 */
+  const cs=[[x+5,y+5],[x+w-5,y+5],[x+5,y+h-5],[x+w-5,y+h-5]];
+  for(const c of cs){ctx.fillStyle=sel?'#ffe9a0':'#9a7a3a';ctx.fillRect(c[0]-2,c[1]-0.5,4,1);ctx.fillRect(c[0]-0.5,c[1]-2,1,4);}
+  /* 选中：沿边框奔跑的流光 */
+  if(sel){
+    const per=2*(w+h),p=(t*46)%per;let lx,ly;
+    if(p<w){lx=x+p;ly=y;}else if(p<w+h){lx=x+w;ly=y+(p-w);}else if(p<2*w+h){lx=x+w-(p-w-h);ly=y+h;}else{lx=x;ly=y+h-(p-2*w-h);}
+    ctx.fillStyle='rgba(255,242,200,.4)';ctx.fillRect(lx-4,ly-1,8,2);
+    ctx.fillStyle='#fff2c8';ctx.fillRect(lx-2,ly-1,4,2);
+  }
+  drawIconArt(icon,x+w/2,y+32,sel?1.32+0.04*Math.sin(t*3):1.26);
+  txt(label,x+w/2,y+h-9,sel?'#ffe9b0':'#c8c0e0',11,'center',true);
+}
+SCENES.CITY={
+  onBtn(b){
+    if(cityMode==='map'){
+      if(b==='B'){locSel=(locSel+1)%LOCATIONS.length;SFX.move();}
+      else if(b==='A'){SFX.confirm();LOCATIONS[locSel].act();}
+      else if(b==='C'){cityMode='func';funcSel=0;SFX.confirm();}
+    }else{
+      if(b==='B'){funcSel=(funcSel+1)%FUNCS.length;SFX.move();}
+      else if(b==='A'){SFX.confirm();const f=FUNCS[funcSel];if(f.scene==='ALCHEMY')alcIdx=0;if(f.scene==='BOOK')bookIdx=0;if(f.scene==='PARTNERS')partIdx=0;if(f.scene==='MUPGRADE')muIdx=0;state.scene=f.scene;}
+      else if(b==='C'){cityMode='map';SFX.cancel();}
+    }
+  },
+  update(dt){
+    cityT+=dt;
+    for(const p of cityDust){p.y-=p.sp*dt;p.tw+=dt*2;if(p.y<-4){p.y=H+4;p.x=Math.random()*W;}}
+  },
+  draw(){
+    const t=cityT;
+    const art=Assets.townArt;
+    px(0,0,W,H,PAL.bg);
+    if(art){
+      /* 小镇全景铺底，轻微呼吸缩放 + 漂移（电影感），裁掉底部水印 */
+      const sh=art.height*0.955;
+      const zoom=1.0+0.02*Math.sin(t*0.2);
+      const dh=H*zoom+12, dw=dh*art.width/sh;
+      const dx=(W-dw)/2, dy=(H-dh)/2+Math.sin(t*0.13)*2;
+      ctx.drawImage(art,0,0,art.width,sh,dx,dy,dw,dh);
+    }
+    /* 全屏轻微压暗衬 UI，上下再加深 */
+    px(0,0,W,H,'rgba(8,6,16,.26)');
+    for(let y=0;y<50;y++){ctx.fillStyle='rgba(8,6,16,'+(0.4*(1-y/50)).toFixed(3)+')';ctx.fillRect(0,y,W,1);}
+    /* 漂浮金尘 */
+    for(const p of cityDust){const a=0.18+0.4*Math.abs(Math.sin(p.tw));ctx.globalAlpha=a;px(p.x,p.y,p.r,p.r,PAL.gold);}
+    ctx.globalAlpha=1;
+    drawCityHeader();
+    txtOut('· 魔 法 小 镇 ·',W/2,66,'#ffe9b0',11,'center',true,'rgba(20,10,4,.85)');
+    if(cityMode==='map'){
+      let y=70;
+      LOCATIONS.forEach((nd,i)=>{
+        const sel=i===locSel;
+        box(14,y,W-28,26,sel?'rgba(58,44,92,.94)':'rgba(20,15,38,.84)',sel?PAL.gold:PAL.frame);
+        if(sel){px(14,y,3,26,PAL.gold);txt('▶',W-22,y+18,PAL.gold,11,'left');}
+        txt(nd.n,28,y+17,sel?'#fff':'#c8c0e0',12,'left',true);
+        txt(nd.d,W-30,y+16,sel?PAL.gold2:PAL.dim,8,'right');
+        y+=29;
+      });
+    }else{
+      /* 功能面板：八方旅人风描金暗卡（4+4 两行，共 8 项；两行同列对齐，x=10 起、步进 56、卡宽 52 → 右缘 230 不出屏） */
+      for(let i=0;i<4;i++)drawFuncCard(10+i*56,70,i===funcSel,t,FUNCS[i].icon,FUNCS[i].n,52);
+      for(let i=4;i<8;i++)drawFuncCard(10+(i-4)*56,158,i===funcSel,t,FUNCS[i].icon,FUNCS[i].n,52);
+      txt('B 切换 · A 打开 · C 回地图',W/2,H-8,PAL.dim,9,'center');
+    }
+    if(cityMode==='map'){
+      /* 底部功能栏只在地图模式显示（提示 C 可打开功能面板） */
+      px(0,H-26,W,26,'rgba(12,9,22,.9)');
+      line(0,H-26,W,H-26,PAL.frame,1);
+      const fn=FUNCS.length;
+      for(let i=0;i<fn;i++){
+        const x=8+i*((W-16)/(fn));
+        ctx.globalAlpha=0.55;
+        drawIconArt(FUNCS[i].icon,x+((W-16)/fn)/2-2,H-13,0.5);
+        ctx.globalAlpha=1;
+      }
+      txt('B 选择地点 · A 进入 · C 功能栏',W/2,H-4,PAL.dim,9,'center');
+    }
+  }
+};
+
+/* ---- 共用：小镇背景 + 菜单场景模板 ---- */
+function drawTownBg(dim){
+  const art=Assets.townArt;
+  px(0,0,W,H,PAL.bg);
+  if(art){const sh=art.height*0.955;const dh=H+12,dw=dh*art.width/sh;ctx.drawImage(art,0,0,art.width,sh,(W-dw)/2,(H-dh)/2,dw,dh);}
+  px(0,0,W,H,'rgba(8,6,16,'+dim+')');
+}
+function menuScene(title,itemsFn,backTo){
+  return{
+    idx:0,
+    onBtn(b){
+      const items=itemsFn();
+      if(b==='A'){
+        const it=items[this.idx];if(!it)return;
+        const dr=typeof it.dis==='function'?it.dis():it.dis;
+        if(dr){SFX.fail();toast(dr,'#ff6b6b');return;}
+        SFX.confirm();it.act();
+      }
+      else if(b==='B'){this.idx=(this.idx+1)%items.length;SFX.move();}
+      else if(b==='C'){state.scene=backTo;SFX.cancel();}
+    },
+    update(){},
+    draw(){
+      const items=itemsFn();
+      if(this.idx>=items.length)this.idx=0;
+      drawTownBg('.72');
+      frameBox(10,10,W-20,H-50,title);
+      let y=30;
+      items.forEach((it,i)=>{
+        const sel=i===this.idx;
+        const dr=typeof it.dis==='function'?it.dis():it.dis;
+        box(20,y,W-40,38,sel?'rgba(58,44,92,.95)':'rgba(24,18,44,.92)',sel?PAL.gold:PAL.frame);
+        if(sel){px(20,y,3,38,PAL.gold);txt('▶',W-28,y+23,PAL.gold,11,'left');}
+        txt(typeof it.n==='function'?it.n():it.n,30,y+16,dr?'#777':(sel?'#fff':'#c8c0e0'),11,'left',true);
+        if(dr)txt('🔒',W-30,y+16,'#888',9,'right');
+        else if(it.sub)txt(typeof it.sub==='function'?it.sub():it.sub,30,y+30,PAL.dim,8,'left');
+        y+=42;
+      });
+      txt('B 切换 · A 确定 · C 返回',W/2,H-16,PAL.dim,9,'center');
+    }
+  };
+}
+
+/* ---- 魔法学院 ---- */
+const allSpellsCnt=FORMS.length*ELEMS.length*MODS.length;
+const trainCost=()=>20+state.studyCnt*15;
+SCENES.ACAD=menuScene('魔 法 学 院',()=>[
+  {n:()=>'魔力修行 · '+trainCost()+'金',sub:()=>'魔力上限 +5（当前上限 '+state.maxMp+'）',
+   dis:()=>state.gold<trainCost()?'金币不足':null,
+   act(){state.gold-=trainCost();state.studyCnt++;state.maxMp+=5;state.mp=state.maxMp;save();SFX.level();toast('魔力上限提升至 '+state.maxMp);}},
+  {n:'学习属性魔法 · 45金',sub:()=>'随机习得一门未收录魔法（已收录 '+Object.keys(state.discovered).length+'/'+allSpellsCnt+'）',
+   dis:()=>state.gold<45?'金币不足':(Object.keys(state.discovered).length>=allSpellsCnt?'已学完全部魔法':null),
+   act(){state.gold-=45;let k;do{k=ri(0,FORMS.length-1)+'-'+ri(0,ELEMS.length-1)+'-'+ri(0,MODS.length-1);}while(state.discovered[k]);state.discovered[k]=spellName(k);save();SFX.magic();toast('习得新魔法：'+spellName(k),PAL.gold);}},
+  {n:'职业晋升考核',sub:()=>promoteReady()?'已达考核标准，A 参加考核！':('需击杀 '+state.kills+'/'+RANK_KILLS[state.rank]+' 且 委托 '+state.questDone+'/'+(state.rank+1)),
+   dis:()=>promoteReady()?null:(state.kills<RANK_KILLS[state.rank]?'击杀数未达标':'未完成足够的公会委托'),
+   act(){state.scene='PROMOTE';}}
+],'CITY');
+
+/* ---- 野外试炼（多区域 + 遗迹秘境） ---- */
+const WILD_REQ=[1,3,5,7,9];
+let wildIdx=0;
+SCENES.WILD={
+  onBtn(b){
+    ensureDungeonOffers();
+    const offers=state.dungeonOffers||[];
+    const n=CHAPTERS.length+1+offers.length;
+    if(b==='B'){wildIdx=(wildIdx+1)%n;SFX.move();}
+    else if(b==='C'){state.scene='CITY';SFX.cancel();}
+    else if(b==='A'){
+      if(wildIdx<CHAPTERS.length){
+        /* 主线门禁：必须先讨伐前一章 BOSS（bossKilled），形成"主线剧情"推进感 */
+        if(wildIdx>0&&!state.bossKilled[wildIdx-1]){SFX.fail();toast('主线：先击败 '+CHAPTERS[wildIdx-1]+' 的BOSS！','#ff6b6b');return;}
+        if(state.level<WILD_REQ[wildIdx]){SFX.fail();toast('建议 Lv'+WILD_REQ[wildIdx]+' 以上','#ff6b6b');return;}
+        if(!state.storySeen[wildIdx]){state.storySeen[wildIdx]=true;toast(STORY_ENTER[wildIdx],'#c8b8ff');save();}
+        state.map.chapter=wildIdx;save();SFX.confirm();startBattle();
+      }else if(wildIdx===CHAPTERS.length){
+        if(state.rank<1){SFX.fail();toast('晋升初级魔法师后开放','#ff6b6b');return;}
+        SFX.confirm();toast('遗迹秘境：连过 3 层拿豪华奖励！','#ffd93d');startBattle(true);
+      }else{
+        const id=offers[wildIdx-CHAPTERS.length-1];
+        if(id==null){SFX.fail();return;}
+        startDungeon(id);
+      }
+    }
+  },
+  update(){},
+  draw(){
+    ensureDungeonOffers();
+    const offers=state.dungeonOffers||[];
+    drawTownBg('.72');
+    frameBox(10,10,W-20,H-50,'野 外 试 炼');
+    let y=28;
+    CHAPTERS.forEach((nm,i)=>{
+      const sel=i===wildIdx,lock=(i>0&&!state.bossKilled[i-1])||state.level<WILD_REQ[i];
+      const bossLock=i>0&&!state.bossKilled[i-1];
+      box(20,y,W-40,30,sel?'rgba(58,44,92,.95)':'rgba(24,18,44,.92)',sel?PAL.gold:PAL.frame);
+      if(sel){px(20,y,3,30,PAL.gold);txt('▶',W-28,y+19,PAL.gold,11,'left');}
+      txt(nm,30,y+13,lock?'#777':(sel?'#fff':'#c8c0e0'),11,'left',true);
+      if(state.bossKilled[i])txt('✓BOSS',W-88,y+13,'#7fdc8a',8,'right',true);
+      txt(bossLock?'🔒 先击败'+CHAPTERS[i-1]:(state.level<WILD_REQ[i]?'🔒 Lv'+WILD_REQ[i]:'出没：'+ZONE_MOBS[i].length+' 种'),30,y+25,lock?'#776':(sel?'#9fd8a0':PAL.dim),8,'left');
+      if(sel&&!lock)txt('A 出发',W-30,y+25,PAL.gold2,8,'right',true);
+      y+=33;
+    });
+    const dsel=wildIdx===CHAPTERS.length,dlock=state.rank<1;
+    box(20,y,W-40,30,dsel?'rgba(74,52,20,.95)':'rgba(34,26,16,.92)',dsel?PAL.gold:PAL.gold2);
+    if(dsel){px(20,y,3,30,PAL.gold);txt('▶',W-28,y+19,PAL.gold,11,'left');}
+    txt('遗迹秘境',30,y+13,dlock?'#777':'#ffd93d',11,'left',true);
+    txt(dlock?'🔒 需晋升初级魔法师':'历代魔物混刷 · 精英连战 3 层',30,y+25,dlock?'#776':PAL.gold2,8,'left');
+    y+=33;
+    /* 随机副本 / 地下迷宫 / 古代遗迹：每次只刷 1~2 张，通过或死亡后刷新 */
+    txt('— 随机秘境（通过/死亡刷新）—',W/2,y-4,PAL.dim,8,'center');y+=4;
+    offers.forEach((id,i)=>{
+      const D=DUNGEONS[id];const sel=wildIdx===CHAPTERS.length+1+i;
+      const kindC=D.kind==='古代遗迹'?'#c06bff':D.kind==='地下迷宫'?'#5ec8f2':'#7fdc8a';
+      box(20,y,W-40,30,sel?'rgba(58,44,92,.95)':'rgba(24,18,44,.92)',sel?PAL.gold:PAL.frame);
+      if(sel){px(20,y,3,30,PAL.gold);txt('▶',W-28,y+19,PAL.gold,11,'left');}
+      txt(D.name,30,y+13,sel?'#fff':'#c8c0e0',11,'left',true);
+      txt(D.kind+' · '+D.minR+'~'+D.maxR+'轮 · 推荐Lv'+D.reqLv,30,y+25,kindC,8,'left');
+      if(sel)txt('A 进入',W-30,y+25,PAL.gold2,8,'right',true);
+      y+=33;
+    });
+    txt('B 切换 · A 出发/进入 · C 返回',W/2,H-16,PAL.dim,9,'center');
+  }
+};
+
+/* ---- 冒险者公会 ---- */
+const ARANKS=['F','E','D','C','B','A','S'];
+let gIdx=0;
+const QUESTS=[
+  {n:'讨伐委托 · 初级',type:'kill',need:8,gold:40,sub:'击杀 8 只魔物',rank:0},
+  {n:'采药委托',type:'herb',need:3,gold:35,orbs:1,sub:'交付 3 株月光草',rank:0},
+  {n:'讨伐委托 · 中级',type:'kill',need:20,gold:120,potions:2,sub:'击杀 20 只魔物',rank:1},
+  {n:'深渊侦查 · 上级',type:'kill',need:35,gold:260,crystals:1,sub:'击杀 35 只魔物',rank:2}
+];
+function questProg(q){return q.type==='kill'?(state.kills-state.qBase):state.herbs;}
+SCENES.GUILD={
+  onBtn(b){
+    if(b==='B'){gIdx=(gIdx+1)%QUESTS.length;SFX.move();}
+    else if(b==='C'){state.scene='CITY';SFX.cancel();}
+    else if(b==='A'){
+      const q=QUESTS[gIdx];
+      if(state.arank<q.rank){SFX.fail();toast('需冒险者等级 '+ARANKS[q.rank],'#ff6b6b');return;}
+      if(state.accepted<0){state.accepted=gIdx;state.qBase=state.kills;save();SFX.confirm();toast('接取委托：'+q.n);return;}
+      if(state.accepted!==gIdx){SFX.fail();toast('先完成进行中的委托');return;}
+      if(questProg(q)<q.need){SFX.fail();toast('委托还未完成');return;}
+      if(q.type==='herb')state.herbs-=q.need;
+      state.gold+=q.gold;if(q.orbs)state.orbs+=q.orbs;if(q.potions)state.potions+=q.potions;if(q.crystals)state.crystals+=q.crystals;
+      state.accepted=-1;state.questDone++;
+      SFX.level();toast('委托完成！+'+q.gold+'金',PAL.gold);
+      if(state.questDone%2===0&&state.arank<ARANKS.length-1){state.arank++;toast('冒险者等级提升：'+ARANKS[state.arank]+' 级！','#7cf');}
+      save();
+    }
+  },
+  update(){},
+  draw(){
+    drawTownBg('.72');
+    frameBox(10,10,W-20,H-50,'冒 险 者 公 会');
+    txt('冒险者等级 '+ARANKS[state.arank]+' · 已完成 '+state.questDone+' 单',W/2,26,PAL.gold2,9,'center',true);
+    let y=38;
+    QUESTS.forEach((q,i)=>{
+      const sel=i===gIdx,lock=state.arank<q.rank,acc=state.accepted===i;
+      box(20,y,W-40,42,sel?'rgba(58,44,92,.95)':'rgba(24,18,44,.92)',acc?PAL.green:(sel?PAL.gold:PAL.frame));
+      if(sel){px(20,y,3,42,PAL.gold);txt('▶',W-28,y+24,PAL.gold,11,'left');}
+      txt((acc?'✓ ':'')+q.n,30,y+15,lock?'#777':(acc?PAL.green:(sel?'#fff':'#c8c0e0')),11,'left',true);
+      if(lock){txt('🔒 冒险者 '+ARANKS[q.rank]+' 级',30,y+29,'#776',8,'left');}
+      else{
+        txt(q.sub+' · '+q.gold+'金',30,y+29,PAL.dim,8,'left');
+        if(acc){const p=clamp(questProg(q)/q.need,0,1);bar(W-110,y+22,80,6,p,'#2a2348',p>=1?PAL.green:PAL.gold2);txt(Math.min(questProg(q),q.need)+'/'+q.need,W-30,y+29,p>=1?PAL.green:PAL.gold2,8,'right',true);}
+      }
+      y+=46;
+    });
+    txt(state.accepted<0?'A 接取委托':'A 完成/交付（绿色为进行中）',W/2,H-16,PAL.dim,9,'center');
+  }
+};
+
+/* ---- 住宅 ---- */
+SCENES.HOME=menuScene('住 宅',()=>[
+  {n:'休息',sub:()=>'睡一觉恢复全部状态（HP '+Math.ceil(state.hp)+'/'+state.maxHp+' · MP '+Math.floor(state.mp)+'/'+state.maxMp+'）',
+   act(){state.hp=state.maxHp;state.mp=state.maxMp;save();SFX.potion();toast('睡了一觉，状态全满');}},
+  {n:'炼金台',sub:'用药草/兽骨炼制药剂与捕捉球',
+   act(){alcIdx=0;state.scene='ALCHEMY';}},
+  {n:'魔法研究',sub:'消耗材料提升魔法等级 · 有成功率',
+   act(){resIdx=0;state.scene='RESEARCH';}}
+],'CITY');
+
+/* ---- 魔法研究 ---- */
+let resIdx=0;
+function researchRate(k){return Math.max(25,85-15*slv(k));}
+SCENES.RESEARCH={
+  onBtn(b){
+    const ks=Object.keys(state.discovered);
+    if(b==='B'){resIdx=(resIdx+1)%ks.length;SFX.move();}
+    else if(b==='C'){state.scene='HOME';SFX.cancel();}
+    else if(b==='A'){
+      if(state.herbs<2||state.mats<2){SFX.fail();toast('需要 月光草x2 + 兽骨x2','#ff6b6b');return;}
+      const k=ks[resIdx],lv=slv(k);
+      state.herbs-=2;state.mats-=2;
+      if(Math.random()*100<researchRate(k)){slvSet(k,lv+1);SFX.level();toast('研究成功！'+spellName(k)+' 升至 '+(lv+1)+' 级',PAL.gold);}
+      else{SFX.fail();toast('研究失败…材料已消耗','#ff6b6b');}
+      save();
+    }
+  },
+  update(){},
+  draw(){
+    const ks=Object.keys(state.discovered);
+    if(resIdx>=ks.length)resIdx=0;
+    drawTownBg('.72');
+    frameBox(10,10,W-20,H-50,'魔 法 研 究');
+    txt('魔法等级越高，成功率越低',W/2,26,PAL.dim,8,'center');
+    const start=Math.max(0,resIdx-4);
+    let y=38;
+    ks.slice(start,start+6).forEach((k,i)=>{
+      const idx=start+i,sel=idx===resIdx,lv=slv(k);
+      box(20,y,W-40,26,sel?'rgba(58,44,92,.95)':'rgba(24,18,44,.92)',sel?PAL.gold:PAL.frame);
+      if(sel)px(20,y,3,26,PAL.gold);
+      txt((sel?'▶ ':'')+spellName(k),28,y+17,sel?'#fff':'#c8c0e0',10,'left',true);
+      txt('Lv'+lv,W-30,y+17,lv>0?PAL.gold:PAL.dim,9,'right',true);
+      y+=29;
+    });
+    const k=ks[resIdx],lv=slv(k);
+    frameBox(16,224,W-32,56);
+    txt(spellName(k)+'  Lv'+lv+' → Lv'+(lv+1),W/2,241,'#fff',11,'center',true);
+    txt('威力 '+spellPower(k)+' → '+spellPower2(k,lv+1)+' · 成功率 '+researchRate(k)+'%',W/2,257,PAL.gold2,9,'center');
+    txt('消耗：月光草x2 + 兽骨x2（持有 '+state.herbs+'/'+state.mats+'）',W/2,272,state.herbs>=2&&state.mats>=2?PAL.dim:'#ff6b6b',8,'center');
+    txt('B 切换 · A 研究 · C 返回住宅',W/2,H-16,PAL.dim,9,'center');
+  }
+};
+function spellPower2(key,lv){const a=key.split('-').map(Number);const f=FORMS[a[0]],el=ELEMS[a[1]],m=MODS[a[2]];return Math.round((9+state.level*3+state.rank*5)*f.pow*el.pow*m.pow*(1+0.15*lv));}
+
+/* ---- 锻造房 ---- */
+const wCost=()=>({m:2*(state.weaponLv+1),g:30*(state.weaponLv+1)});
+const aCost=()=>({m:2*(state.armorLv+1),g:30*(state.armorLv+1)});
+SCENES.FORGE=menuScene('锻 造 房',()=>[
+  {n:()=>'锻造武器 '+(state.weaponLv+1)+' 级 · '+wCost().g+'金+兽骨x'+wCost().m,
+   sub:()=>'攻击 +2（当前武器 '+state.weaponLv+' 级 · 攻击加成 +'+state.atkBonus+'）',
+   dis:()=>state.gold<wCost().g||state.mats<wCost().m?'材料不足':null,
+   act(){const c=wCost();state.gold-=c.g;state.mats-=c.m;state.weaponLv++;state.atkBonus+=2;save();SFX.hit();toast('锻造成功！攻击加成 +'+state.atkBonus,PAL.gold);}},
+  {n:()=>'锻造法袍 '+(state.armorLv+1)+' 级 · '+aCost().g+'金+兽骨x'+aCost().m,
+   sub:()=>'生命上限 +8（当前法袍 '+state.armorLv+' 级）',
+   dis:()=>state.gold<aCost().g||state.mats<aCost().m?'材料不足':null,
+   act(){const c=aCost();state.gold-=c.g;state.mats-=c.m;state.armorLv++;state.maxHp+=8;state.hp+=8;save();SFX.level();toast('锻造成功！生命上限 '+state.maxHp,PAL.gold);}}
+],'CITY');
+
+/* ---- 魔法黑市 ---- */
+const MARKET=[
+  {n:'月光草 · 8金',price:8,hold:()=>state.herbs,act(){state.herbs++;}},
+  {n:'兽骨 · 10金',price:10,hold:()=>state.mats,act(){state.mats++;}},
+  {n:'魔晶 · 40金',price:40,hold:()=>state.crystals,act(){state.crystals++;}},
+  {n:'封印卡 · 90金',price:90,hold:()=>state.seals,sub:'高级捕捉 · 75~95% 成功率',act(){state.seals++;}},
+  {n:'魔法书 · 60金',price:60,sub:'随机一本 · 直接习得其中魔法',act(){let k;do{k=ri(0,FORMS.length-1)+'-'+ri(0,ELEMS.length-1)+'-'+ri(0,MODS.length-1);}while(state.discovered[k]);state.discovered[k]=spellName(k);SFX.magic();toast('从魔法书习得：'+spellName(k),PAL.gold);}}
+];
+SCENES.MARKET=menuScene('魔 法 黑 市',()=>MARKET.map(m=>({
+  n:m.n+(m.hold?'（持有 '+m.hold()+'）':''),
+  sub:m.sub,dis:()=>state.gold<m.price?'金币不足':null,
+  act(){state.gold-=m.price;m.act();save();SFX.coin();toast('买下了 '+(m.n.split(' ·')[0]));}
+})),'CITY');
+
+/* ---- BATTLE (side-scrolling) ---- */
+let bt=null;
+function startBattle(dungeon){
+  bt={phase:'walk',t:0,px:70,cam:0,wave:1,walkT:0,walkNext:rf(2.8,4.2),
+    turn:1,enemies:[],fx:[],nums:[],hurtT:0,magicIdx:0,itemIdx:0,enemyIdx:0,actT:0,
+    auto:state.autoMode,autoT:state.autoMode?1.4:0,autoT2:2.0,autoSpell:0,lastSpell:null,
+    goldGain:0,expGain:0,herbGain:0,matGain:0,potGain:0,killCnt:0,bossEquip:null,
+    lootDone:false,elite:false,walkF:0,dungeon:!!dungeon,eventSeen:false,eventT:0};
+  state.scene='BATTLE';
+}
+/* 随机副本入口：每次野外试炼只刷 1~2 张，进入或死亡后清空 → WILD 重新随机（通过/死亡刷新一次） */
+function ensureDungeonOffers(){
+  if(!Array.isArray(state.dungeonOffers)||state.dungeonOffers.length===0){
+    const n=ri(1,2),ids=[];while(ids.length<n){const id=ri(0,DUNGEONS.length-1);if(ids.indexOf(id)<0)ids.push(id);}
+    state.dungeonOffers=ids;
+  }
+}
+function startDungeon(id){
+  const D=DUNGEONS[id];if(!D)return;
+  startBattle(true);
+  bt.dungeon=false;bt.crawl=true;bt.dungeonId=id;bt.dungeonName=D.name;
+  bt.dungeonRounds=ri(D.minR,D.maxR);
+  if(state.level<D.reqLv)toast('⚠ '+D.name+' 推荐 Lv'+D.reqLv+'，强行进入会很苦','#ff9');
+  save();SFX.confirm();
+}
+/* 副本通关：按 dropRar 给稀有装备 + 魔石 + 稀有材料/药品，并刷新副本入口 */
+function finishCrawl(){
+  const D=DUNGEONS[bt.dungeonId];
+  const gd=120+bt.dungeonRounds*4+state.map.chapter*40;state.gold+=gd;bt.goldGain+=gd;
+  const it=rollEquip(D.dropRar||2);state.ebag.push(it);
+  const st=Math.min(4,1+ri(0,3)),stn=ri(1,3);state.stones[st]=stoneN(st)+stn;
+  if(Math.random()<0.8){const id=ri(0,MATERIALS.length-1);state.mbag[id]=(state.mbag[id]||0)+ri(1,2);}
+  if(Math.random()<0.6){const id=ri(0,POTIONS.length-1);state.pbag[id]=(state.pbag[id]||0)+1;}
+  state.dungeonOffers=null;
+  toast('【'+D.name+'】通关！+'+gd+'金 +'+it.name+' +'+STONE_NAMES[st]+'×'+stn,'#ffd93d');
+  save();endBattle();
+}
+function rollRarity(){const r=Math.random()*100;let acc=0;for(let i=0;i<RARITY.length;i++){acc+=RARITY[i].w;if(r<acc)return i;}return 0;}
+function spawnGroup(){
+  const MB=1.05;/* 小怪整体难度微调：血量/攻击 +5%（用户反馈略简单） */
+  /* 副本：达到设定轮数就通关（finishCrawl）；绝不刷章节 BOSS */
+  if(bt.crawl&&bt.wave>=bt.dungeonRounds){finishCrawl();return;}
+  /* 远征结构：第 5 场必出精英，第 10 场 BOSS 战（其余场次维持随机小概率精英） */
+  if(!bt.crawl&&bt.wave>=10){spawnBoss();return;}
+  const cnt=ri(1,3);
+  const elite=bt.crawl?true:bt.wave===5?true:Math.random()<(bt.dungeon?0.55:0.12);
+  bt.elite=elite;
+  /* 副本：用该副本的怪物池（稀有怪更多）；远征/遗迹：原逻辑 */
+  const pool=bt.crawl?(DUNGEONS[bt.dungeonId].pool):(bt.dungeon?['bat','skel','magma','sala','wolf','frost','golem','ghost']:(ZONE_MOBS[state.map.chapter]||ZONE_MOBS[0]));/* 章节越界兜底，防坏档崩溃 */
+  for(let i=0;i<cnt;i++){
+    let type;const r=Math.random();
+    if(r<0.26)type='cat';else type=pool[ri(0,pool.length-1)];
+    const base=ENEMY[type];
+    state.dex.seen[type]=(state.dex.seen[type]||0)+1;
+    /* 怪物等级：随章节/波次增长（精英 +2），属性倍率由等级推导 */
+    let lvl=(state.map.chapter-1)*2+bt.wave+ri(0,1);
+    if(elite&&i===0)lvl+=2;
+    const dc=diffC();
+    const mult=1+(lvl-1)*0.14;
+    const e={type,x:bt.px+120+i*36,lvl,hp:Math.round(base.hp*mult*dc.hp*MB),maxHp:Math.round(base.hp*mult*dc.hp*MB),
+      atk:Math.round((base.atk+mult*0.6)*dc.atk*MB),atkT:rf(0.6,1.4),hurtT:0,capCd:0,skipped:false,
+      rarity:rollRarity(),ivs:[ri(6,15),ri(6,15),ri(6,15)],bob:rf(0,6.28),elite:false,mercy:false,
+      shield:elite?2:1,shieldMax:elite?2:1,brokenT:0,boss:false};
+    if(elite&&i===0){e.elite=true;e.hp=Math.round(e.hp*2.2);e.maxHp=e.hp;e.atk=Math.round(e.atk*1.5);}
+    bt.enemies.push(e);
+  }
+}
+/* BOSS：单只巨型怪，约 7.5 倍血 1.85 倍攻 5 层破防盾，不可捕捉；蓄力大招+狂暴+每回合回血（不破盾打不动） */
+function spawnBoss(){
+  const bi=Math.min(state.map.chapter,BOSSES.length-1);const B=BOSSES[state.map.chapter]||BOSSES[BOSSES.length-1];
+  const base=ENEMY[B.type];
+  state.dex.seen[B.type]=(state.dex.seen[B.type]||0)+1;
+  const lvl=(state.map.chapter-1)*2+10+2;
+  const dc=diffC();
+  const mult=(1+(lvl-1)*0.14)*7.5*dc.hp;
+  const e={type:B.type,boss:true,n:B.n,x:bt.px+150,lvl,hp:Math.round(base.hp*mult),maxHp:Math.round(base.hp*mult),
+    atk:Math.round((base.atk+mult*0.6)*1.85*dc.bossAtk),atkT:rf(0.55,1.1),hurtT:0,capCd:0,skipped:false,
+    rarity:Math.min(3,rollRarity()+1),ivs:[ri(10,15),ri(10,15),ri(10,15)],bob:0,elite:true,mercy:false,
+    shield:5,shieldMax:5,brokenT:0,bossCD:3,bossBig:false,enraged:false};
+  /* 每战随机 2 个魔法抗性（不与弱点重叠）：抗性属性命中伤害 ×0.45。
+     挂机编队无脑轮放必然砸在抗性上——手动看抗性换属性才有优势 */
+  const weak=WEAK_OF[B.type]||[];const pool=[];for(let i=0;i<ELEMS.length;i++)if(weak.indexOf(i)<0)pool.push(i);
+  e.resist=[];while(e.resist.length<2&&pool.length>0){const pi=Math.floor(Math.random()*pool.length);e.resist.push(pool.splice(pi,1)[0]);}
+  e.resistKnown=false;
+  bt.elite=true;bt.bossFight=true;
+  bt.enemies.push(e);
+  toast('⚠ '+B.n+' 出现！用它的弱点属性魔法破盾，蓄力大招记得打断/防御！','#ff9');
+}
+function nearestEnemy(range){let best=null,bd=1e9;for(const e of bt.enemies){const d=e.x-bt.px;if(d>-6&&d<range&&Math.abs(d)<bd){bd=Math.abs(d);best=e;}}return best;}
+function enemyFeetY(){return 250;}
+function engageStop(e){return bt.px+78+bt.enemies.indexOf(e)*16;/* 远程交战：怪停在 78/94/110，法师站桩输出不贴脸 */}
+function engage(dt){/* 敌人主动走近玩家，到近战距离停下 */
+  for(const e of bt.enemies){
+    const stop=engageStop(e);
+    if(e.x>stop)e.x=Math.max(stop,e.x-(46+bt.wave*2+(e.elite?10:0))*dt);
+  }
+}
+function dealTo(e,dmg,color){
+  if(e.brokenT>0)dmg=Math.round(dmg*1.4);/* 破防易伤：所有来源伤害 ×1.4 */
+  e.hp-=dmg;e.hurtT=0.15;
+  /* 狂暴：BOSS 血量过半触发二阶段，攻击大幅提升、大招更频繁 */
+  if(e.boss&&!e.enraged&&e.hp>0&&e.hp<=e.maxHp*0.65){e.enraged=true;e.atk=Math.round(e.atk*1.6);e.bossCD=Math.min(e.bossCD,2);toast('🔥 '+e.n+' 狂暴了！攻击大幅提升，大招更频繁！','#ff6b6b');bt.shake=0.4;}
+  bt.nums.push({x:e.x,y:enemyFeetY()-34,v:''+dmg,c:color||'#fff',t:0.8});
+  /* 手下留情只在「持有对应捕捉道具」时锁血——没道具的怪会被正常打死，绝不卡死 */
+  if(ENEMY[e.type].capturable&&canCapture(e)){const fl=Math.max(1,Math.round(e.maxHp*0.08));if(e.hp<=fl){e.hp=fl;if(!e.mercy){e.mercy=true;e.mercyT=0;toast('手下留情！'+ENEMY[e.type].n+' 留了残血，可以捕捉','#7cf');}}}
+  if(e.hp<=0)killEnemy(e);
+}
+function killEnemy(e){
+  const idx=bt.enemies.indexOf(e);if(idx<0)return;bt.enemies.splice(idx,1);
+  const base=ENEMY[e.type];const m=e.boss?9:(e.elite?3:1);
+  if(e.boss){/* BOSS 战利品：必掉高品质装备，直接发（结算面板只展示金币/经验汇总） */
+    const it=rollEquip(1);state.ebag.push(it);
+    state.crystals+=2;state.orbs+=2;state.seals+=1;
+    bt.bossEquip=it.name;bt.bossCrystal=2;bt.bossOrb=2;bt.bossSeal=1;/* 记入结算画面 */
+    toast('BOSS 掉落【'+it.name+'】+2魔晶 +2捕捉球 +1封印卡！','#ffd93d');
+    state.bossKilled[state.map.chapter]=true;
+    const chi=Math.min(state.map.chapter,BOSSES.length-1);
+    toast(STORY_BOSS[chi]||'BOSS 被击败了！','#ffd93d');
+    if(!bt.storyShown&&state.map.chapter<CHAPTERS.length-1){bt.storyShown=true;toast('主线推进：'+CHAPTERS[state.map.chapter+1]+' 已解锁！','#7cf');}
+    save();
+  }
+  let gd=ri(base.gold[0],base.gold[1])*m;const ed=base.exp*m;
+  const ap=state.partners[state.activePartner];
+  if(ap&&ap.trait==='greedy')gd=Math.round(gd*1.2);/* 特性·贪吃：金币 +20% */
+  state.gold+=gd;bt.goldGain+=gd;state.exp+=ed;bt.expGain+=ed;
+  bt.killCnt++;state.kills++;
+  if(Math.random()<0.18){const h=ri(1,2)*m;state.herbs+=h;bt.herbGain+=h;}
+  if(Math.random()<0.14){const mm=ri(1,2)*m;state.mats+=mm;bt.matGain+=mm;}
+  if(Math.random()<0.10){state.potions++;bt.potGain++;}
+  bt.nums.push({x:e.x,y:enemyFeetY()-50,v:'+'+gd+'金',c:PAL.gold,t:1});
+  partnerGain(Math.round(ed*0.4));/* 出战伙伴分享经验，可成长进化 */
+  checkLevel();SFX.coin();
+}
+/* 伙伴经验：出战伙伴在击杀时获得，达到阈值升级并小幅提升资质 */
+function partnerGain(g){
+  const p=state.partners[state.activePartner];if(!p)return;
+  p.exp+=g;let need=10+p.level*4;
+  while(p.exp>=need){p.exp-=need;p.level++;if(Math.random()<0.6){const i=ri(0,2);p.ivs[i]=Math.min(15,p.ivs[i]+1);}need=10+p.level*4;if(p.level%5===0)save();}
+}
+function checkLevel(){while(state.exp>=expNeed()){state.exp-=expNeed();state.level++;state.maxHp+=6;state.maxMp+=3;state.hp=state.maxHp;state.mp=state.maxMp;SFX.level();toast('升级！Lv'+state.level);}}
+function heroStrike(){const e=nearestEnemy(175);/* 法师站桩远程普攻：法杖弹出魔力弹，不再近身肉搏 */
+  if(!e){if(bt.enemies.length){toast('敌人还没走近…','#9ab');}else{winBattle();}return;}
+  bt.lungeT=0.22;/* 法杖前指的小幅前倾 */
+  const ey=enemyFeetY()-12;
+  bt.fx.push({k:'bolt',x1:bt.px+10,y1:228,x2:e.x,y2:ey,c:'#ffe9a8',t:0.16,t0:0.16});
+  bt.fx.push({k:'hit',x:e.x,y:ey,c:'#ffe9a8',t:0.2});
+  const dmg=Math.max(1,Math.round((9+state.level*3+state.rank*3+state.atkBonus+eqAtk())*rf(0.9,1.1)));dealTo(e,dmg,'#fff');SFX.hit();afterPlayerAction();}
+function partnerStrike(){
+  if(!state.partners.length)return;const p=state.partners[state.activePartner];if(!p)return;
+  const target=nearestEnemy(175);if(!target)return;/* 敌人没进射程，伙伴待机 */
+  let hits=1;
+  if(p.skill==='swift'&&Math.random()<0.5)hits=2;
+  if(p.trait==='nimble'&&Math.random()<0.2)hits=Math.max(hits,2);
+  let mul=1;
+  if(p.skill==='claw')mul*=1.15;
+  if(p.skill==='ember')mul*=1.10;
+  if(p.skill==='frost')mul*=1.05;
+  if(p.trait==='fierce')mul*=1.12;
+  let col=PAL.pink;
+  if(p.skill==='ember')col='#ff8a3d';else if(p.skill==='frost')col='#aee7ff';else if(p.skill==='guard')col='#9fd6ff';
+  if(p.skill==='guard')bt.guardBlock=Math.min(0.6,(bt.guardBlock||0)+0.3);/* 守护：出战累积护盾（上限 60%） */
+  /* 伙伴突击动画：猫冲向目标→中点爪击→退回（伤害在 applyCatHit 结算） */
+  bt.catLunge={t:0,dur:0.5,hit:false,e:target,hits,mul,col,p};
+  SFX.hit();
+}
+function applyCatHit(){
+  const L=bt.catLunge;if(!L)return;bt.catLunge=null;
+  const e=L.e;if(!e||e.hp<=0||bt.enemies.indexOf(e)<0)return;
+  const p=L.p;
+  for(let h=0;h<L.hits;h++){
+    const a=Math.max(1,Math.round((8+p.ivs[0]+p.level*2)*L.mul*rf(0.9,1.1)));
+    dealTo(e,a,L.col);
+    if(p.skill==='venom'&&e.hp>0)e.poison=Math.max(e.poison||0,3.2);     /* 毒牙：中毒持续掉血 */
+    if(p.skill==='leech'){const heal=Math.round((8+p.ivs[0])*0.2);state.hp=Math.min(state.maxHp,state.hp+heal);bt.nums.push({x:bt.px,y:200,v:'+'+heal,c:PAL.green,t:0.7});}
+  }
+}
+function magicCast(){
+  const key=state.equipped;const cost=spellCost(key);
+  if(state.mp<cost){SFX.fail();toast('魔力不足','#ff6b6b');return;}
+  state.mp-=cost;SFX.magic();bt.lungeT=0.25;
+  const a=key.split('-').map(Number);const el=ELEMS[a[1]];const form=FORMS[a[0]];
+  const hx=bt.px+8,hy=236;
+  /* 蓄力：脚下展开魔法阵 + 手边聚能光球 + 上升光粒（参考经典 JRPG 的施法前摇） */
+  bt.fx.push({k:'circle',x:bt.px+2,y:250,c:el.c,t:0.55,t0:0.55});
+  bt.fx.push({k:'charge',x:hx,y:hy,c:el.c,t:0.55,t0:0.55});
+  for(let i=0;i<6;i++)bt.fx.push({k:'p',x:hx+rf(-8,8),y:hy+rf(0,14),vx:rf(-8,8),vy:rf(-70,-30),c:el.c,t:rf(0.3,0.5),g:-40});
+  let range=form.range;const pow=Math.round(spellPower(key)*eqPow());/* 饰品加成法强 */
+  let sorted=bt.enemies.filter(e=>e.x-bt.px>-8&&e.x-bt.px<range).sort((x,y)=>x.x-y.x);
+  let hits;if(a[0]===0)hits=sorted.slice(0,1);else if(a[2]===3)hits=sorted.slice(0,3);else hits=sorted;
+  if(hits.length===0){bt.fx.push({k:'ring',x:bt.px+40,y:236,r:4,c:el.c,t:0.4});toast('空放了…','#9ab');afterPlayerAction();return;}
+  const big=a[2]===1;/* 强力修饰 → 更大特效 */
+  bt.shake=big||a[0]===2?0.35:0.18;/* 命中震屏：强力/爆发最明显 */
+  for(const en of hits){
+    /* 元素相性（八方旅人式破防）：弱点属性命中 → 伤害×1.5 + 削盾；盾空=破防硬直+易伤×1.4 */
+    const wk=WEAK_OF[en.type]||[];const weakHit=wk.indexOf(a[1])>=0;
+    const resisted=en.resist&&en.resist.indexOf(a[1])>=0;/* BOSS 随机魔抗：伤害 ×0.45 */
+    let dmg=Math.max(1,Math.round(pow*rf(0.9,1.15)));
+    if(resisted){dmg=Math.round(dmg*0.45);en.resistKnown=true;bt.nums.push({x:en.x,y:enemyFeetY()-48,v:'抗性!',c:'#9ab',t:0.9});}
+    if(weakHit){dmg=Math.round(dmg*1.5);en.weakKnown=true;
+      if(en.shield>0&&!(en.brokenT>0)){en.shield--;
+        bt.nums.push({x:en.x,y:enemyFeetY()-56,v:'弱点!',c:'#ffd93d',t:0.9});
+        if(en.shield<=0){en.brokenT=4.5;bt.nums.push({x:en.x,y:enemyFeetY()-66,v:'破防!',c:'#ff9',t:1.2});SFX.level();
+          toast('破防！'+(en.n||ENEMY[en.type].n)+' 硬直中，受到伤害 ×1.4','#ffd93d');}
+      }}
+    dealTo(en,dmg,el.c);
+    const fy=enemyFeetY()-14;
+    if(a[0]===0){/* 弹：投射体飞行 + 命中爆裂 */
+      bt.fx.push({k:'bolt',x1:hx+6,y1:hy-6,x2:en.x,y2:fy,c:el.c,ei:a[1],t:0.22,t0:0.22});
+      bt.fx.push({k:'boom',x:en.x,y:fy,c:el.c,ei:a[1],t:0.5,t0:0.5,big:big});
+    }else if(a[0]===1){/* 光束：粗光柱贯穿 + 白芯（雷=折线电光） */
+      bt.fx.push({k:'beam',x1:hx+6,x2:en.x,y:fy,c:el.c,ei:a[1],t:0.35,t0:0.35});
+      bt.fx.push({k:'boom',x:en.x,y:fy,c:el.c,ei:a[1],t:0.5,t0:0.5,big:big});
+    }else{/* 爆发：敌人脚下法阵 + 冲天光柱 + 大爆裂 */
+      bt.fx.push({k:'circle',x:en.x,y:enemyFeetY(),c:el.c,t:0.5,t0:0.5});
+      bt.fx.push({k:'pillar',x:en.x,y:enemyFeetY(),c:el.c,ei:a[1],t:0.45,t0:0.45});
+      bt.fx.push({k:'boom',x:en.x,y:fy,c:el.c,ei:a[1],t:0.6,t0:0.6,big:true});
+    }
+    /* 命中飞溅：火=余焰上飘 / 冰=碎晶散落 / 其余通用抛物线 */
+    for(let i=0;i<14;i++){
+      const fire=a[1]===0,ice=a[1]===5;
+      bt.fx.push({k:'p',x:en.x,y:fy,vx:rf(-90,90),vy:fire?rf(-140,-30):(ice?rf(-40,20):rf(-120,10)),c:Math.random()<0.3?'#fff':el.c,t:rf(0.35,0.7),g:fire?-60:220,shard:ice});
+    }
+  }
+  afterPlayerAction();
+}
+function useItem(){
+  const k=itemOpts()[bt.itemIdx].k;
+  if(k==='potion'){
+    if(state.potions<=0){SFX.fail();toast('没有药水了','#ff6b6b');return;}
+    if(state.hp>=state.maxHp){SFX.fail();toast('状态很好');return;}
+    state.potions--;state.hp=Math.min(state.maxHp,state.hp+Math.round(state.maxHp*0.4));state.mp=Math.min(state.maxMp,state.mp+Math.round(state.maxMp*0.3));
+    SFX.potion();bt.nums.push({x:bt.px,y:200,v:'+HP/MP',c:PAL.green,t:0.8});afterPlayerAction();
+  }else if(k==='orb'||k==='seal'){throwOrb(k);}
+}
+function itemOpts(){const o=[];if(state.potions>0)o.push({k:'potion',n:'体力药水 x'+state.potions});if(state.orbs>0)o.push({k:'orb',n:'捕捉球 x'+state.orbs});if(state.seals>0)o.push({k:'seal',n:'魔法封印卡 x'+state.seals});return o.length?o:[{k:'none',n:'（空）'}];}
+/* 是否「现在就能抓」：可捕 + 血量达标 + 持有对应道具 */
+function canCapture(e){
+  if(e.boss)return false;/* BOSS 不可捕捉 */
+  const bd=ENEMY[e.type];if(!bd.capturable)return false;
+  const cap=bd.cap||{};const ratio=e.hp/e.maxHp;
+  if(cap.hp!=null&&ratio>cap.hp)return false;            /* 需压到指定血量以下 */
+  if(cap.tool==='seal'&&state.seals<=0)return false;      /* 缺封印卡 */
+  if(cap.tool!=='seal'&&state.orbs<=0)return false;       /* 缺捕捉球 */
+  return true;
+}
+function captureTarget(){
+  /* 选靶优先级：①图鉴未收录的怪（自动收集多样性，杜绝"只囤狐狸"）②非猫灵 ③血量越低越优先 */
+  let best=null,bestScore=1e9;
+  for(const e of bt.enemies){
+    if(!canCapture(e)||e.hp<=0)continue;
+    const uncaught=!state.dex.caught[e.type];
+    const score=(uncaught?0:100)+(e.type==='cat'?12:0)+(e.hp/e.maxHp);
+    if(score<bestScore){bestScore=score;best=e;}
+  }
+  return best;
+}
+/* 捕捉概率一览（含出战伙伴特性加成）：
+   捕捉球 = 稀有度上限 x 虚弱系数，N 球满血 37% → 虚弱 95%；UR 满血仅 11%，克制高稀有
+   封印卡 = 固定 75%~95%（血越少越高），无视稀有度压制，专治 SSR/UR
+   特性「幸运/柔软」额外 +10%/+15% */
+function captureChance(e,kind){
+  const ratio=e.hp/e.maxHp;
+  let p=kind==='seal'?clamp(0.75+(1-ratio)*0.2,0.75,0.95):clamp((RARITY[e.rarity]||RARITY[0]).cap*(1.45-ratio)/1.15,0.05,0.95);
+  const pr=state.partners[state.activePartner];
+  if(pr){if(pr.trait==='lucky')p+=0.10;if(pr.trait==='flex')p+=0.15;}
+  return clamp(p,0.02,0.98);
+}
+function throwOrb(kind){
+  const e=captureTarget();
+  if(!e){SFX.fail();toast('没有可捕捉的魔物','#ff9');return;}
+  if(kind==='auto')kind=(ENEMY[e.type].cap&&ENEMY[e.type].cap.tool==='seal')?'seal':'orb';
+  const needSeal=(kind==='seal');
+  if(needSeal){if(state.seals<=0){SFX.fail();toast('没有魔法封印卡！','#ff6b6b');return;}state.seals--;}
+  else{if(state.orbs<=0){SFX.fail();toast('没有捕捉球！','#ff6b6b');return;}state.orbs--;}
+  const r=RARITY[e.rarity];
+  const p=captureChance(e,kind);
+  bt.fx.push({k:'orb',x:bt.px+10,y:230,tx:e.x,t:0.4,c:needSeal?PAL.purple:PAL.blue});
+  if(Math.random()<p){
+    const idx=bt.enemies.indexOf(e);if(idx>=0)bt.enemies.splice(idx,1);
+    const bd=ENEMY[e.type];
+    state.partners.push({type:e.type,name:pick(bd.names||CAT_NAMES),rarity:e.rarity,ivs:e.ivs,level:Math.max(1,state.level),
+      exp:0,seal:needSeal,skill:pick(bd.skills||['claw']),trait:pick(bd.traits||['tough']),evolved:false});
+    state.cats++;SFX.capture();
+    if(!state.dex.caught[e.type])state.dex.caught[e.type]=0;state.dex.caught[e.type]++;
+    toast((needSeal?'封印成功！':r.k+' 收服成功！')+'（'+Math.round(p*100)+'%）','#7cf');save();
+    if(bt.enemies.length===0)winBattle();
+  }else{
+    e.capCd=2.6;e.hp=Math.min(e.maxHp,e.hp+Math.round(e.maxHp*0.08));
+    bt.fx.push({k:'ring',x:e.x,y:enemyFeetY()-12,r:4,c:'#ff9',t:0.4});SFX.fail();
+    toast((needSeal?'封印被挣脱！（卡-1）':'它挣脱了！（球-1）')+' 概率'+Math.round(p*100)+'%','#ff9');
+  }
+}
+function afterPlayerAction(){
+  partnerStrike();
+  if(bt.enemies.length===0){winBattle();}
+  else{bt.phase='enemy';bt.enemyIdx=0;bt.actT=0.55;}
+}
+function enemyAttack(){
+  if(bt.enemyIdx>=bt.enemies.length){if(bt.enemies.length===0)winBattle();else{bt.turn++;bt.phase='menu';if(bt.auto)bt.autoT=1.4;}return;}
+  const e=bt.enemies[bt.enemyIdx];
+  if(e&&e.hp>0&&!e.skipped&&!(e.brokenT>0)){/* 破防硬直中的怪跳过回合（brokenT 缺失时按未破防处理，避免卡死） */
+    /* BOSS 蓄力大招：每 4 个行动回合触发一次，更长的前摇 + 中点结算巨额伤害（破防/防御可化解） */
+    /* BOSS 回血：每次行动回 3% 最大生命（破防硬直中不回）——不打破盾就打白费，逼玩家走弱点破防循环 */
+    if(e.boss&&e.hp<e.maxHp){const hg=Math.max(1,Math.round(e.maxHp*(e.enraged?0.045:0.03)));e.hp=Math.min(e.maxHp,e.hp+hg);bt.nums.push({x:e.x,y:enemyFeetY()-58,v:'+'+hg,c:PAL.green,t:0.8});}
+    if(e.boss&&e.bossCD>0)e.bossCD--;
+    if(e.boss&&e.bossCD<=0){e.bossBig=true;e.bossCD=e.enraged?2:3;e.lunge={t:0,dur:0.95,hit:false,big:true};bt.enemyIdx++;bt.actT=e.lunge.dur+0.15;toast('⚡ '+e.n+' 蓄力中——快破盾或防御！','#ff6b6b');return;}
+    /* 冲锋攻击：怪冲上去→中点结算伤害→退回原位（回合制的近身演出，法师保持远程） */
+    e.lunge={t:0,dur:e.type==='slime'?0.66:0.55,hit:false};
+    bt.enemyIdx++;/* 起冲锋即推进指针，伤害由动画中点结算（否则同一只怪无限冲锋） */
+    bt.actT=e.lunge.dur+0.15;
+    return;
+  }
+  bt.enemyIdx++;bt.actT=0.4;
+}
+function applyEnemyHit(e){
+  const pr=state.partners[state.activePartner];
+  let d=Math.max(1,e.atk+ri(-1,2));
+  if(e.bossBig){d=Math.round(d*2.6);e.bossBig=false;bt.shake=0.5;toast('💥 '+e.n+' 大招命中！','#ff6b6b');}/* 蓄力大招：伤害 ×2.6 + 强震屏 */
+  d=Math.max(1,Math.round(d*diffC().dmgTaken));/* 难度：玩家受伤倍率 */
+  d=Math.max(1,d-eqDef());/* 护甲减伤 */
+  if(pr&&pr.trait==='tough')d=Math.round(d*0.9);/* 特性·坚壁：主人受伤 -10% */
+  if(bt.guardBlock>0){const cut=Math.round(d*bt.guardBlock);d=Math.max(1,d-cut);bt.guardBlock=Math.max(0,bt.guardBlock-0.15);}/* 技能·守护：护盾抵消部分伤害 */
+  state.hp-=d;bt.hurtT=0.25;SFX.hit();
+  bt.nums.push({x:bt.px,y:200,v:'-'+d,c:PAL.red,t:0.8});
+  if(state.hp<=0){state.hp=0;bt.phase='faint';bt.actT=1.6;SFX.fail();}
+}
+function autoAct(){
+  if(bt.enemies.length===0){winBattle();return;}/* 空场保护：绝不对着空气行动 */
+  const cap=captureTarget();
+  if(cap&&state.autoCapture){
+    /* 优先级1：虚弱可捕怪自动捕捉（throwOrb('auto') 按需求自动选球/卡） */
+    throwOrb('auto');
+    if(bt&&bt.phase==='menu')afterPlayerAction();
+    return;
+  }
+  if(!state.autoCapture){
+    /* 关自动捕：虚弱被锁血的怪主动逃走清场，避免挂机空转（无道具时根本不会锁血，怪正常被打死） */
+    const fl=e=>Math.max(1,Math.round(e.maxHp*0.08));
+    for(const e2 of [...bt.enemies]){
+      if(ENEMY[e2.type].capturable&&e2.hp<=fl(e2)&&e2.mercy){bt.enemies.splice(bt.enemies.indexOf(e2),1);toast('虚弱的魔物逃走了…','#9ab');}
+    }
+    if(bt.enemies.length===0){winBattle();return;}
+  }
+  if(state.hp/state.maxHp<0.35&&state.potions>0){bt.itemIdx=0;useItem();}
+  else{
+    /* 自动循环编队里的魔法：每回合轮到下一个，优先放得起的最强魔法 */
+    const lo=activeLoadout();let chosen=null;
+    for(let i=1;i<=lo.length;i++){const k=lo[(bt.autoSpell+i)%lo.length];if(state.mp>=spellCost(k)){chosen=k;bt.autoSpell=(bt.autoSpell+i)%lo.length;break;}}
+    if(chosen){if(bt.lastSpell!==chosen)toast('施法·'+spellName(chosen),spellElem(chosen));bt.lastSpell=chosen;state.equipped=chosen;magicCast();}
+    else heroStrike();
+  }
+}
+function winBattle(){/* 只要还有敌人且不在结算，就切结算（lootDone 只代表发过奖，不再拦截切阶段——否则清场后永远卡在 menu） */
+  if(bt.phase==='result')return;bt.lootDone=true;save();bt.phase='result';bt.autoT2=2.0;/* 每次进结算都重置，避免自动模式下结算画面被瞬间跳过（之前每波只闪 1 帧） */
+  /* 职业晋升只走魔法学院「职业晋升考核」，战斗胜利不再自动弹晋升界面——
+     否则"打几仗自动就职业晋升了"，魔法学院的晋升考核形同虚设（之前就是这个 bug） */}
+function nextWave(){
+  if(bt.done){endBattle();SFX.confirm();return;}/* 远征已完成：结算后回城 */
+  if(bt.crawl&&bt.wave>=bt.dungeonRounds){finishCrawl();return;}/* 副本：达到轮数即通关（finishCrawl 内已发奖+刷新入口） */
+  if(!bt.crawl&&bt.dungeon&&bt.wave>=3){/* 遗迹秘境通关：豪华奖励 */
+    const gd=100+50*state.map.chapter;
+    state.gold+=gd;state.crystals++;state.orbs++;state.seals++;
+    endBattle();SFX.level();toast('遗迹探索成功！+'+gd+'金 +魔晶 +捕捉球 +封印卡','#ffd93d');
+    return;
+  }
+  if(!bt.crawl&&bt.wave>=10){finishExpedition();return;}/* 第 10 场 BOSS 战胜利 → 远征结束 */
+  bt.wave++;
+  /* 非战斗探索事件：两轮战斗之间调剂（宝箱/陷阱/医疗站/稀有药草）。
+     概率提到 45%，且每轮保底至少触发 1 次（第 4 波前还没遇到就强制来一次），杜绝"整轮都没事件"的空洞感 */
+  const forceEvent=!bt.eventSeen&&bt.wave>=4;
+  if(bt.wave<10&&(Math.random()<0.45||forceEvent)){bt.eventSeen=true;bt.event=rollEvent();bt.phase='event';bt.eventT=0;return;}
+  bt.phase='walk';bt.walkT=0;bt.walkNext=rf(2.8,4.2);bt.lootDone=false;bt.elite=false;bt.bossFight=false;
+}
+/* 远征完成收尾：奖励已在 BOSS 死亡时发放（killEnemy），这里只负责回城 */
+function finishExpedition(){
+  bt.done=true;bt.phase='result';bt.lootDone=true;bt.autoT2=2.0;/* 最终结算也重置，确保整体计算画面停留可见 */
+  toast('远征完成！'+CHAPTERS[Math.min(state.map.chapter,CHAPTERS.length-1)]+' 肃清，回城休整','#ffd93d');
+  save();
+}
+/* ---- 探索事件（战斗之间的调剂） ---- */
+function rollEvent(){const r=Math.random();
+  if(r<0.32)return{k:'chest'};if(r<0.55)return{k:'trap'};if(r<0.78)return{k:'spring'};return{k:'herb'};}
+const EVENT_INFO={chest:{n:'闪闪发光的宝箱',d:'A 打开宝箱'},trap:{n:'草丛下的陷阱！',d:'A 小心通过'},spring:{n:'清澈的泉水',d:'A 饮水休息'},herb:{n:'一丛稀有药草',d:'A 采集'}};
+function applyEvent(){
+  if(!bt||!bt.event)return;/* 空引用守卫：auto 结算后再按 A 不会炸 */
+  const k=bt.event.k;const ch=state.map.chapter;
+  if(k==='chest'){
+    const gd=ri(30,60)+40*ch;state.gold+=gd;bt.goldGain+=gd;
+    const lines=['金币 +'+gd];
+    /* 掉 1~3 件药品/材料（章节越高稀有度越好），宝箱里还会出魔石 */
+    const n=ri(1,3);
+    for(let i2=0;i2<n;i2++){
+      if(Math.random()<0.45){const id=ri(0,POTIONS.length-1);let ir=POTIONS[id].ir!=null?POTIONS[id].ir:rollIRar(ch*2);ir=Math.min(3,ir+(Math.random()<ch*0.08?1:0));state.pbag[id]=(state.pbag[id]||0)+1;lines.push({c:IRARITY[ir].c,s:IRARITY[ir].k+'·'+POTIONS[id].n});}
+      else{const id=ri(0,MATERIALS.length-1);const ir=MATERIALS[id].ir!=null?MATERIALS[id].ir:rollIRar(ch*2);state.mbag[id]=(state.mbag[id]||0)+1;lines.push({c:IRARITY[ir].c,s:IRARITY[ir].k+'·'+MATERIALS[id].n});}
+    }
+    if(Math.random()<0.30){const st=Math.min(3,1+Math.floor(ch/2));const tn=ri(1,2);state.stones[st]=stoneN(st)+tn;lines.push({c:STONE_C[st],s:STONE_NAMES[st]+' ×'+tn});}
+    if(Math.random()<0.20){state.orbs+=2;lines.push({c:'#7cf',s:'捕捉球 ×2'});}
+    if(Math.random()<0.12){state.crystals+=1;lines.push({c:'#c06bff',s:'魔晶 ×1'});}
+    bt.lootShow={title:'✦ 宝箱战利品 ✦',lines:lines,t:3.0,t0:3.0};SFX.coin();
+    toast('宝箱开启！+'+gd+'金，共 '+(lines.length-1)+' 件战利品','#ffd93d');
+  }else if(k==='trap'){
+    /* 陷阱必有代价：必掉血（10~18% 上限 HP），半数情况还会被顺手偷走一点金币 */
+    const d=Math.round(state.maxHp*rf(0.10,0.18));state.hp=Math.max(1,state.hp-d);
+    bt.nums.push({x:bt.px,y:200,v:'-'+d,c:PAL.red,t:0.9});
+    let extra='';
+    if(Math.random()<0.5){const lost=Math.min(state.gold,ri(15,35));state.gold-=lost;extra=' 还被偷走 '+lost+' 金';}
+    toast('踩中陷阱！-'+d+' HP'+extra,'#ff6b6b');SFX.hit();
+  }else if(k==='spring'){
+    state.hp=Math.min(state.maxHp,state.hp+Math.round(state.maxHp*0.5));state.mp=Math.min(state.maxMp,state.mp+Math.round(state.maxMp*0.5));
+    toast('泉水恢复了一半 HP/MP','#7cf');SFX.potion();
+  }else{
+    const h=ri(3,6);state.herbs+=h;const lines2=[{c:'#7fdc8a',s:'月光草 ×'+h}];let extra='';
+    if(Math.random()<0.35){state.crystals++;lines2.push({c:'#c06bff',s:'魔晶 ×1'});extra='，还发现了魔晶！';}
+    const mid=ri(0,MATERIALS.length-1);const mir=MATERIALS[mid].ir!=null?MATERIALS[mid].ir:rollIRar(ch*2);state.mbag[mid]=(state.mbag[mid]||0)+1;lines2.push({c:IRARITY[mir].c,s:IRARITY[mir].k+'·'+MATERIALS[mid].n});
+    bt.lootShow={title:'✦ 采集收获 ✦',lines:lines2,t:2.6,t0:2.6};
+    toast('采集到月光草 x'+h+extra,'#7fdc8a');SFX.coin();
+  }
+  save();bt.event=null;bt.phase='walk';bt.walkT=0;bt.walkNext=rf(2.8,4.2);bt.lootDone=false;bt.elite=false;bt.bossFight=false;
+}
+function endBattle(){bt=null;state.scene='CITY';cityMode='map';save();}
+
+SCENES.BATTLE={
+  update(dt){
+    if(bt==null)return;
+    /* NaN 防护：历史版本 bug 可能污染数值，进战斗前先洗一遍 */
+    if(!isFinite(state.hp))state.hp=Math.ceil(state.maxHp*0.5);
+    if(!isFinite(state.mp))state.mp=0;
+    if(!isFinite(state.gold))state.gold=0;
+    for(const e of bt.enemies){if(!isFinite(e.hp)||e.hp>1e8)e.hp=e.maxHp;if(!isFinite(e.maxHp)||e.maxHp<=0)e.maxHp=1;}
+    bt.t+=dt;
+    /* 中毒持续掉血（技能·毒牙触发 e.poison） */
+    if(bt){for(const e of [...bt.enemies]){if(e.poison>0){e.poison-=dt;e.poisonTick=(e.poisonTick||0)-dt;if(e.poisonTick<=0){e.poisonTick=0.5;if(e.hp>0)dealTo(e,Math.max(1,Math.round(e.maxHp*0.02)),'#7fdc8a');}}}}
+    /* 锁血兜底：手下留情锁定超 8 秒仍未收服 → 恢复力气逃走（杜绝任何模式下的永久卡死） */
+    if(bt){for(const e of [...bt.enemies]){if(e.mercy){e.mercyT=(e.mercyT||0)+dt;if(e.mercyT>8){bt.enemies.splice(bt.enemies.indexOf(e),1);toast(ENEMY[e.type].n+' 恢复力气逃走了…','#9ab');if(bt.enemies.length===0&&bt.phase!=='result')winBattle();}}}}
+    /* 破防恢复：硬直结束后护盾回满 */
+    if(bt){for(const e of bt.enemies){if(e.brokenT>0){e.brokenT-=dt;if(e.brokenT<=0){e.brokenT=0;e.shield=e.shieldMax;}}}}
+    /* 伙伴突击动画推进：中点结算伤害（任何阶段都推进，防止动画冻结） */
+    if(bt&&bt.catLunge){const L=bt.catLunge;L.t+=dt;if(!L.hit&&L.t>=L.dur*0.5){L.hit=true;applyCatHit();}if(bt.catLunge&&L.t>=L.dur+0.1)bt.catLunge=null;}
+    /* 看门狗：同一阶段卡 12 秒则强制推进，杜绝任何形式的永久卡死。
+       注意：HP/MP 挂机时会缓慢回复，不能进信号（否则信号一直变、看门狗永远不触发） */
+    bt.stallT=(bt.stallT||0)+dt;
+    const sig=bt.phase+'|'+bt.enemyIdx+'|'+bt.turn+'|'+bt.enemies.length+'|'+Math.round(state.hp/25);
+    if(sig!==bt.lastSig){bt.lastSig=sig;bt.stallT=0;}
+    else if(bt.stallT>5){
+      bt.stallT=0;
+      if(bt.phase==='menu'){bt.autoT=0;autoAct();toast('战斗停滞已自动恢复','#ffd93d');}
+      else if(bt.phase==='enemy'){bt.enemyIdx=bt.enemies.length;bt.actT=0;}
+      else if(bt.phase==='result'&&bt.auto){nextWave();}
+      else if(bt.phase==='meet'){bt.actT=0;}
+      else if(bt.phase==='faint'){bt.actT=0;}
+      else if(bt.phase==='walk'){bt.walkT=bt.walkNext;}
+    }
+    if(bt.phase==='walk'){
+      bt.px+=40*dt;bt.cam=bt.px-70;bt.walkF+=dt*8;
+      state.mp=Math.min(state.maxMp,state.mp+3*dt);state.hp=Math.min(state.maxHp,state.hp+2.5*dt);
+      bt.walkT+=dt;
+      if(bt.walkT>=bt.walkNext){bt.phase='meet';bt.actT=0.6;}
+    }else if(bt.phase==='meet'){
+      bt.actT-=dt;if(bt.actT<=0){spawnGroup();bt.turn=1;bt.phase='menu';}
+    }else if(bt.phase==='menu'){
+      engage(dt);
+      if(bt.auto){bt.autoT-=dt;if(bt.autoT<=0)autoAct();}
+    }else if(bt.phase==='enemy'){
+      engage(dt);
+      /* 冲锋动画推进：中点结算伤害 */
+      for(const e of bt.enemies){const L=e.lunge;if(L){L.t+=dt;if(!L.hit&&L.t>=L.dur*0.5){L.hit=true;applyEnemyHit(e);if(bt.phase==='faint')return;}if(L.t>=L.dur+0.1)e.lunge=null;}}
+      bt.actT-=dt;if(bt.actT<=0)enemyAttack();
+    }else if(bt.phase==='magic'||bt.phase==='item'){
+      engage(dt);
+    }else if(bt.phase==='result'){
+      if(bt.auto){bt.autoT2-=dt;if(bt.autoT2<=0)nextWave();}
+    }else if(bt.phase==='event'){
+      /* 探索事件阶段：自动模式下停留约 1 秒后自动触发（A），避免 AUTO 挂机卡在事件面板 */
+      bt.eventT+=dt;if(bt.auto&&bt.eventT>1.0)applyEvent();
+    }else if(bt.phase==='faint'){
+      bt.actT-=dt;if(bt.actT<=0){state.hp=Math.ceil(state.maxHp*0.5);state.mp=Math.ceil(state.maxMp*0.5);if(bt.crawl)state.dungeonOffers=null;endBattle();toast('力竭回城休息（无惩罚）','#ff9');}
+    }
+    if(bt){
+      bt.fx=bt.fx.filter(f=>{f.t-=dt;if(f.k==='p'){f.x+=f.vx*dt;f.y+=f.vy*dt;f.vy+=(f.g!=null?f.g:200)*dt;}if(f.k==='ring')f.r+=90*dt;if(f.k==='orb'){f.x+=(f.tx-f.x)*6*dt;f.y-=30*dt;}return f.t>0;});
+      bt.nums=bt.nums.filter(n=>{n.t-=dt;n.y-=22*dt;return n.t>0;});
+      bt.hurtT=Math.max(0,bt.hurtT-dt);
+      bt.lungeT=Math.max(0,(bt.lungeT||0)-dt);
+      bt.shake=Math.max(0,(bt.shake||0)-dt*1.4);
+      if(bt.lootShow){bt.lootShow.t-=dt;if(bt.lootShow.t<=0)bt.lootShow=null;}
+    }
+    toasts.forEach(t=>t.t-=dt);
+  },
+  onBtn(b){
+    if(!bt)return;
+    if(bt.phase==='event'){if(b==='A')applyEvent();else if(b==='C'){toast('绕开了事件','#9ab');bt.event=null;bt.phase='walk';bt.walkT=0;bt.walkNext=rf(2.8,4.2);bt.lootDone=false;bt.elite=false;bt.bossFight=false;}return;}
+    if(bt.phase==='walk'){
+      if(b==='A'){bt.auto=!bt.auto;bt.autoT=1.4;toast(bt.auto?'已开启 AUTO 挂机':'已切换手动','#7cf');}
+      else if(b==='B'){endBattle();SFX.cancel();}
+    }else if(bt.phase==='menu'){
+      if(bt.auto&&b!=='C'){bt.auto=false;toast('手动接管','#ffd93d');}
+      if(b==='A')heroStrike();
+      else if(b==='B'){const lo=activeLoadout();bt.magicIdx=0;state.equipped=lo[0];bt.phase='magic';SFX.confirm();}
+      else if(b==='C'){bt.phase='item';const opts=itemOpts();const cap=captureTarget();let sel=0;if(cap){const bd=ENEMY[cap.type];const k=bd.cap&&bd.cap.tool==='seal'?'seal':'orb';const i=opts.findIndex(o=>o.k===k);if(i>=0)sel=i;}bt.itemIdx=sel;SFX.confirm();}
+    }else if(bt.phase==='magic'){
+      if(b==='A'){bt.phase='menu';magicCast();}
+      else if(b==='B'){const lo=activeLoadout();bt.magicIdx=(bt.magicIdx+1)%lo.length;state.equipped=lo[bt.magicIdx];SFX.move();}
+      else if(b==='C'){bt.phase='menu';SFX.cancel();}
+    }else if(bt.phase==='item'){
+      if(b==='A'){bt.phase='menu';useItem();}
+      else if(b==='B'){const opts=itemOpts();bt.itemIdx=(bt.itemIdx+1)%opts.length;SFX.move();}
+      else if(b==='C'){bt.phase='menu';SFX.cancel();}
+    }else if(bt.phase==='result'){
+      if(b==='A'){nextWave();SFX.confirm();}
+      else if(b==='B'){endBattle();SFX.cancel();}
+    }
+  },
+  draw(){drawBattle();}
+};
+
+/* ---- battle draw ---- */
+function drawBattle(){
+  if(!bt)return;/* 防御：战斗对象不存在（如结算后同一帧被绘制）绝不能裸读 bt.cam */
+  /* 命中震屏：大魔法让整个画面横向抖动 */
+  const cam=bt.cam+(bt.shake>0?Math.sin(bt.t*80)*3.4*bt.shake:0);
+  px(0,0,W,H,'#15102a');/* 整屏先清空，防止上一场景残影 */
+  const wrap=(v,span,f)=>(((v-cam*f)%span)+span)%span;
+  const bg=Assets.battleBg;
+  if(bg){/* HD-2D 手绘背景：整高铺满 + 横向视差窗口缓移 */
+    const sw=Math.round(bg.height*(W/H));
+    const range=bg.width-sw;
+    const sx=range>0?((cam*0.14+bt.t*3)%range+range)%range:0;
+    ctx.drawImage(bg,sx,0,sw,bg.height,0,0,W,H);
+    ctx.fillStyle='rgba(10,8,22,.38)';ctx.fillRect(0,0,W,30);
+    ctx.fillStyle='rgba(10,8,22,.18)';ctx.fillRect(0,30,W,14);
+  }else{
+  /* 兜底：代码绘制黄昏场景 */
+  for(let y=0;y<156;y+=2){ctx.fillStyle=lerpHex('#463273','#191233',Math.min(1,y/140));ctx.fillRect(0,y,W,2);}
+  for(const s of bStars){const a=0.3+0.6*Math.abs(Math.sin(s.s+bt.t*1.3));ctx.globalAlpha=a;ctx.fillStyle='#fff';ctx.fillRect(s.x|0,s.y|0,s.r,s.r);}
+  ctx.globalAlpha=1;
+  ctx.fillStyle='#ffe9a8';ctx.beginPath();ctx.arc(204,30,11,0,6.28);ctx.arc(199,26,10,0,6.28,true);ctx.fill('evenodd');
+  ctx.fillStyle='#332759';
+  for(let i=0;i<7;i++)tri(wrap(i*46,W+46,0.12)-23,158,60,46);
+  ctx.fillStyle='#271e48';
+  for(let i=0;i<6;i++)tri(wrap(i*64,W+64,0.25)-32,158,78,60);
+  for(let i=0;i<11;i++){const tx=wrap(i*33,W+33,0.5)-16;pine(tx,252,30+((i*37)%15));}
+  for(let y=250;y<H;y+=2){ctx.fillStyle=lerpHex('#41632f','#1f341c',Math.min(1,(y-250)/70));ctx.fillRect(0,y,W,2);}
+  px(0,250,W,3,'#5c8f42');px(0,253,W,2,'#4a7a3a');
+  }
+  /* 飘浮光尘 */
+  for(const p of bDust){const dy=(p.y-bt.t*p.sp)%180;const yy=dy<0?dy+180:dy;const a=0.25+0.4*Math.abs(Math.sin(p.tw+bt.t*2));ctx.globalAlpha=a;px(((p.x+Math.sin(bt.t+p.tw)*6)|0),yy+60,1.5,1.5,'#ffd98a');}
+  ctx.globalAlpha=1;
+  /* 人物活动带整体压暗：无论背景多花，角色永远是最亮的 */
+  const gDim=ctx.createLinearGradient(0,140,0,270);
+  gDim.addColorStop(0,'rgba(6,5,16,0)');gDim.addColorStop(0.45,'rgba(6,5,16,.38)');gDim.addColorStop(1,'rgba(6,5,16,.22)');
+  ctx.fillStyle=gDim;ctx.fillRect(0,140,W,130);
+  for(const e of bt.enemies){const sx0=e.x-cam;if(sx0<-60||sx0>W+60)continue;
+    const bd=ENEMY[e.type];const sy=enemyFeetY();
+    const fly=!!bd.fly;
+    /* 冲锋攻击位移：sin 曲线冲向英雄再退回原位 */
+    let sx=e.x-cam;let lungeTilt=0;
+    if(e.lunge){const lp=clamp(e.lunge.t/e.lunge.dur,0,1);const dash=Math.max(0,e.x-bt.px-16);sx-=Math.sin(lp*Math.PI)*dash;lungeTilt=-0.12*Math.sin(lp*Math.PI);}
+    /* 地面怪：弹跳+落地压扁；悬浮怪：正弦飘浮 */
+    const hopPh=Math.abs(Math.sin(bt.t*(e.type==='slime'?4.2:5.2)+e.bob));
+    const hopY=fly?Math.sin(bt.t*2.6+e.bob)*4:-(e.type==='slime'?5:3.5)*hopPh;
+    const sq=fly?1:1+(e.type==='slime'?0.14:0.06)*(1-hopPh);/* 越接近落地越扁 */
+    const eTilt=e.hurtT>0?-0.14:lungeTilt;/* 受击后仰 / 冲锋前倾 */
+    const hPix=bd.h*(e.elite?1.25:1)*(e.boss?2.1:1);
+    shadow(sx,sy,(fly?5:bd.h/4)*(e.elite?1.3:1)*(e.boss?2:1));
+    const spr={goblin:'spGoblin',slime:'spSlime',cat:'spCat'}[e.type];
+    if(!spr||!drawSprite(spr,sx,sy+hopY,hPix,sq,eTilt)){
+      if(e.boss){/* BOSS：像素立绘整体放大 2.1 倍（八方旅人式巨大 BOSS 演出） */
+        ctx.save();ctx.translate(sx,sy+hopY);ctx.scale(2.1,2.1);drawMob(e.type,0,0,bt.t);ctx.restore();
+      }else drawMob(e.type,sx,sy+hopY,bt.t);
+    }
+    if(e.elite){px(sx-2,sy-30,4,3,'#ffd93d');px(sx-1,sy-27,2,3,'#ffd93d');px(sx+1,sy-30,1,1,'#ffd93d');}
+    /* 破防盾槽：小菱形排（弱点魔法命中削一格），破防后空槽闪烁恢复 */
+    if(e.shieldMax>0){const sw=e.boss?9:6;const tot=e.shieldMax*(sw+2);
+      for(let s2=0;s2<e.shieldMax;s2++){const dx2=sx-tot/2+s2*(sw+2);
+        if(s2<e.shield){ctx.fillStyle='#7fd4ff';ctx.beginPath();ctx.moveTo(dx2+sw/2,sy-56);ctx.lineTo(dx2+sw,sy-52.5);ctx.lineTo(dx2+sw/2,sy-49);ctx.lineTo(dx2,sy-52.5);ctx.closePath();ctx.fill();}
+        else if(e.brokenT>0){ctx.globalAlpha=0.5+0.5*Math.sin(bt.t*10);ctx.strokeStyle='#ff9';ctx.lineWidth=1;ctx.strokeRect(dx2,sy-56,sw,7);ctx.globalAlpha=1;}}}
+    bar(sx-(e.boss?24:12),sy-(e.boss?30:26),e.boss?48:24,3,e.hp/e.maxHp,'#331a1a',e.hurtT>0?'#fff':'#e05555');
+    txt('Lv'+e.lvl,sx+13,sy-(e.boss?40:35),e.elite?'#ffd93d':'#c9b8ee',7,'left',true);
+    if(e.boss)txt(e.n||'BOSS',sx,sy-70,'#ff9',11,'center',true);
+    if(e.brokenT>0)txt('破防硬直',sx,sy-62,'#ff9',8,'center',true);
+    if(e.boss&&e.lunge&&e.lunge.big){const a=0.45+0.55*Math.abs(Math.sin(bt.t*16));ctx.globalAlpha=a;txt('⚡蓄力大招!',sx,sy-82,'#ff6b6b',11,'center',true);ctx.globalAlpha=1;}/* BOSS 蓄力警告 */
+    if(e.boss&&e.enraged)txt('狂暴',sx+22,sy-40,'#ff6b6b',9,'left',true);/* BOSS 二阶段标记 */
+    /* 弱点图标：命中弱点后揭示（八方旅人式） */
+    if(e.weakKnown){const wk=WEAK_OF[e.type]||[];wk.forEach((wi,wi2)=>{txt(ELEMS[wi].n,sx-10+wi2*14,sy-(e.boss?76:41),ELEMS[wi].c,7,'center',true);});}
+    if(e.boss&&e.resistKnown&&e.resist){e.resist.forEach((ri3,rii)=>{txt(ELEMS[ri3].n+'抗',sx-16+rii*26,sy-44,'#9ab',7,'center',true);});}/* 抗性揭示后常显 */
+    if(ENEMY[e.type].capturable){const rr=RARITY[e.rarity]||RARITY[0];txt(rr.k,sx+14,sy-28,rr.c,8,'left',true);if(canCapture(e))txt('可捕!',sx-12,sy-34,'#7cf',8,'center',true);}
+  }
+  const p=state.partners[state.activePartner];
+  if(p){let psx=bt.px-cam-26;
+    if(bt.catLunge){const L=bt.catLunge;const cp=clamp(L.t/L.dur,0,1);const txp=L.e?(L.e.x-cam+14):psx;psx+=Math.sin(cp*Math.PI)*Math.max(0,txp-psx);}/* 突击：冲向目标再退回 */
+    shadow(psx,250,6);if(!drawSprite('spCat',psx,246,26))drawCat(psx,250,bt.t,'#fff');txt(p.name,psx-6,212,PAL.pink,8,'center');}
+  const hBob=(bt.phase==='walk')?-Math.abs(Math.sin((bt.walkF||0)*0.8))*2.5:0;
+  const lunge=(bt.lungeT||0)>0?(bt.lungeT/0.22)*10:0;/* 攻击突进 */
+  const hTilt=(bt.lungeT||0)>0?0.1:(bt.phase==='walk'?Math.sin((bt.walkF||0)*0.8)*0.05:0);
+  if(!drawSprite('spHero',bt.px-cam+lunge,250+hBob,46,1,hTilt))drawHero(bt.px-cam,250,bt.walkF||0,bt.hurtT>0);
+  if(bt.hurtT>0){ctx.globalAlpha=0.3;px(bt.px-cam-16,204,32,46,'#ff6b6b');ctx.globalAlpha=1;}
+  /* 前景草丛（视差 1.3，盖住脚部增加纵深） */
+  ctx.fillStyle='#14240e';
+  for(let i=0;i<9;i++){const bx=wrap(i*41,W+41,1.3)-20;tri(bx,H+2,12,10+((i*13)%7));}
+  ctx.fillStyle='#1a3212';
+  for(let i=0;i<7;i++){const bx=wrap(i*57+23,W+57,1.3)-28;tri(bx,H+2,16,7+((i*19)%5));}
+  for(const f of bt.fx){const pr=f.t0?clamp(1-f.t/f.t0,0,1):1;
+    if(f.k==='p'){ctx.globalAlpha=clamp(f.t*2.2,0,1);
+      if(f.shard){ctx.fillStyle=f.c;tri(f.x-cam,f.y+3,5,6);}
+      else{px(f.x-cam-2.5,f.y-2.5,5,5,f.c);px(f.x-cam-1,f.y-1,2,2,'#fff');}}
+    else if(f.k==='ring'){ctx.strokeStyle=f.c;ctx.lineWidth=2;ctx.beginPath();ctx.arc(f.x-cam,f.y,f.r,0,6.28);ctx.stroke();ctx.globalAlpha*=0.4;ctx.beginPath();ctx.arc(f.x-cam,f.y,f.r*0.6,0,6.28);ctx.stroke();}
+    else if(f.k==='circle'){/* 地面魔法阵：双椭圆环 + 旋转符文点 */
+      ctx.globalAlpha=clamp(f.t*1.8,0,1)*0.9;const r=6+pr*14;
+      ctx.strokeStyle=f.c;ctx.lineWidth=1.5;ctx.beginPath();ctx.ellipse(f.x-cam,f.y,r,r*0.35,0,0,6.28);ctx.stroke();
+      ctx.globalAlpha*=0.6;ctx.beginPath();ctx.ellipse(f.x-cam,f.y,r*0.62,r*0.22,0,0,6.28);ctx.stroke();
+      ctx.globalAlpha=clamp(f.t*1.8,0,1);ctx.fillStyle='#fff';
+      for(let i=0;i<6;i++){const an=pr*4+i*1.047;ctx.fillRect(f.x-cam+Math.cos(an)*r-1,f.y+Math.sin(an)*r*0.35-1,2,2);}}
+    else if(f.k==='charge'){/* 聚能光球：外辉光 + 内核 + 环绕光点 */
+      const R=3+pr*10;
+      ctx.globalAlpha=clamp(f.t*2,0,1)*0.35;circ(f.x-cam,f.y,R*2.1,f.c);
+      ctx.globalAlpha=clamp(f.t*2,0,1);circ(f.x-cam,f.y,R,f.c);circ(f.x-cam,f.y,R*0.45,'#fff');
+      for(let i=0;i<3;i++){const an=bt.t*12+i*2.09;ctx.fillRect(f.x-cam+Math.cos(an)*(R+5)-1,f.y+Math.sin(an)*(R+5)-1,2,2);}}
+    else if(f.k==='bolt'){/* 投射弹体：光点 + 彗尾 */
+      const bx=f.x1+(f.x2-f.x1)*pr,by=f.y1+(f.y2-f.y1)*pr;
+      for(let i=1;i<=4;i++){const tp=Math.max(0,pr-i*0.09);ctx.globalAlpha=clamp(f.t*4,0,1)*(0.55-i*0.11);circ(f.x1+(f.x2-f.x1)*tp-cam,f.y1+(f.y2-f.y1)*tp,4-i*0.7,f.c);}
+      ctx.globalAlpha=clamp(f.t*4,0,1);circ(bx-cam,by,4.5,f.c);circ(bx-cam,by,2.2,'#fff');}
+    else if(f.k==='beam'){/* 光束：外层辉光带 + 白芯；雷=折线电光 */
+      const jag=f.ei===2;
+      ctx.globalAlpha=clamp(f.t*2.4,0,1);
+      ctx.strokeStyle=f.c;ctx.lineWidth=6;ctx.beginPath();ctx.moveTo(f.x1-cam,f.y);
+      if(jag){let cx=f.x1;while(cx<f.x2){const nx=Math.min(f.x2,cx+12);ctx.lineTo(nx-cam,f.y+(Math.random()*10-5));cx=nx;}}
+      ctx.lineTo(f.x2-cam,f.y);ctx.stroke();
+      ctx.globalAlpha=clamp(f.t*2.4,0,1)*0.55;ctx.strokeStyle='#fff';ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(f.x1-cam,f.y);ctx.lineTo(f.x2-cam,f.y);ctx.stroke();}
+    else if(f.k==='pillar'){/* 冲天光柱（爆发系） */
+      const w=(1-pr*0.5)*10;
+      ctx.globalAlpha=clamp(f.t*2.2,0,1)*0.85;ctx.fillStyle=f.c;ctx.fillRect(f.x-cam-w/2,f.y-64,w,64);
+      ctx.globalAlpha=clamp(f.t*2.2,0,1);ctx.fillStyle='rgba(255,255,255,.8)';ctx.fillRect(f.x-cam-w/6,f.y-58,w/3,58);}
+    else if(f.k==='boom'){/* 命中爆裂：白闪核心 + 十字光 + 双冲击环（雷=电网） */
+      ctx.globalAlpha=clamp(f.t*3,0,1)*0.9;circ(f.x-cam,f.y,((f.big?26:18)*pr+4)*0.4,'rgba(255,255,255,.9)');
+      ctx.globalAlpha=clamp(f.t*2,0,1);const R=(f.big?26:18)*pr+4;
+      ctx.strokeStyle=f.c;ctx.lineWidth=f.big?3:2;ctx.beginPath();ctx.arc(f.x-cam,f.y,R,0,6.28);ctx.stroke();
+      ctx.globalAlpha=clamp(f.t*2,0,1)*0.5;ctx.beginPath();ctx.arc(f.x-cam,f.y,R*0.62,0,6.28);ctx.stroke();
+      ctx.globalAlpha=clamp(f.t*2.6,0,1)*0.8;ctx.fillStyle='#fff';
+      const L=(f.big?16:11)*(1-pr);
+      ctx.fillRect(f.x-cam-1.2,f.y-L,2.4,L*2);ctx.fillRect(f.x-cam-L,f.y-1.2,L*2,2.4);
+      if(f.ei===2){ctx.globalAlpha=clamp(f.t*3,0,1);ctx.strokeStyle='#fff';ctx.lineWidth=1;
+        for(let i=0;i<3;i++){ctx.beginPath();let ax=f.x-cam,ay=f.y;ctx.moveTo(ax,ay);for(let j=0;j<3;j++){ax+=rf(-14,14);ay+=rf(-12,6);ctx.lineTo(ax,ay);}ctx.stroke();}}}
+    else if(f.k==='hit'){ctx.strokeStyle=f.c;ctx.lineWidth=3;ctx.beginPath();ctx.arc(f.x-cam,f.y,4+(0.4-f.t)*26,0,6.28);ctx.stroke();}
+    else if(f.k==='cast'){ctx.fillStyle=f.c;ctx.beginPath();ctx.arc(f.x-cam,f.y,4+(0.32-f.t)*30,0,6.28);ctx.fill();}
+    else if(f.k==='orb'){px(f.x-cam-3,f.y-3,6,6,f.c);px(f.x-cam-1,f.y-1,2,2,'#fff');}
+    ctx.globalAlpha=1;}
+  for(const n of bt.nums){ctx.globalAlpha=clamp(n.t*1.5,0,1);txt(n.v,n.x-cam,n.y,n.c,10,'center',true);ctx.globalAlpha=1;}
+  drawBattleHUD();
+  if(bt.phase==='meet'){box(0,140,W,40,'rgba(10,8,20,.8)');txt(bt.elite?'⚠ 精英怪出没！':'遭遇敌人！',W/2,158,'#ffd93d',13,'center',true);txt(bt.elite?'强敌·掉落 x3':'准备战斗',W/2,174,PAL.dim,9,'center');}
+  else if(bt.phase==='event'){drawEventPanel();}
+  else if(bt.phase==='menu'){drawActionCards();drawCaptureHint();}
+  else if(bt.phase==='magic'){drawMagicList();}
+  else if(bt.phase==='item'){drawItemList();}
+  else if(bt.phase==='result'){drawResult();}
+  else if(bt.phase==='faint'){px(0,0,W,H,'rgba(0,0,0,.55)');txt('魔力耗尽，力竭…',W/2,150,'#ff9',14,'center',true);txt('正在回城休息（无惩罚）',W/2,172,PAL.dim,10,'center');}
+}
+/* 探索事件面板：宝箱/陷阱/泉水/药草 */
+function drawEventPanel(){
+  const ev=bt.event;if(!ev)return;const info=EVENT_INFO[ev.k];
+  box(20,120,W-40,110,'rgba(12,9,26,.95)',PAL.gold);
+  const cx=W/2,cy=150;
+  if(ev.k==='chest'){/* 宝箱：棕木+金边+微光 */
+    px(cx-16,cy-8,32,20,'#7a4a22');px(cx-16,cy-8,32,3,'#9a6636');px(cx-16,cy+2,32,3,'#ffd93d');
+    px(cx-3,cy-2,6,7,'#ffd93d');const g=0.4+0.4*Math.sin(bt.t*5);ctx.globalAlpha=g;circ(cx,cy-14,3,'#fff3b0');ctx.globalAlpha=1;
+  }else if(ev.k==='trap'){/* 陷阱：尖刺 */
+    for(let i=0;i<4;i++){ctx.fillStyle='#b8c4d4';tri(cx-15+i*9,cy+10,6,14);}
+    px(cx-16,cy+10,34,3,'#5a4a3a');
+  }else if(ev.k==='spring'){/* 泉水：蓝池+涟漪 */
+    circ(cx,cy+4,13,'#3a7ac9');circ(cx,cy+4,9,'#6fc3f2');
+    const rp=(bt.t*20)%10;ctx.globalAlpha=1-rp/10;ctx.strokeStyle='#dff6ff';ctx.lineWidth=1;ctx.beginPath();ctx.ellipse(cx,cy+4,3+rp,1.4+rp*0.35,0,0,6.28);ctx.stroke();ctx.globalAlpha=1;
+  }else{/* 药草 */
+    px(cx-1,cy-10,2,14,'#3f8f3a');
+    ctx.fillStyle='#6fcf6f';tri(cx-1,cy-14,10,6);tri(cx-1,cy-10,-9,5);
+    circ(cx-5,cy+6,2,'#8fe88f');circ(cx+4,cy+7,2,'#8fe88f');
+  }
+  txt(info.n,cx,cy+26,'#fff',11,'center',true);
+  txt(info.d,cx,cy+42,PAL.gold2,10,'center',true);
+  txt('C 绕开',cx,cy+56,PAL.dim,8,'center');
+}
+function drawBattleHUD(){  box(0,0,W,26,'rgba(16,12,26,.92)',PAL.frame);
+  txt('HP',7,10,'#ff8888',7,'left');
+  bar(20,4,58,7,state.hp/state.maxHp,'#3a1a1a',PAL.red);
+  txt(Math.ceil(state.hp)+'/'+state.maxHp,82,10,'#fff',8,'left');
+  txt('MP',7,21,'#7cb8ff',7,'left');
+  bar(20,15,58,5,state.mp/state.maxMp,'#1a2a3a',PAL.blue);
+  txt(Math.floor(state.mp)+'/'+state.maxMp,82,21,PAL.blue,8,'left');
+  const wlabel=bt.crawl?('试炼 '+Math.min(bt.wave,bt.dungeonRounds)+'/'+bt.dungeonRounds):((bt.wave>10?10:bt.wave)+'/10'+(bt.wave===5?' · ⚔精英':bt.wave===10?' · ☠BOSS':''));
+  txt(wlabel,W-6,11,bt.crawl?PAL.gold2:(bt.wave===10?'#ff9':PAL.gold),10,'right',true);
+  txt((bt.auto?'AUTO':'手动')+(bt.auto?(state.autoCapture?'·捕':'·无捕'):'')+' 编'+activeLoadout().length+' 球'+state.orbs+' 卡'+state.seals+' 药'+state.potions,W-6,22,bt.auto?PAL.green:PAL.dim,8,'right');
+}
+function drawActionCards(){
+  const y=H-44;
+  const cards=[['攻击','#ffb74d','#ff8a3d'],['魔法','#7cd4ff','#5a8aff'],['道具','#8fe89a','#3dbd7a']];
+  for(let i=0;i<3;i++){
+    const x=8+i*78,c0=cards[i][1],c1=cards[i][2];
+    /* 落地投影：卡片底部压一道暗影，制造悬浮感 */
+    ctx.fillStyle='rgba(0,0,0,.38)';ctx.fillRect(x+2,y+38,68,4);
+    /* 渐变底 + 描金边框（八方旅人风暗卡） */
+    const g=ctx.createLinearGradient(0,y,0,y+40);g.addColorStop(0,'#332a5e');g.addColorStop(1,'#1a1430');
+    ctx.fillStyle=g;ctx.fillRect(x,y,72,40);
+    ctx.strokeStyle='#8a6a2a';ctx.lineWidth=1;ctx.strokeRect(x+.5,y+.5,71,39);
+    px(x+1,y+1,70,1,'#c9a44a');/* 顶部金沿 */
+    px(x+1,y+38,70,1,'#0d0a1a');/* 底部内影 */
+    /* 主色徽带：左侧竖条 + 角标点 */
+    px(x+2,y+3,2.5,36,c1);px(x+2,y+3,2.5,5,c0);
+    /* 键位徽章：金框圆片 + 字母 */
+    ctx.fillStyle='rgba(0,0,0,.45)';ctx.beginPath();ctx.arc(x+14,y+11,7,0,6.28);ctx.fill();
+    ctx.strokeStyle='#c9a44a';ctx.beginPath();ctx.arc(x+14,y+11,7,0,6.28);ctx.stroke();
+    txt(['A','B','C'][i],x+14,y+13.5,'#ffd93d',9,'center',true);
+    /* 手绘像素小图标（居中上方）：剑 / 四芒星 / 药瓶 */
+    ctx.save();ctx.translate(x+42,y+12);
+    if(i===0){/* 剑：斜刃 + 护手 + 柄 */
+      ctx.save();ctx.rotate(-0.785);px(-1.4,-9,2.8,12,'#e8ecf4');px(-1.4,-9,1.1,12,'#ffffff');px(-4,3,8,2,'#c9a44a');px(-1.2,5,2.4,4,'#8a5a2a');ctx.restore();
+      ctx.fillStyle='rgba(255,180,80,.25)';ctx.beginPath();ctx.arc(3,5,4,0,6.28);ctx.fill();
+    }else if(i===1){/* 四芒星 + 辉光 */
+      ctx.fillStyle='rgba(90,160,255,.3)';ctx.beginPath();ctx.arc(0,0,7.5,0,6.28);ctx.fill();
+      ctx.fillStyle='#bfe2ff';tri(0,0,2.4,8);ctx.save();ctx.rotate(1.5708);tri(0,0,2.4,8);ctx.rotate(1.5708);tri(0,0,2.4,8);ctx.rotate(1.5708);tri(0,0,2.4,8);ctx.restore();
+      circ(0,0,1.8,'#ffffff');
+    }else{/* 药瓶：瓶身 + 瓶颈 + 软木塞 + 液面高光 */
+      px(-1.5,-8,3,2,'#c9a44a');px(-2,-6,4,2,'#8fd8e8');tri(-5,-4,10,9);ctx.fillStyle='rgba(63,189,122,.9)';ctx.beginPath();ctx.moveTo(-4.2,-1);ctx.lineTo(4.2,-1);ctx.lineTo(2.6,4.6);ctx.lineTo(-2.6,4.6);ctx.closePath();ctx.fill();
+      px(-2.6,-0.5,1.4,3,'rgba(255,255,255,.5)');
+    }
+    ctx.restore();
+    /* 名称 */
+    txt(cards[i][0],x+38,y+30,'#fff',12,'center',true);
+  }
+  /* 回合徽标：金底黑字小胶囊，压在卡片上沿中缝 */
+  const label='回合 '+bt.turn;const lw=label.length*6+14;
+  box(W/2-lw/2,y-7,lw,14,'#0d0a1a','#c9a44a');
+  txt(label,W/2,y+3,PAL.gold,8.5,'center',true);
+}
+function drawCaptureHint(){
+  const e=captureTarget();if(!e)return;/* 常显：只要场上有"可捕且已压到残血"的怪就提示，不再闪烁错过 */
+  const bd=ENEMY[e.type];const seal=bd.cap&&bd.cap.tool==='seal';
+  const has=seal?state.seals>0:state.orbs>0;
+  const need=bd.cap&&bd.cap.hp?Math.round(bd.cap.hp*100):0;
+  const tool=seal?'封印卡':'捕捉球';
+  if(has)txt('可收服：Lv'+e.lvl+' '+bd.n+(need?'（血<'+need+'%）':'')+' → 按 C 开道具 · A 投'+tool,W/2,H-59,'#7cf',8.5,'center',true);
+  else txt('可收服：Lv'+e.lvl+' '+bd.n+'，但缺少'+tool+'（炼金台造 / 商店买）',W/2,H-59,'#ff9',8.5,'center',true);
+}
+function drawMagicList(){
+  const lo=activeLoadout();const k=lo[bt.magicIdx]||lo[0];
+  box(8,120,W-16,180,'rgba(10,8,24,.95)',PAL.frame);
+  txt('出战魔法（'+lo.length+'/4，B 切换 · A 施展 · C 返回）',W/2,138,PAL.gold,9,'center',true);
+  const y0=152;const start=Math.max(0,bt.magicIdx-2);const view=lo.slice(start,start+5);
+  view.forEach((kk,i)=>{const yy=y0+i*22;const sel=(kk===k);txt((state.equipped===kk?'★ ':'   ')+spellName(kk),24,yy,sel?'#fff':PAL.dim,10,'left',true);txt('威'+spellPower(kk)+' 魔'+spellCost(kk),W-16,yy,spellElem(kk),8,'right');});
+  txt('当前：'+spellName(k)+'  威力'+spellPower(k)+' 耗魔'+spellCost(k),W/2,300,PAL.gold2,9,'center',true);
+}
+function drawItemList(){
+  const opts=itemOpts();const o=opts[bt.itemIdx];
+  box(8,150,W-16,120,'rgba(10,8,24,.95)',PAL.frame);
+  txt('道具袋（B 切换 · A 使用 · C 返回）',W/2,168,PAL.gold,9,'center',true);
+  if(o.k==='none')txt('背包空空如也',W/2,200,PAL.dim,10,'center');
+  else txt(o.n,W/2,196,'#fff',12,'center',true);
+  if(o.k==='orb'||o.k==='seal'){const e=captureTarget();
+    if(e){const p=captureChance(e,o.k);
+      txt('目标：Lv'+e.lvl+' '+ENEMY[e.type].n+'（'+RARITY[e.rarity].k+'）',W/2,214,RARITY[e.rarity].c,9,'center');
+      txt('捕捉率 '+Math.round(p*100)+'%',W/2,230,Math.round(p*100)>=60?PAL.green:'#ffb74d',11,'center',true);
+      txt(o.k==='seal'?'封印卡无视稀有度压制':'捕捉球：血越少越容易捕捉',W/2,246,PAL.dim,8,'center');}
+    else txt('场上没有可捕捉的魔物',W/2,222,'#ff9',9,'center');}
+  if(o.k==='potion')txt('恢复 40% 生命 + 30% 魔力',W/2,222,PAL.dim,9,'center');
+  txt('A '+(o.k==='orb'||o.k==='seal'?'投掷收服':'使用'),W/2,258,PAL.gold2,10,'center',true);
+}
+function drawResult(){
+  if(bt.done||bt.bossFight){drawExpoSummary();return;}/* 击败 BOSS 后展示整体计算画面 */
+  box(20,150,W-40,150,'rgba(10,8,24,.96)',PAL.gold);
+  txt(bt.dungeon?('遗迹秘境 · 第 '+bt.wave+'/'+bt.dungeonRounds+' 层 通关！'):('第 '+bt.wave+' 波 清场（累计收益）'),W/2,172,PAL.gold,13,'center',true);
+  let y=196;const loot=[];loot.push('金币 +'+bt.goldGain);loot.push('经验 +'+bt.expGain);
+  if(bt.herbGain)loot.push('月光草 +'+bt.herbGain);if(bt.matGain)loot.push('兽骨 +'+bt.matGain);if(bt.potGain)loot.push('药水 +'+bt.potGain);
+  loot.forEach(l=>{txt(l,W/2,y,'#cfc',10,'center');y+=16;});
+  if(promoteReady()){txt('★ 已达晋升标准，去魔法学院参加职业晋升考核',W/2,y,'#ffd93d',9,'center');y+=16;}
+  txt('A 继续前进  ·  B 回城',W/2,286,PAL.gold2,10,'center',true);
+}
+/* 远征整体计算画面：BOSS 击败后展示一整轮的总收益 + BOSS 专属掉落 */
+function drawExpoSummary(){
+  const ch=CHAPTERS[Math.min(state.map.chapter,CHAPTERS.length-1)];
+  box(14,40,W-28,250,'rgba(10,8,24,.97)',PAL.gold);
+  px(14,40,W-28,2,PAL.gold);px(14,288,W-28,2,PAL.gold);
+  txt('✦ 远征胜利 ✦',W/2,66,PAL.gold,16,'center',true);
+  txt(ch+' 已肃清',W/2,84,PAL.gold2,10,'center');
+  let y=104;const row=(k,v,c)=>{txt(k,30,y,'#bbb',9,'left');txt(v,W-30,y,c||'#cfc',10,'right',true);y+=17;};
+  row('总击杀',bt.killCnt+' 只',PAL.green);
+  row('金币',  '+'+bt.goldGain,PAL.gold);
+  row('经验',  '+'+bt.expGain,PAL.gold);
+  row('月光草','+'+bt.herbGain,PAL.green);
+  row('兽骨',  '+'+bt.matGain,PAL.green);
+  row('药水',  '+'+bt.potGain,PAL.green);
+  y+=4;
+  txt('★ BOSS 战利品',W/2,y,'#ffd93d',10,'center',true);y+=18;
+  if(bt.bossEquip){txt(bt.bossEquip,W/2,y,'#fff',11,'center',true);y+=16;}
+  txt('魔晶+'+bt.bossCrystal+'  捕捉球+'+bt.bossOrb+'  封印卡+'+bt.bossSeal,W/2,y,PAL.gold2,9,'center');y+=16;
+  if(promoteReady()){txt('★ 已达晋升标准，去魔法学院参加职业晋升考核',W/2,y,'#ffd93d',8,'center');y+=14;}
+  txt('A 继续  ·  B 回城',W/2,278,PAL.gold2,10,'center',true);
+}
+
+/* ---- STATUS ---- */
+function frameBox(x,y,w,h,title){
+  box(x,y,w,h,'#1d1636',PAL.gold2);
+  px(x,y,w,2,PAL.gold);px(x,y+h-2,w,2,PAL.gold);
+  if(title){box(x,y-1,w,16,'#2a2348',PAL.gold2);txt(title,x+8,y+11,PAL.gold,10,'left',true);}
+}
+SCENES.STATUS={
+  onBtn(b){if(b==='B'){eqSel=0;state.scene='EQUIP';SFX.confirm();}else if(b==='A'||b==='C'){state.scene='CITY';cityMode='map';SFX.cancel();}},
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);
+    frameBox(10,10,W-20,H-50,'角 色');
+    portrait('hero',W/2-28,30,56,56);
+    txt(state.name,W/2,108,'#fff',15,'center',true);
+    txt(RANKS[state.rank]+' · Lv'+state.level,W/2,124,PAL.gold,10,'center');
+    bar(W/2-50,130,100,5,state.exp/expNeed(),'#2a2348',PAL.gold2);
+    txt('经验 '+state.exp+'/'+expNeed(),W/2,146,PAL.dim,8,'center');
+    const rows=[['生命',state.hp+'/'+state.maxHp,PAL.red],['魔力',state.mp+'/'+state.maxMp,PAL.blue],['攻击',(7+state.level*2+state.rank*3+state.atkBonus+eqAtk())+'（含装备+'+eqAtk()+'）',PAL.gold],['护甲减伤',eqDef()+'',PAL.green],['金币',state.gold+'',PAL.gold],['击杀',state.kills+'',PAL.green],['伙伴',state.cats+' 只',PAL.pink]];
+    let y=160;rows.forEach(r=>{txt(r[0],28,y,'#bbb',9,'left');txt(r[1],W-28,y,r[2],9,'right',true);px(24,y+4,W-48,1,'#2a2348');y+=17;});
+    const eqs=['w','a','t'].map(k=>{const it=state.equip[k];return EQ_SLOTS[k].n+':'+(it?it.name:'空');}).join('  ');
+    txt(eqs,W/2,y+2,'#c8b878',8,'center',true);
+    const lo=activeLoadout();
+    txt('出战魔法 '+lo.length+'/4：'+lo.map(k=>spellName(k)).join(' / '),W/2,292,PAL.gold2,8,'center');
+    txt('B 管理装备 · A/C 返回城镇',W/2,H-8,PAL.dim,9,'center');
+  }
+};
+
+/* ---- PARTNERS ---- */
+let partIdx=0, partMenuOpen=false, partMenu=0, partRelConf=false;
+function partMenuOpts(p){const o=[];const ev=(ENEMY[p.type]||ENEMY.cat).evo;if(ev&&!p.evolved&&p.level>=ev.lvl)o.push({key:'evolve',n:'进化 → '+p.name+ev.title});o.push({key:'release',n:'放生'});o.push({key:'city',n:'返回城镇'});o.push({key:'close',n:'关闭菜单'});return o;}
+function doEvolve(p){const bd=ENEMY[p.type]||ENEMY.cat;const ev=bd.evo;if(!ev){SFX.fail();toast('这只伙伴无法进化','#ff9');return;}p.evolved=true;p.rarity=Math.min(ev.rarityTo||4,p.rarity+1);p.name=(p.name||bd.n)+ev.title;if(!Array.isArray(p.ivs))p.ivs=[10,10,10];p.ivs=p.ivs.map(v=>Math.min(15,(typeof v==='number'&&isFinite(v))?v+1:11));SFX.level();toast('进化！'+p.name+' 资质提升','#ffd93d');save();}
+SCENES.PARTNERS={
+  onBtn(b){
+    if(!state.partners.length){if(b){state.scene='CITY';cityMode='map';SFX.cancel();}return;}
+    partIdx=clamp(partIdx,0,state.partners.length-1);
+    const p=state.partners[partIdx];
+    if(partRelConf){
+      if(b==='A'){state.partners.splice(partIdx,1);state.cats=Math.max(0,state.cats-1);if(partIdx>=state.partners.length)partIdx=0;partRelConf=false;partMenuOpen=false;
+        /* 关键：放生后收敛出战位，否则 activePartner 指向空位 → 伙伴永远不出手 */
+        if(state.activePartner>=state.partners.length)state.activePartner=0;
+        SFX.cancel();toast('已放生 '+p.name,'#9ab');save();}
+      else if(b==='C'){partRelConf=false;SFX.cancel();}
+      return;
+    }
+    if(partMenuOpen){
+      const opts=partMenuOpts(p);
+      if(b==='B'){partMenu=(partMenu+1)%opts.length;SFX.move();}
+      else if(b==='A'){const o=opts[partMenu];if(o.key==='close'){partMenuOpen=false;SFX.cancel();}else if(o.key==='city'){partMenuOpen=false;partRelConf=false;state.scene='CITY';cityMode='map';SFX.cancel();}else if(o.key==='release'){partRelConf=true;SFX.confirm();}else if(o.key==='evolve'){doEvolve(p);partMenuOpen=false;}}
+      else if(b==='C'){partMenuOpen=false;SFX.cancel();}
+      return;
+    }
+    if(b==='A'){state.activePartner=partIdx;SFX.confirm();toast('出战：'+p.name);}
+    else if(b==='B'){partIdx=(partIdx+1)%state.partners.length;SFX.move();}
+    else if(b==='C'){partMenuOpen=true;partMenu=0;SFX.confirm();}/* C=打开菜单（放生/进化/返回城镇）——之前 never true 是"同伴不能扔"的真凶 */
+  },
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);
+    drawTownBg('.5');/* 暗化小镇做背景，增强层次 */
+    px(0,0,W,H,'rgba(10,7,24,.55)');
+    frameBox(10,10,W-20,H-50,'伙 伴');
+    if(!state.partners.length){
+      txt('还没有伙伴',W/2,140,PAL.dim,12,'center');
+      txt('去野外把魔物打到虚弱，再用捕捉球/封印卡收服',W/2,166,PAL.dim,9,'center');
+      txt('C 返回',W/2,H-20,PAL.dim,9,'center');return;
+    }
+    partIdx=clamp(partIdx,0,state.partners.length-1);
+    const p=state.partners[partIdx];
+    const rc=RARITY[p.rarity]||RARITY[0];
+    const pvs=(Array.isArray(p.ivs)&&p.ivs.length>=3)?p.ivs:[10,10,10];/* 资质脏档防御 */
+    const total=pvs[0]+pvs[1]+pvs[2];
+    const grade=total>=40?'S':total>=33?'A':total>=26?'B':'C';
+    /* ---- 立绘卡：描金双框 + 稀有度辉光 + 大号立绘 ---- */
+    const bx=W/2-52,by=30,bw=104,bh=96;
+    ctx.save();ctx.shadowColor=rc.c;ctx.shadowBlur=10;box(bx,by,bw,bh,'rgba(30,22,58,.9)',rc.c);ctx.restore();
+    box(bx+3,by+3,bw-6,bh-6,'rgba(16,11,36,.6)');
+    const gl=0.35+0.25*Math.sin(performance.now()/400);
+    ctx.globalAlpha=gl;circ(W/2,by+bh-10,26,rc.c);ctx.globalAlpha=1;
+    if(!drawSprite('spCat',W/2,by+bh-8,60)){ctx.save();ctx.translate(W/2,by+bh-6);ctx.scale(2.4,2.4);drawCat(0,8,performance.now()/200,null);ctx.restore();}
+    box(bx+3,by+3,26,13,'rgba(8,6,18,.85)',rc.c);txt(rc.k,bx+16,by+13,rc.c,9,'center',true);
+    if(p.seal){box(bx+bw-34,by+3,31,13,'rgba(8,6,18,.85)',PAL.purple);txt('封印',bx+bw-18.5,by+13,PAL.purple,8,'center',true);}
+    if(p.evolved){box(bx+bw/2-16,by+bh-15,32,11,'rgba(8,6,18,.85)',PAL.gold);txt('已进化',bx+bw/2,by+bh-7,PAL.gold,8,'center',true);}
+    /* 名字行在下方统一绘制（含出战金色+★状态），此处不重复画 */
+    txt(rc.k+' · Lv'+p.level+' · 资质 '+grade+'（'+total+'/45）',W/2,160,rc.c,9,'center',true);
+    /* ---- 技能 / 特性 ---- */
+    const sk=SKILLS[p.skill]||SKILLS.claw,tr=TRAITS[p.trait]||TRAITS.tough;
+    txt('技能 '+sk.n+'：'+sk.d,W/2,178,PAL.pink,8,'center');
+    txt('特性 '+tr.n+'：'+tr.d,W/2,192,PAL.green,8,'center');
+    const ev=(ENEMY[p.type]||ENEMY.cat).evo;
+    if(ev&&!p.evolved)txt('★ Lv'+ev.lvl+' 可进化'+ev.title+(ev.lvl<=p.level?'（现已可进化！）':''),W/2,206,ev.lvl<=p.level?PAL.gold:'#888',8,'center',true);
+    else if(ev&&p.evolved)txt('已进化为 '+p.name,W/2,206,PAL.gold,8,'center',true);
+    /* ---- 属性条 ---- */
+    const labels=['攻','防','速'];let y=222;
+    labels.forEach((l,i)=>{
+      txt(l,34,y,'#c8b878',10,'left',true);
+      const gx=52,gw=W-52-56;box(gx,y-8,gw,9,'#120d26',PAL.frame);
+      ctx.save();const g2=ctx.createLinearGradient(gx,0,gx+gw,0);g2.addColorStop(0,'#8a6a2a');g2.addColorStop(1,PAL.gold);ctx.fillStyle=g2;ctx.fillRect(gx+1,y-7,(gw-2)*pvs[i]/15,7);ctx.restore();
+      for(let k=1;k<5;k++)px(gx+gw*k/5,y-7,1,7,'rgba(0,0,0,.35)');
+      txt(pvs[i]+'/15',W-26,y,'#fff',9,'right',true);y+=19;});
+    const act=state.activePartner===partIdx;
+    /* 出战状态并入名字行（金色+★），底部不再放文字行，避免与全局 toast 通道（272-288）贴脸 */
+    txtOut(act?p.name+' ★':p.name,W/2,146,act?PAL.gold:'#fff',15,'center',true,'#1a1030');
+    if(state.partners.length>1)for(let i=0;i<state.partners.length;i++)circ(120+i*16,268,3,i===partIdx?PAL.gold:'#3a2f5c');
+    /* ---- 操作菜单 / 放生确认 覆盖层 ---- */
+    if(partRelConf){
+      box(14,H-44,W-28,30,'rgba(40,10,10,.92)',PAL.red);
+      txt('确认放生 '+p.name+'？  A 放生 · C 取消',W/2,H-24,'#ffe',8,'center',true);
+    }else if(partMenuOpen){
+      const opts=partMenuOpts(p);
+      /* 面板高度=标题+分隔线+最多4项（271/281/291/301），全部收在框内；toast 在模态打开时自动让位（见 drawOverlay） */
+      box(14,H-72,W-28,62,'rgba(10,8,20,.94)',PAL.frame);
+      txt('操作菜单（B 选 · A 确定 · C 关）',W/2,H-65,PAL.dim,8,'center');
+      line(24,H-58,W-24,H-58,PAL.frame,1);
+      opts.forEach((o,i)=>{const sel=i===partMenu;txt((sel?'▶ ':'  ')+o.n,28,H-49+i*10,sel?PAL.gold:'#cfc',10,'left',true);});
+    }else{
+      txt('A 出战 · B 切换('+(partIdx+1)+'/'+state.partners.length+') · C 菜单(放生/进化/回城)',W/2,H-8,PAL.dim,8,'center');
+    }
+  }
+};
+
+/* ---- BOOK (node graph) ---- */
+let bookIdx=0;
+SCENES.BOOK={
+  onBtn(b){
+    const ks=Object.keys(state.discovered);
+    if(b==='A'){
+      if(bookIdx<ks.length){
+        const key=ks[bookIdx];const idx=state.loadout.indexOf(key);
+        if(idx>=0){state.loadout.splice(idx,1);if(state.equipped===key)state.equipped=state.loadout[0]||key;toast('移出出战：'+spellName(key),PAL.dim);}
+        else{if(state.loadout.length>=4){SFX.fail();toast('出战已满 4 个，先移出一只','#ff9');return;}state.loadout.push(key);state.equipped=key;SFX.confirm();toast('加入出战：'+spellName(key),PAL.gold);}
+        save();
+      }else{state.scene='CRAFT';SFX.confirm();}
+    }else if(b==='B'){bookIdx=(bookIdx+1)%(ks.length+1);SFX.move();}
+    else if(b==='C'){state.scene='CITY';cityMode='map';SFX.cancel();}
+  },
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);
+    frameBox(10,10,W-20,H-50,'魔 法 书');
+    const ks=Object.keys(state.discovered);
+    const cols=3,sx=44,sy=40,gx=78,gy=46;
+    for(let i=0;i<=ks.length;i++){
+      const cx=sx+(i%cols)*gx, cy=sy+Math.floor(i/cols)*gy;
+      if(i>0){const px2=sx+((i-1)%cols)*gx, py2=sy+Math.floor((i-1)/cols)*gy;line((px2+cx)/2,py2,(px2+cx)/2,cy,'#5a4a2a',1);line(px2,py2,px2,cy,'#5a4a2a',1);}
+      const sel=i===bookIdx;
+      if(i<ks.length){const el=spellElem(ks[i]);circ(cx,cy,14,sel?el:'#2a2348',sel?PAL.gold:el);txt(ELEMS[ks[i].split('-').map(Number)[1]].n[0],cx,cy+4,'#fff',11,'center',true);}
+      else{circ(cx,cy,14,'#2a2348',sel?PAL.gold:'#7a6a3a');txt('+',cx,cy+5,PAL.gold,16,'center',true);}
+      if(sel)circ(cx,cy,18,null,PAL.gold);
+    }
+    const dy=210;
+    if(bookIdx<ks.length){const k=ks[bookIdx];const a=k.split('-').map(Number);frameBox(16,dy,W-32,58);txt(spellName(k)+' · '+TIER_NAMES[a[2]]+'魔法',W/2,dy+16,'#fff',12,'center',true);txt('Lv'+(slv(k))+'  威力 '+spellPower(k)+'  耗魔 '+spellCost(k),W/2,dy+36,PAL.gold2,9,'center');txt((state.loadout.indexOf(k)>=0?'★ 已在出战编队':'点击 A 加入出战')+'   系：'+ELEMS[a[1]].n,W/2,dy+50,state.loadout.indexOf(k)>=0?PAL.gold:PAL.dim,8,'center');}
+    else{frameBox(16,dy,W-32,58);txt('✚ 研究新魔法',W/2,dy+22,PAL.gold,12,'center',true);txt('三槽自由拼装，组合独门魔法',W/2,dy+42,PAL.dim,8,'center');txt('已收录 '+ks.length+' 种',W/2,dy+52,PAL.dim,8,'center');}
+    /* 出战编队槽（最多 4） */
+    const lo=activeLoadout();
+    txt('出战编队（'+lo.length+'/4，A 加入/移出）',W/2,278,PAL.gold,9,'center',true);
+    for(let i=0;i<4;i++){const cx=42+i*58,cy=294;const inLo=i<lo.length;const col=inLo?spellElem(lo[i]):'#1d1636';
+      circ(cx,cy,12,inLo?col:'#1d1636',PAL.frame);if(inLo){txt(ELEMS[lo[i].split('-').map(Number)[1]].n[0],cx,cy+4,'#fff',11,'center',true);if(lo[i]===state.equipped)circ(cx,cy,15,null,PAL.gold);}}
+    txt('B 切换 · A '+(bookIdx<ks.length?'加入/移出出战':'研究')+' · C 返回',W/2,312,PAL.dim,8,'center');
+  }
+};
+
+/* ---- MUPGRADE（魔石升级魔法等级：消耗对应魔石 + 金币） ---- */
+let muIdx=0;
+const MUPG_MAXLV=10;
+SCENES.MUPGRADE={
+  onBtn(b){
+    const ks=Object.keys(state.discovered);
+    if(!ks.length){if(b==='C'){state.scene='CITY';cityMode='func';SFX.cancel();}else SFX.fail();return;}
+    if(b==='B'){muIdx=(muIdx+1)%ks.length;SFX.move();}
+    else if(b==='C'){state.scene='CITY';cityMode='func';SFX.cancel();}
+    else if(b==='A'){
+      const k=ks[muIdx],a=k.split('-').map(Number),tier=a[2],lv=slv(k);
+      if(lv>=MUPG_MAXLV){SFX.fail();toast(spellName(k)+' 已达最高 Lv'+MUPG_MAXLV,'#ff9');return;}
+      const g=50*(lv+1);
+      if(state.gold<g){SFX.fail();toast('金币不足（需 '+g+'）','#ff6b6b');return;}
+      if(tier>0&&stoneN(tier)<1){SFX.fail();toast('缺少 '+STONE_NAMES[tier]+'×1（高阶级需对应魔石）','#ff6b6b');return;}
+      state.gold-=g;if(tier>0)state.stones[tier]=stoneN(tier)-1;
+      slvSet(k,lv+1);SFX.level();
+      toast(spellName(k)+' 升至 Lv'+(lv+1)+'！'+(tier>0?(' -'+STONE_NAMES[tier]):''),PAL.gold);
+      save();
+    }
+  },
+  update(){},
+  draw(){
+    const ks=Object.keys(state.discovered);
+    if(!ks.length){px(0,0,W,H,PAL.bg);frameBox(10,10,W-20,H-50,'魔 法 升 级');txt('魔法书还是空的',W/2,H/2,PAL.dim,10,'center');txt('C 返回',W/2,H-16,PAL.dim,9,'center');return;}
+    if(muIdx>=ks.length)muIdx=0;
+    px(0,0,W,H,PAL.bg);
+    frameBox(10,10,W-20,H-50,'魔 法 升 级（魔石）');
+    txt('消耗魔石 + 金币提升魔法等级',W/2,26,PAL.dim,8,'center');
+    const start=Math.max(0,muIdx-4);
+    let y=38;
+    ks.slice(start,start+6).forEach((k,i)=>{
+      const idx=start+i,sel=idx===muIdx,lv=slv(k),a=k.split('-').map(Number),tier=a[2];
+      box(20,y,W-40,26,sel?'rgba(58,44,92,.95)':'rgba(24,18,44,.92)',sel?PAL.gold:PAL.frame);
+      if(sel)px(20,y,3,26,PAL.gold);
+      txt((sel?'▶ ':'')+spellName(k)+' ('+TIER_NAMES[tier]+')',28,y+17,sel?'#fff':'#c8c0e0',9,'left',true);
+      txt('Lv'+lv,W-30,y+17,lv>0?PAL.gold:PAL.dim,9,'right',true);
+      y+=29;
+    });
+    const k=ks[muIdx],a=k.split('-').map(Number),tier=a[2],lv=slv(k);
+    const g=50*(lv+1),nl=Math.min(MUPG_MAXLV,lv+1);
+    frameBox(16,224,W-32,56);
+    txt(spellName(k)+'  Lv'+lv+' → Lv'+nl,W/2,241,'#fff',11,'center',true);
+    txt('威力 '+spellPower(k)+' → '+spellPower2(k,nl),W/2,257,PAL.gold2,9,'center');
+    const need=(tier>0?('需 '+STONE_NAMES[tier]+'×1 + '):'需 ')+g+'金';
+    const have=(tier>0?('持有 '+STONE_NAMES[tier]+':'+stoneN(tier)+' '):'')+'金:'+state.gold;
+    txt(need+' ｜ '+have,W/2,272,(state.gold>=g&&(tier===0||stoneN(tier)>0))?PAL.green:PAL.red,8,'center');
+    txt('B 切换 · A 升级 · C 返回',W/2,H-16,PAL.dim,9,'center');
+  }
+};
+
+/* ---- CRAFT ---- */
+SCENES.CRAFT={
+  _slot:0,
+  onBtn(b){
+    if(b==='A'){this._slot=(this._slot+1)%3;SFX.move();}
+    else if(b==='B'){state.spell[this._slot]=(state.spell[this._slot]+1)%[FORMS.length,ELEMS.length,MODS.length][this._slot];SFX.move();}
+    else if(b==='C'){const key=state.spell.join('-');const isNew=!state.discovered[key];state.discovered[key]=spellName(key);if(state.equipped===undefined)state.equipped=key;save();SFX.magic();toast('已录入魔法书：'+spellName(key)+(isNew?'（新配方！）':''),PAL.gold);state.scene='BOOK';bookIdx=Object.keys(state.discovered).indexOf(key);}
+  },
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);
+    frameBox(10,10,W-20,H-50,'研 究 魔 法');
+    const ARR=[FORMS,ELEMS,MODS];
+    const slots=[['形态','出手方式：弹=单体近 / 光束=直线远 / 爆发=范围'],['元素','属性·颜色：火水雷风土冰光暗虚无'],['修饰','强化：普通 / 强力 / 广域 / 连发']];
+    let y=36;slots.forEach((sl,i)=>{const sel=i===this._slot;box(20,y,W-40,38,sel?'#33285c':'#241d40',sel?PAL.gold:PAL.frame);
+      txt(sl[0],28,y+13,'#bbb',10,'left');txt(ARR[i][state.spell[i]].n,W/2,y+26,sel?PAL.gold:'#fff',14,'center',true);
+      if(sel)txt(sl[1],W-20,y+13,PAL.gold2,8,'right');y+=46;});
+    const key=state.spell.join('-');
+    txt('预览：'+MODS[state.spell[2]].pre+ELEMS[state.spell[1]].n+FORMS[state.spell[0]].n,W/2,186,PAL.gold2,11,'center',true);
+    txt(spellDesc(key),W/2,204,PAL.dim,9,'center');
+    txt('威力 '+spellPower(key)+'   耗魔 '+spellCost(key),W/2,222,PAL.dim,9,'center');
+    txt('例：强力·火·爆发 = 大范围火属性轰炸',W/2,240,'#9cf',9,'center');
+    txt('A 切槽 · B 换选项 · C 装配！',W/2,H-18,PAL.dim,9,'center');
+  }
+};
+
+/* ---- ALCHEMY ---- */
+let alcIdx=0;
+const RECIPES=[
+  {n:'体力药水',cost:{herbs:2},out:'potions',desc:'战斗回 40%HP+30%MP'},
+  {n:'捕捉球',cost:{mats:2},out:'orbs',desc:'捕捉伙伴必备'},
+  {n:'魔法封印卡',cost:{mats:2,crystals:1},out:'seals',desc:'高级捕捉 75~95%'},
+  {n:'中级魔石',cost:{mats:6},make:1,desc:'魔法升级货币'},
+  {n:'高级魔石',cost:{crystals:3},make:2,desc:'魔法升级货币'},
+  {n:'国家级魔石',cost:{crystals:6,mats:4},make:3,desc:'魔法升级货币'},
+  {n:'古代魔石',cost:{crystals:10},make:4,desc:'魔法升级货币'}
+];
+function canCraft(r){for(const k in r.cost)if(state[k]<r.cost[k])return false;return true;}
+SCENES.ALCHEMY={
+  onBtn(b){
+    if(b==='A'){const r=RECIPES[alcIdx];if(!canCraft(r)){SFX.fail();toast('材料不足','#ff6b6b');return;}for(const k in r.cost)state[k]-=r.cost[k];if(r.make)state.stones[r.make]=stoneN(r.make)+1;if(r.out)state[r.out]++;SFX.potion();toast('炼成了：'+r.n);save();}
+    else if(b==='B'){alcIdx=(alcIdx+1)%RECIPES.length;SFX.move();}
+    else if(b==='C'){state.scene='CITY';cityMode='map';SFX.cancel();}
+  },
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);
+    frameBox(10,10,W-20,H-50,'炼 金 小 屋');
+    const show=5,start=Math.max(0,Math.min(RECIPES.length-show,alcIdx-Math.floor(show/2)));
+    for(let i=0;i<show;i++){const idx=start+i;if(idx>=RECIPES.length)break;const r=RECIPES[idx];const sel=idx===alcIdx;const y=32+i*44;
+      box(20,y,W-40,40,sel?'#33285c':'#241d40',sel?PAL.gold:PAL.frame);
+      txt(r.n,30,y+14,'#fff',12,'left',true);
+      let cost='';for(const k in r.cost)cost+=({herbs:'月光草',mats:'兽骨',crystals:'魔晶'}[k]+'×'+r.cost[k]+' ');if(r.make)cost+='→ '+STONE_NAMES[r.make]+'×1';
+      txt('需要：'+cost,30,y+30,canCraft(r)?PAL.dim:PAL.red,8,'left');
+      txt(r.desc,W-28,y+14,canCraft(r)?PAL.green:PAL.red,8,'right');
+      if(sel)txt('A 炼制',W-28,y+30,PAL.gold,9,'right',true);}
+    if(start>0)txt('▲',W-20,26,PAL.dim,8,'right');
+    if(start+show<RECIPES.length)txt('▼',W-20,262,PAL.dim,8,'right');
+    txt('持有 月光草'+state.herbs+' 兽骨'+state.mats+' 魔晶'+state.crystals,W/2,247,PAL.gold2,8,'center');
+    txt('魔石 '+STONE_NAMES[1]+':'+stoneN(1)+' '+STONE_NAMES[2]+':'+stoneN(2)+' '+STONE_NAMES[3]+':'+stoneN(3)+' '+STONE_NAMES[4]+':'+stoneN(4),W/2,259,PAL.gold2,8,'center');
+    txt('B 切换 · A 炼制 · C 返回',W/2,H-16,PAL.dim,9,'center');
+  }
+};
+
+/* ---- BAG（按分类浏览全部物品：药品/材料含稀有度配色，魔石/道具） ---- */
+let bagIdx=0;
+function bagList(){
+  const L=[];
+  for(const id in state.pbag){const c=state.pbag[id];if(c>0){const p=POTIONS[id];const ir=p.ir!=null?p.ir:0;L.push({cat:'药品',name:p.n,c:IRARITY[ir].c,count:c});}}
+  for(const id in state.mbag){const c=state.mbag[id];if(c>0){const m=MATERIALS[id];const ir=m.ir||0;L.push({cat:'材料',name:m.n,c:IRARITY[ir].c,count:c});}}
+  for(let i=1;i<=4;i++){const sc=stoneN(i);if(sc>0)L.push({cat:'魔石',name:STONE_NAMES[i],c:STONE_C[i],count:sc});}
+  [['orbs','捕捉球'],['seals','封印卡'],['herbs','月光草'],['mats','兽骨'],['crystals','魔晶'],['potions','体力药水']].forEach(([k,n])=>{if(state[k]>0)L.push({cat:'道具',name:n,c:'#cfc0e0',count:state[k]});});
+  if(!L.length)L.push({cat:'—',name:'背包空空如也',c:PAL.dim,count:0});
+  return L;
+}
+SCENES.BAG={
+  onBtn(b){const L=bagList();if(b==='A'||b==='B'){bagIdx=(bagIdx+1)%L.length;SFX.move();}else if(b==='C'){state.scene='CITY';cityMode='map';SFX.cancel();}},
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);
+    frameBox(10,10,W-20,H-50,'背 包');
+    const L=bagList();if(bagIdx>=L.length)bagIdx=0;
+    const it=L[bagIdx];
+    box(20,30,W-40,18,'rgba(40,30,70,.9)',PAL.gold2);txt('分类：'+it.cat+'　（药品20种 / 材料40种 含 普通·稀有·史诗·传说 稀有度）',W/2,43,PAL.gold2,8,'center');
+    box(W/2-30,52,60,60,'#241d40',PAL.gold2);
+    txt(it.name[0],W/2,92,it.c,28,'center',true);
+    txt(it.name,W/2,130,it.c,13,'center',true);
+    txt('数量 × '+it.count,W/2,150,PAL.gold,12,'center');
+    const tot=(state.pbag?Object.values(state.pbag).reduce((a,b)=>a+b,0):0)+(state.mbag?Object.values(state.mbag).reduce((a,b)=>a+b,0):0);
+    txt('已收集 药品'+(Object.keys(state.pbag).length)+'/20 · 材料'+(Object.keys(state.mbag).length)+'/40',W/2,176,PAL.dim,8,'center');
+    txt('( '+(bagIdx+1)+' / '+L.length+' )',W/2,206,PAL.dim,9,'center');
+    txt('A/B 切换物品 · C 返回',W/2,H-16,PAL.dim,9,'center');
+  }
+};
+
+/* ---- DEX (魔物图鉴) ---- */
+let dexIdx=0;
+SCENES.DEX={
+  onBtn(b){
+    if(b==='B'){dexIdx=(dexIdx+1)%DEXORDER.length;SFX.move();}
+    else if(b==='A'){
+      const t=DEXORDER[dexIdx];const bd=ENEMY[t];
+      if(!state.dex.seen[t]){toast('尚未发现该魔物','#ff9');return;}
+      if(bd.capturable){const z=speciesZones(t);const tool=bd.cap.tool==='seal'?'魔法封印卡':'捕捉球';const hp=bd.cap.hp?('（血<'+Math.round(bd.cap.hp*100)+'%）'):'';toast('出没：'+z+' ｜ 用'+tool+hp+'收服','#7cf');}
+      else toast('该魔物无法被收服','#ff9');
+    }
+    else if(b==='C'){state.scene='CITY';cityMode='map';SFX.cancel();}
+  },
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);drawTownBg('.6');px(0,0,W,H,'rgba(10,7,24,.55)');
+    frameBox(10,10,W-20,H-50,'魔 物 图 鉴');
+    const seenN=Object.keys(state.dex.seen).length,total=DEXORDER.length,caughtN=Object.keys(state.dex.caught).length;
+    txt('已收录 '+seenN+'/'+total+' 种 · 已收服 '+caughtN,W/2,28,PAL.gold,9,'center');
+    const t=DEXORDER[dexIdx];const bd=ENEMY[t];const seenFlg=state.dex.seen[t]>0;
+    box(W/2-34,36,68,58,'rgba(20,15,40,.9)',seenFlg?PAL.gold2:PAL.frame);
+    if(seenFlg)drawMob(t,W/2,90,performance.now()/200);
+    else txt('?',W/2,84,'#555',28,'center',true);
+    txt(seenFlg?bd.n:'？？？（尚未发现）',W/2,106,seenFlg?'#fff':PAL.dim,13,'center',true);
+    if(seenFlg){
+      const cap=bd.cap||{tool:'orb'};const tool=cap.tool==='seal'?'封印卡':'捕捉球';
+      const req=!bd.capturable?'不可捕捉':('用'+tool+(cap.hp?('（血<'+Math.round(cap.hp*100)+'%）'):''));
+      txt(bd.capturable?('可捕捉 · '+req):'不可捕捉',W/2,124,bd.capturable?PAL.green:'#ff9',9,'center');
+      txt('出没：'+speciesZones(t),W/2,140,PAL.dim,8,'center');
+      txt('天赋技能：'+(bd.skills||[]).map(s=>SKILLS[s].n).join('、'),W/2,158,PAL.pink,8,'center');
+      txt('特性池：'+(bd.traits||[]).map(s=>TRAITS[s].n).join('、'),W/2,172,PAL.green,8,'center');
+      if(bd.evo)txt('进化：Lv'+bd.evo.lvl+' → '+bd.n+bd.evo.title,W/2,188,PAL.gold2,8,'center');
+      else txt('进化：无',W/2,188,PAL.dim,8,'center');
+      txt(bd.dex,W/2,206,PAL.dim,8,'center');
+    }
+    if(state.dex.caught[t])txt('已收服 '+state.dex.caught[t]+' 只',W/2,224,PAL.gold,8,'center');
+    txt((dexIdx+1)+' / '+DEXORDER.length,W/2,268,PAL.dim,8,'center');
+    txt('B 切换 · A 查看捕捉条件 · C 返回',W/2,H-16,PAL.dim,8,'center');
+  }
+};
+
+/* ---- MENU ---- */
+let menuIdx=0;
+const MENUITEMS=[
+  {label:()=>'自动战斗：'+(state.autoMode?'开':'关'),act(){state.autoMode=!state.autoMode;save();toast('自动战斗 '+(state.autoMode?'开':'关'));}},
+  {label:()=>'自动捕捉：'+(state.autoCapture?'开':'关')+'（挂机）',act(){state.autoCapture=!state.autoCapture;save();toast('挂机自动捕捉 '+(state.autoCapture?'开：虚弱自动扔球/卡':'关：不消耗捕捉道具'));}},
+  {label:()=>'音效：'+(state.sound?'开':'关'),act(){state.sound=!state.sound;if(state.sound){SFX.init();startBGM();}toast('音效 '+(state.sound?'开':'关'));}},
+  {label:()=>'难度：'+diffC().n+(state.diff===1?'（默认）':''),act(){state.diff=(state.diff+1)%DIFFS.length;save();toast('战斗难度 → '+diffC().n+'（怪物与 BOSS 更强、受伤更重）');}},
+  {label:()=>'导出存档',act(){exportSave();}},
+  {label:()=>'导入存档',act(){importSave();}},
+  {label:()=>'重新开始',act(){if(confirm('确定清空当前进度？')){localStorage.removeItem('mage_save_v1');state=newState();state.scene='NAME';cityMode='map';toast('已重置');}}}
+];
+SCENES.MENU={
+  onBtn(b){
+    if(b==='A'){SFX.confirm();MENUITEMS[menuIdx].act();}
+    else if(b==='B'){menuIdx=(menuIdx+1)%MENUITEMS.length;SFX.move();}
+    else if(b==='C'){state.scene='CITY';cityMode='map';SFX.cancel();}
+  },
+  update(){},
+  draw(){
+    px(0,0,W,H,PAL.bg);
+    frameBox(10,10,W-20,H-50,'系 统');
+    MENUITEMS.forEach((m,i)=>{const sel=i===menuIdx;const y=28+i*34;box(20,y,W-40,30,sel?'#33285c':'#241d40',sel?PAL.gold:PAL.frame);
+      txt(m.label(),30,y+19,'#fff',11,'left',true);txt(sel?'A ▶':'',W-28,y+19,PAL.gold,11,'right',true);});
+    txt('B 切换 · A 执行 · C 返回',W/2,H-16,PAL.dim,9,'center');
+  }
+};
+
+/* ---- PROMOTE ---- */
+let promoT=0;
+SCENES.PROMOTE={
+  onBtn(b){
+    if(b==='A'){state.rank++;state.kills=0;state.hp=state.maxHp;state.mp=state.maxMp;save();state.scene='CITY';cityMode='map';SFX.level();toast('晋升为 '+RANKS[state.rank]+'！','#ffd93d');}
+  },
+  update(dt){promoT+=dt;},
+  draw(){
+    px(0,0,W,H,'#0a0818');
+    const glow=Math.sin(promoT*4)*0.5+0.5;
+    for(let i=0;i<30;i++)px(((i*47+promoT*30)%W),((i*53)%H),1,1,'#ffd93d');
+    txt('晋 升 仪 式',W/2,90,PAL.gold,18,'center',true);
+    frameBox(W/2-70,110,140,90);
+    txt(state.name,W/2,140,'#fff',13,'center',true);
+    txt(RANKS[state.rank]+' →',W/2,166,PAL.dim,11,'center');
+    txt(RANKS[state.rank+1],W/2,188,PAL.gold,15,'center',true);
+    txt('「试炼已足，魔法帝之路又近一步」',W/2,232,PAL.dim,9,'center');
+    box(W/2-60,256,120,34,'#241d40',PAL.gold);
+    txt('A 接受晋升',W/2,278,'#fff',12,'center',true);
+  }
+};
+
+/* ---- export / import ---- */
+function exportSave(){try{const data=JSON.stringify(state);const blob=new Blob([data],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='mage-save.json';a.click();URL.revokeObjectURL(url);toast('存档已导出');}catch(e){toast('导出失败','#ff6b6b');}}
+function importSave(){try{const inp=document.createElement('input');inp.type='file';inp.accept='.json';inp.onchange=()=>{const f=inp.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{try{const s=JSON.parse(r.result);state=normalizeState(s);state.scene='CITY';cityMode='map';save();toast('导入成功：'+state.name);}catch(e){toast('文件损坏','#ff6b6b');}};r.readAsText(f);};inp.click();}catch(e){toast('导入失败','#ff6b6b');}}
+
+/* ---- main loop ---- */
+let last=performance.now(),lastErr=null,lastErrT=0;
+function loop(ts){
+  try{
+    const dt=Math.min(0.05,(ts-last)/1000||0);last=ts;
+    const s=SCENES[state?state.scene:'TITLE'];
+    if(s){if(s.update)s.update(dt);if(s.draw)s.draw();}
+    drawOverlay();
+  }catch(err){lastErr=err;lastErrT=performance.now();console.error(err);}
+  requestAnimationFrame(loop);
+}
+function drawOverlay(){/* 错误直接画在屏上（6 秒后自动消失，避免旧错误横幅赖着不走） + 全场景可见的提示条 */
+  let y=H-36;
+  /* 底部通道规则：伙伴页模态菜单/放生确认打开时，toast 自动让位不绘制，防止压住菜单选项 */
+  const modal=state&&state.scene==='PARTNERS'&&(partMenuOpen||partRelConf);
+  if(state&&state.scene!=='BATTLE'&&!modal){for(let i=toasts.length-1;i>=0;i--){const t=toasts[i];ctx.globalAlpha=clamp(t.t/0.4,0,1);box(8,y-12,W-16,16,'rgba(10,8,20,.92)',PAL.frame);txt(t.msg,W/2,y,t.c||'#fff',9,'center',true);ctx.globalAlpha=1;y-=20;}}
+  /* 战利品结算面板：宝箱/采集/副本通关后展示具体获得了什么 */
+  if(bt&&bt.lootShow&&state.scene==='BATTLE'){const L=bt.lootShow;const a=clamp(L.t/0.35,0,1);const ph=26+L.lines.length*13+8;
+    ctx.globalAlpha=a;box(28,54,W-56,ph,'rgba(14,10,30,.94)',PAL.gold);
+    txt(L.title,W/2,70,'#ffe9b0',10,'center',true);
+    L.lines.forEach((ln,i)=>{const s=typeof ln==='string'?ln:ln.s;const c=typeof ln==='string'?'#fff':ln.c;txt(s,W/2,86+i*13,c,9,'center',true);});
+    ctx.globalAlpha=1;}
+  if(lastErr&&performance.now()-lastErrT<6000){box(4,26,W-8,15,'rgba(120,10,10,.88)','#ff5555');txt(('⚠ '+(lastErr.message||lastErr)).slice(0,40),W/2,37,'#ffdddd',7,'center');}
+}
+
+/* ---- input ---- */
+function press(b){
+  SFX.init();if(!bgmTimer&&state&&state.sound)startBGM();
+  if(!state)return;
+  const s=SCENES[state.scene];if(s&&s.onBtn)s.onBtn(b);
+}
+document.addEventListener('keydown',e=>{
+  if(e.repeat)return;
+  if(e.code==='KeyZ'||e.code==='Enter')press('A');
+  else if(e.code==='KeyX'||e.code==='ArrowRight'||e.code==='ArrowDown')press('B');
+  else if(e.code==='KeyC'||e.code==='Escape'||e.code==='ArrowLeft'||e.code==='ArrowUp')press('C');
+});
+const bA=document.getElementById('btnA'),bB=document.getElementById('btnB'),bC=document.getElementById('btnC');
+function bind(btn,b){btn.addEventListener('touchstart',e=>{e.preventDefault();press(b);},{passive:false});btn.addEventListener('click',e=>{e.preventDefault();press(b);});}
+bind(bA,'A');bind(bB,'B');bind(bC,'C');
+
+/* ---- boot ---- */
+state=newState();state.scene='TITLE';
+loadAssets();
+requestAnimationFrame(loop);
+</script>
+</body></html>

@@ -1,0 +1,27 @@
+[Getting started]
+1. Hold the power button to boot; your rabbit appears in its little room.
+2. On the home screen, press up/down to cycle through 6 actions: feed, bathe, play, sleep, menu, sticker passport; press OK to do it.
+3. The rabbit gets hungry, dirty and sleepy — just take care of it. No need to watch it constantly; drop by from time to time.
+
+[Menu and mini-games]
+1. Select "Menu" on the home screen and press OK. There are 7 items: 5 mini-games, the sticker passport, and dress-up.
+2. Up/down to choose, OK to enter.
+3. The 5 mini-games:
+   - Carrot Catch: move to catch falling carrots.
+   - Egg Hunt: look for eggs hidden in different spots.
+   - Memory Match: flip cards to find matching pairs.
+   - Jungle Adventure: dodge bushes and keep moving forward.
+   - Rhythm Drums: tap the drum to the beat of the notes.
+4. To quit a mini-game: press and hold OK to return to the menu — you can never get stuck inside a game.
+
+[Dress-up]
+1. Choose "Dress-up" in the menu to enter the try-on mirror; the rabbit is shown large.
+2. Up/down cycles through 6 options: none, straw hat, crown, glasses, scarf, flower crown — the preview updates live.
+3. Press OK to wear the current outfit. It saves instantly and survives power-off.
+4. Press and hold OK to go back to the menu.
+
+[Sticker passport]
+Playing with your rabbit randomly earns stickers — 12 in total. Collect them all to fill the passport; earned stickers are kept forever.
+
+[Charging]
+Charge with a USB cable when the battery runs low. No internet needed — everything is stored on the device, ready to play anytime.

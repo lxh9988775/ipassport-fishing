@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>魔法师成长游戏 · AIpassport 设计方桉（V1）</title>
+<style>
+  :root{
+    --rs-red:#99003A;        /* 锐胜红 主色 */
+    --rs-red-soft:#c83a6b;
+    --ink:#1f2330;
+    --muted:#6b7280;
+    --line:#e6e1e7;
+    --bg:#fbfafb;
+    --card:#ffffff;
+    --gold:#c9a227;
+    --ok:#2e8b57;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.65;font-size:15px}
+  header{background:linear-gradient(135deg,var(--rs-red),#5e0f2e);color:#fff;padding:34px 22px 26px}
+  header h1{margin:0 0 6px;font-size:23px;letter-spacing:.5px}
+  header p{margin:0;opacity:.9;font-size:13.5px}
+  .wrap{max-width:920px;margin:0 auto;padding:18px 16px 60px}
+  nav.toc{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:16px 0 24px;font-size:13.5px}
+  nav.toc b{color:var(--rs-red)}
+  nav.toc a{color:var(--ink);text-decoration:none;border-bottom:1px dashed var(--line);margin-right:14px;white-space:nowrap}
+  nav.toc a:hover{color:var(--rs-red)}
+  section{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px 18px 20px;margin:16px 0;box-shadow:0 1px 2px rgba(0,0,0,.03)}
+  h2{font-size:18px;margin:0 0 4px;color:var(--rs-red);display:flex;align-items:center;gap:8px}
+  h2 .tag{font-size:11px;background:var(--rs-red);color:#fff;border-radius:20px;padding:2px 9px;font-weight:600}
+  h3{font-size:15px;margin:18px 0 6px;color:var(--ink)}
+  p{margin:8px 0}
+  .lead{color:var(--muted);font-size:13.5px;margin-top:2px}
+  ul,ol{margin:8px 0;padding-left:22px}
+  li{margin:4px 0}
+  table{border-collapse:collapse;width:100%;margin:10px 0;font-size:13px}
+  th,td{border:1px solid var(--line);padding:7px 9px;text-align:left;vertical-align:top}
+  th{background:#f6f1f3;color:var(--rs-red);font-weight:600}
+  tr:nth-child(even) td{background:#fcfbfc}
+  .pill{display:inline-block;font-size:11px;padding:1px 8px;border-radius:20px;background:#f3e8ec;color:var(--rs-red);margin:1px 2px;font-weight:600}
+  .wire{display:flex;flex-wrap:wrap;gap:14px;justify-content:center;margin:14px 0}
+  .wire figure{margin:0;text-align:center}
+  .wire figcaption{font-size:12px;color:var(--muted);margin-top:6px}
+  .borrow{background:#fff8f0;border-left:4px solid var(--gold);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13.5px}
+  .borrow b{color:#9a7b12}
+  .own{background:#f1f8f4;border-left:4px solid var(--ok);padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13.5px}
+  .own b{color:var(--ok)}
+  .note{background:#f4f6ff;border-left:4px solid #4a6cf7;padding:10px 14px;border-radius:0 8px 8px 0;margin:12px 0;font-size:13.5px}
+  .kbd{display:inline-block;min-width:20px;text-align:center;border:1px solid #bbb;border-bottom-width:2px;border-radius:5px;padding:1px 6px;font-size:12px;background:#fff;font-family:monospace}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+  .phase{display:flex;gap:10px;align-items:flex-start;margin:10px 0}
+  .phase .n{flex:0 0 34px;height:34px;border-radius:50%;background:var(--rs-red);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .phase .c{flex:1}
+  .phase .c b{color:var(--rs-red)}
+  footer{text-align:center;color:var(--muted);font-size:12px;padding:24px}
+  code{background:#f3f1f3;padding:1px 5px;border-radius:4px;font-size:12.5px}
+</style>
+</head>
+<body>
+<header>
+  <h1>《魔法帝之路》— AIpassport 掌机魔法成长 RPG 设计方桉</h1>
+  <p>面向 240×320 / 3 按键 / 无 PSRAM 硬件 · 城镇地图 + 横版自动战斗 · 像素风 + 人物头像贴图 · V1 方案稿（仅设计，未开工）</p>
+</header>
+
+<div class="wrap">
+<nav class="toc">
+  <b>目录：</b>
+  <a href="#p0">设计理念</a>
+  <a href="#p1">硬件与美术基线</a>
+  <a href="#p2">3 键操作方案</a>
+  <a href="#p3">屏幕线框图</a>
+  <a href="#p4">系统①晋升/故事</a>
+  <a href="#p5">系统②捕捉/稀有度</a>
+  <a href="#p6">系统③药草/炼金</a>
+  <a href="#p7">系统④装备打造</a>
+  <a href="#p8">系统⑤像素/头像</a>
+  <a href="#p9">系统⑥打怪掉落</a>
+  <a href="#p10">系统⑧自研魔法</a>
+  <a href="#p11">系统⑨动作规范</a>
+  <a href="#p12">借鉴对照表</a>
+  <a href="#p13">资源/动画清单</a>
+  <a href="#p14">开发路线</a>
+</nav>
+
+<section id="p0">
+  <h2>设计理念 <span class="tag">Why</span></h2>
+  <p class="lead">先把"为什么这么做"讲清楚，再展开细节。</p>
+  <p>你的核心约束是 <b>只有 3 个按键</b> + 一块 <b>240×320 竖屏</b>。这反而逼出了一种很舒服的玩法形态：</p>
+  <ul>
+    <li><b>城镇 = 节点地图，不是自由走位。</b>3 键完全够用：上/确认进地点、下/切换地点、返回/开地图。不需要八方向摇杆。</li>
+    <li><b>战斗 = 横版自动前进 + 自动普攻。</b>玩家只负责"在正确时机按下"——放魔法、切伙伴、喝药。这正好对应 Idle Ascent 的"自动战斗 + 手动技能爆发"手感，单手可玩。</li>
+    <li><b>自研魔法 = 三槽拼装，天然契合 3 键。</b>形态 / 元素 / 修饰 三个词缀槽，每个键选一类，拼出独门魔法。把"复杂系统"藏进"简单操作"。</li>
+    <li><b>成长不靠纯刷怪，靠"混合试炼"。</b>晋升魔法师等级需要战斗+炼金+捕捉+采集组合完成，避免无聊 grind，也贴合"通过各种任务完成晋升"的诉求。</li>
+  </ul>
+  <div class="note"><b>一句话定位：</b>《宝可梦》的收集养成 + 《黑色五叶草》的"魔法帝"逆袭主线 + 《Noita/Ars Magica》的词缀拼装魔法 + 《Idle Ascent》的横版自动战斗，全部塞进 3 个键里。</div>
+</section>
+
+<section id="p1">
+  <h2>硬件约束与美术基线 <span class="tag">约束</span></h2>
+  <div class="grid2">
+    <div>
+      <h3>机器现实（来自本项目固件基线）</h3>
+      <ul>
+        <li>ESP32-C3 · 8MB Flash · <b>无 PSRAM</b></li>
+        <li>ST7789P3 · <b>240×320 竖屏</b> · LVGL v9</li>
+        <li>物理 <b>3 按键</b>（上/下/返回，长按=退出）</li>
+        <li>已有 pet.c / pet_logic.c 框架可复用（LVGL 渲染、按键、存档）</li>
+      </ul>
+    </div>
+    <div>
+      <h3>因此定下的美术基线</h3>
+      <ul>
+        <li>统一 <b>16 色索引调色板</b>，整包资源控制在 Flash 余量内</li>
+        <li>角色/怪物精灵 <b>24×24 或 16×16</b>，每动作 4–6 帧</li>
+        <li>人物<b>头像贴图</b> 32×32，菜单/对话/伙伴卡使用</li>
+        <li>图集用 LVGL <code>LV_IMG_CF_INDEXED_4BIT</code> 压缩存储，省内存</li>
+        <li>字体：子集中文点阵（沿用现有 fishing_cjk 生成管线）</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note">无 PSRAM 意味着不能一次性解压大图。所有精灵走"小图 + 索引色 + 按需绘制"，这正是像素风的天作之合——反而比做精致 UI 更省。</div>
+</section>
+
+<section id="p2">
+  <h2>3 键操作方案 <span class="tag">核心</span></h2>
+  <p class="lead">参考街机《PuLiRuLa》（正是 3 键：跳/杖击/召唤全屏）的按键哲学，映射到本机。</p>
+  <table>
+    <tr><th>按键</th><th>城镇 / 地图态</th><th>横版战斗态</th><th>菜单态</th></tr>
+    <tr><td><span class="kbd">A</span> 上/确认</td><td>进入选中地点、确认对话、采集药草</td><td><b>释放当前魔法/普攻</b>（手动爆发窗口）</td><td>确认选择、装备/使用</td></tr>
+    <tr><td><span class="kbd">B</span> 下/切换</td><td>在地点节点间循环移动光标</td><td><b>切换出战伙伴</b> / 切换魔法条</td><td>上下切换选项</td></tr>
+    <tr><td><span class="kbd">C</span> 返回/地图</td><td>打开世界地图、返回上级</td><td>打开快捷菜单（喝药/魔法书/撤退）</td><td>返回、关闭</td></tr>
+    <tr><td><span class="kbd">A</span>+<span class="kbd">C</span> 长按</td><td colspan="3">退出当前界面 / 回主城（沿用现有 450ms 防抖长按规则）</td></tr>
+  </table>
+  <div class="borrow"><b>抄自：</b>《PuLiRuLa》三键设计——一攻击、一召唤（全屏清场）、一切换；以及《Idle Ascent》"自动战斗 + 手动触发技能爆发"。</div>
+  <div class="own"><b>我的自创：</b>把"自研魔法"的 3 个词缀槽直接绑到 3 个键——拼装魔法时 A/B/C 各选一类，战斗里 A 就是放出刚拼好的魔法。操作即系统，零学习成本。</div>
+</section>
+
+<section id="p3">
+  <h2>屏幕线框图 <span class="tag">Wireframe</span></h2>
+  <p class="lead">4 张主界面草图（240×320），用 SVG 直绘，所见即所得。</p>
+  <div class="wire">
+    <figure>
+      <svg width="150" height="200" viewBox="0 0 240 320" style="background:#10131c;border:1px solid #333">
+        <rect x="8" y="10" width="224" height="26" rx="4" fill="#1d2230"/>
+        <text x="120" y="28" fill="#fff" font-size="13" text-anchor="middle">魔法学院·主城</text>
+        <rect x="20" y="56" width="80" height="40" rx="6" fill="#2a3550" stroke="#99003A"/>
+        <text x="60" y="80" fill="#fff" font-size="11" text-anchor="middle">炼金台</text>
+        <rect x="140" y="56" width="80" height="40" rx="6" fill="#2a3550"/>
+        <text x="180" y="80" fill="#fff" font-size="11" text-anchor="middle">魔法书</text>
+        <rect x="20" y="110" width="80" height="40" rx="6" fill="#2a3550"/>
+        <text x="60" y="134" fill="#fff" font-size="11" text-anchor="middle">伙伴窝</text>
+        <rect x="140" y="110" width="80" height="40" rx="6" fill="#2a3550" stroke="#c9a227"/>
+        <text x="180" y="134" fill="#fff" font-size="11" text-anchor="middle">出征▶</text>
+        <rect x="20" y="164" width="200" height="40" rx="6" fill="#2a3550"/>
+        <text x="120" y="188" fill="#fff" font-size="11" text-anchor="middle">世界地图 (C)</text>
+        <rect x="0" y="284" width="240" height="36" fill="#0c0f16"/>
+        <text x="120" y="306" fill="#888" font-size="10" text-anchor="middle">B切换 · A进入 · C地图</text>
+      </svg>
+      <figcaption>① 城镇节点地图</figcaption>
+    </figure>
+    <figure>
+      <svg width="150" height="200" viewBox="0 0 240 320" style="background:#0e1410;border:1px solid #333">
+        <rect x="0" y="0" width="240" height="320" fill="#16241a"/>
+        <rect x="10" y="250" width="220" height="14" fill="#3a2e1a"/>
+        <!-- player -->
+        <rect x="40" y="210" width="20" height="28" fill="#c83a6b"/>
+        <rect x="44" y="196" width="12" height="12" fill="#f0c9a0"/>
+        <!-- enemy -->
+        <rect x="180" y="206" width="22" height="30" fill="#5577aa"/>
+        <rect x="184" y="192" width="14" height="12" fill="#88aadd"/>
+        <!-- hp bars -->
+        <rect x="10" y="14" width="80" height="8" fill="#333"/><rect x="10" y="14" width="56" height="8" fill="#2e8b57"/>
+        <rect x="150" y="14" width="80" height="8" fill="#333"/><rect x="150" y="14" width="30" height="8" fill="#c0392b"/>
+        <text x="120" y="40" fill="#ffd" font-size="10" text-anchor="middle">Lv.7 火焰狼</text>
+        <!-- buttons hint -->
+        <rect x="0" y="284" width="240" height="36" fill="#0c0f16"/>
+        <text x="120" y="306" fill="#aaa" font-size="10" text-anchor="middle">A魔法 · B切伙伴 · C菜单</text>
+        <text x="120" y="150" fill="#ff9" font-size="11" text-anchor="middle" opacity=".7">⚔自动前进中</text>
+      </svg>
+      <figcaption>② 横版自动战斗</figcaption>
+    </figure>
+    <figure>
+      <svg width="150" height="200" viewBox="0 0 240 320" style="background:#14101c;border:1px solid #333">
+        <rect x="0" y="0" width="240" height="320" fill="#14101c"/>
+        <rect x="14" y="14" width="48" height="48" rx="6" fill="#99003A"/>
+        <text x="38" y="44" fill="#fff" font-size="10" text-anchor="middle">小锐</text>
+        <rect x="74" y="20" width="150" height="36" fill="#221a2e"/>
+        <text x="82" y="36" fill="#fff" font-size="11">魔导士 · Lv.12</text>
+        <text x="82" y="50" fill="#c9a227" font-size="9">火/光 · ★★★★☆</text>
+        <rect x="14" y="78" width="212" height="60" rx="6" fill="#1d1626"/>
+        <text x="22" y="96" fill="#fff" font-size="10">HP 180/180  MP 64/80</text>
+        <text x="22" y="116" fill="#9fe" font-size="9">技能：炎爆 / 圣盾 / 疾风步</text>
+        <text x="22" y="130" fill="#9fe" font-size="9">捕获术：精灵球x3</text>
+        <rect x="14" y="150" width="64" height="60" rx="6" fill="#241a30"/>
+        <rect x="88" y="150" width="64" height="60" rx="6" fill="#241a30"/>
+        <rect x="162" y="150" width="64" height="60" rx="6" fill="#241a30"/>
+        <text x="46" y="232" fill="#aaa" font-size="9" text-anchor="middle">伙伴1</text>
+        <text x="120" y="232" fill="#aaa" font-size="9" text-anchor="middle">伙伴2</text>
+        <text x="194" y="232" fill="#aaa" font-size="9" text-anchor="middle">伙伴3</text>
+        <rect x="0" y="284" width="240" height="36" fill="#0c0f16"/>
+        <text x="120" y="306" fill="#aaa" font-size="10" text-anchor="middle">B切换 · A装备 · C返回</text>
+      </svg>
+      <figcaption>③ 角色 & 伙伴卡</figcaption>
+    </figure>
+    <figure>
+      <svg width="150" height="200" viewBox="0 0 240 320" style="background:#0c1018;border:1px solid #333">
+        <rect x="0" y="0" width="240" height="320" fill="#0c1018"/>
+        <text x="120" y="26" fill="#fff" font-size="12" text-anchor="middle">自研魔法 · 词缀拼装</text>
+        <rect x="16" y="48" width="208" height="52" rx="8" fill="#15263a"/>
+        <text x="26" y="68" fill="#7fd" font-size="10">形态 Form</text>
+        <text x="26" y="88" fill="#fff" font-size="11">▶ 弹射</text>
+        <rect x="16" y="110" width="208" height="52" rx="8" fill="#2a1530"/>
+        <text x="26" y="130" fill="#f9a" font-size="10">元素 Effect</text>
+        <text x="26" y="150" fill="#fff" font-size="11">▶ 火</text>
+        <rect x="16" y="172" width="208" height="52" rx="8" fill="#15302a"/>
+        <text x="26" y="192" fill="#9f9" font-size="10">修饰 Meta</text>
+        <text x="26" y="212" fill="#fff" font-size="11">▶ 扩散</text>
+        <rect x="40" y="240" width="160" height="30" rx="15" fill="#99003A"/>
+        <text x="120" y="260" fill="#fff" font-size="11" text-anchor="middle">预览：火焰散射</text>
+        <text x="120" y="300" fill="#888" font-size="9" text-anchor="middle">A/B/C 各选一类 · 长按保存</text>
+      </svg>
+      <figcaption>④ 魔法拼装界面</figcaption>
+    </figure>
+  </div>
+</section>
+
+<section id="p4">
+  <h2>系统① 魔法师晋升 + 故事主线 <span class="tag">需求1·7</span></h2>
+  <p class="lead">从"新手魔法师"到"魔法帝"，7 阶晋升，每阶需通过一场<b>混合试炼</b>（不是单纯打怪）。</p>
+  <table>
+    <tr><th>阶</th><th>称号</th><th>晋升试炼（需混合完成）</th><th>解锁</th></tr>
+    <tr><td>1</td><td>见习魔法师</td><td>入学：学会第 1 个自研魔法 + 捕获 1 只精灵</td><td>魔法书、伙伴窝</td></tr>
+    <tr><td>2</td><td>初级魔法师</td><td>采集 5 株药草 + 炼制 1 瓶回复药剂</td><td>炼金台</td></tr>
+    <tr><td>3</td><td>符文魔法师</td><td>击败区域 Boss「石肤魔兽」+ 解锁 1 个修饰词缀</td><td>装备打造</td></tr>
+    <tr><td>4</td><td>元素魔法师</td><td>集齐 4 元素伙伴各 1 只 + 自研 1 个复合魔法</td><td>元素亲和</td></tr>
+    <tr><td>5</td><td>秘术师</td><td>封印 1 只魔兽 + 炼制 1 瓶封印符</td><td>封印系</td></tr>
+    <tr><td>6</td><td>大魔导师</td><td>征服龙巢 + 收服 1 条龙 + 通关 3 试炼塔</td><td>龙骑</td></tr>
+    <tr><td>7</td><td>魔法帝</td><td>终章：集齐 8 元素圣物，击败「虚空之主」</td><td>真结局</td></tr>
+  </table>
+  <div class="borrow"><b>抄自：</b>《霍格沃茨 Legacy》"完成多样化挑战才升级"的节奏（不纯靠打怪），以及《黑色五叶草》"魔法帝"称号作为终极目标。</div>
+  <div class="own"><b>我的自创：</b>把晋升做成<b>任务清单式试炼</b>而非经验条——每阶给你 2–3 件不同性质的事（打/炼/捕/采），做完即晋。既呼应你"晋升不仅是打仗"的诉求，又天然串联起后面所有系统。</div>
+</section>
+
+<section id="p5">
+  <h2>系统② 伙伴：精灵 / 魔兽 / 龙 / 兽娘 <span class="tag">需求2</span></h2>
+  <h3>四类定位</h3>
+  <table>
+    <tr><th>类别</th><th>定位</th><th>稀有度倾向</th><th>特色机制</th></tr>
+    <tr><td>精灵 Spirit</td><td>辅助/Buff/控场</td><td>较易捕</td><td>低血高 utility，进化链短</td></tr>
+    <tr><td>魔兽 Beast</td><td>坦克/近战</td><td>中</td><td>高防高血，可"封印"收服</td></tr>
+    <tr><td>龙 Dragon</td><td>爆发/AoE</td><td>稀有</td><td>战力天花板，仅 Boss/事件出</td></tr>
+    <tr><td>兽娘 Beast-girl</td><td>均衡/特有技</td><td>中高</td><td>专属技能；部分需<b>非战斗</b>魅惑捕获</td></tr>
+  </table>
+  <h3>稀有度 5 档（影响出现率 & 捕获难度）</h3>
+  <p>
+    <span class="pill">N 普通</span><span class="pill">R 精良</span><span class="pill">SR 稀有</span><span class="pill">SSR 史诗</span><span class="pill">UR 神话</span>
+  </p>
+  <h3>随机性设计（捕获即"开盲盒"）</h3>
+  <ul>
+    <li><b>个体值 IV</b>：捕获时随机 1–5 星（影响种族值成长）。</li>
+    <li><b>技能池</b>：种族固定技 + 随机 1–2 个额外技（从该类技能池抽取）。</li>
+    <li><b>异色 Shiny</b>：1/256 概率，独立调色板 + 属性加成 + 专属闪光动作。</li>
+    <li><b>元素亲和</b>：随机微偏，影响该伙伴某元素伤害 ±10%。</li>
+  </ul>
+  <h3>捕获公式（直接复用宝可梦成熟模型）</h3>
+  <p><code>捕获率 = 基础(物种) × (1 − 2/3·剩余HP%) × 球倍率 × 状态倍率</code></p>
+  <ul>
+    <li>满血约 15%，残血(1HP)约 70%；<b>睡眠/麻痹 +20%</b>，其它异常 +10%。</li>
+    <li>球档：普通×1 / 精良×1.5 / 超级×2.5 / 传说×4（UR 必需）。</li>
+    <li><b>失败不消失</b>：对方继续行动——这是紧张感的来源（宝可梦设计精髓）。</li>
+    <li>图鉴：捕获/见过即登记，登记越多，"临界捕获"概率越高（彩蛋向）。</li>
+  </ul>
+  <div class="borrow"><b>抄自：</b>宝可梦 catch rate 公式、进化（等级进化 +25% 属性 + 新技能 + 可取消）、异色、图鉴临界捕获；龙/兽娘分层参考《怪物猎人》《明日方舟》。</div>
+  <div class="own"><b>我的自创：</b>①<b>兽娘"魅惑捕获"</b>——部分兽娘不能靠打残血抓，要送礼物/完成好感事件（贴合人形伙伴的叙事）；②把"封印"作为魔兽专属收服动词，呼应需求④的封印装备线。</div>
+</section>
+
+<section id="p6">
+  <h2>系统③ 药草采集 + 炼金术 <span class="tag">需求3</span></h2>
+  <div class="grid2">
+    <div>
+      <h3>药草采集</h3>
+      <ul>
+        <li>地图节点散布<b>药草点</b>，靠近按 <span class="kbd">A</span> 采集（类暗黑 4 路边香草）。</li>
+        <li>药草按元素分：火焰草/月光花/雷鸣根/清风叶/圣百合/暗影苔。</li>
+        <li>季节/时段刷新不同，制造"再来的理由"。</li>
+        <li>采集本身也是晋升试炼的计数项。</li>
+      </ul>
+    </div>
+    <div>
+      <h3>炼金台（主城建筑）</h3>
+      <ul>
+        <li>草药 + 怪物材料 → 药剂 / 元素精华 / 封印符 / 捕获球。</li>
+        <li><b>配方随进度解锁</b>（试炼、探索、NPC 赠予）。</li>
+        <li>产物举例：回复药剂、魔力药水、火属性精油、封印符、精灵球。</li>
+        <li>炼金成品既是消耗品，也是装备打造的材料。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="borrow"><b>抄自：</b>《Atelier》炼金做一切（比买更好更可定制）+《暗黑4》草药→炼金师→药剂/香薰的材料链路。</div>
+  <div class="own"><b>我的自创：</b>炼金产物直接反哺另外两条线——药剂用于战斗续航、精油/封印符用于<b>装备打造的词条偏向</b>、精灵球用于捕捉。让"采→炼→用"形成闭环，而不是孤立小游戏。</div>
+</section>
+
+<section id="p7">
+  <h2>系统④ 装备打造（已为你简化） <span class="tag">需求4</span></h2>
+  <p class="lead">你说"不要太复杂"，所以我砍掉了暗黑那套几十词缀的 soup，改成<b>"1 主倾向 + 2 随机副词条"</b>模型。</p>
+  <h3>部位（只留 4 个，够用不烦）</h3>
+  <table>
+    <tr><th>部位</th><th>主作用</th><th>可主倾向</th></tr>
+    <tr><td>法杖（主手）</td><td>魔法威力</td><td>攻击 / 元素攻击 / 回复 / 封印</td></tr>
+    <tr><td>法袍（防具）</td><td>生存</td><td>防御 / 回复 / 封印抗性</td></tr>
+    <tr><td>饰品</td><td>功能</td><td>元素攻击 / 防御 / 施法加速</td></tr>
+    <tr><td>靴</td><td>机动</td><td>闪避 / 先手 / 回复</td></tr>
+  </table>
+  <h3>打造流程（3 步）</h3>
+  <ol>
+    <li>选<b>底材</b>（白板装备，决定部位）。</li>
+    <li>选<b>主倾向</b>：攻击 / 元素攻击 / 回复 / 防御 / 封印（你点名的 5 类）。</li>
+    <li>投入<b>材料</b>（怪物材料 + 炼金精油）—材料元素<b>偏向</b>该倾向，再随机 2 条副词条。</li>
+  </ol>
+  <h3>副词条池（精简到 ~12 条，可读可建）</h3>
+  <p><span class="pill">攻击+15%</span><span class="pill">火焰伤害+20%</span><span class="pill">每回合回血</span><span class="pill">受击减伤</span><span class="pill">封印抗性</span><span class="pill">施法加速</span><span class="pill">暴击+10%</span><span class="pill">命中+1</span><span class="pill">MP回复</span><span class="pill">元素穿透</span><span class="pill">护盾+1</span><span class="pill">经验+5%</span></p>
+  <div class="borrow"><b>抄自：</b>《暗黑》词缀"修饰器"思想（属性/机制/技能三类），但只保留其骨架。</div>
+  <div class="own"><b>我的优化（按你要求做减法）：</b>① 主倾向把"你想强调的方向"显式化，避免暗黑式随机到怀疑人生；② 副词条封顶 2 条 + 小池子，刷装备有正反馈但不肝；③ <b>封印</b>做成独立倾向与抗性，呼应"封印兽/魔兽"玩法，这是原版没有的缝合。</div>
+</section>
+
+<section id="p8">
+  <h2>系统⑤ 像素风 + 人物头像贴图 <span class="tag">需求5</span></h2>
+  <ul>
+    <li><b>统一像素美学</b>：16 色板、硬边、无抗锯齿，保证全游戏视觉一致。</li>
+    <li><b>人物头像贴图（关键需求）</b>：每个可交互角色（玩家"小锐"、导师、炼金娘、兽娘伙伴等）都有独立 <b>32×32 头像</b>，用于对话、伙伴卡、图鉴。</li>
+    <li>主角"小锐"沿用你短剧里的虚拟角色，保持 IP 一致。</li>
+    <li>头像与战斗精灵同源绘制，避免"菜单一张脸、战斗另一个人"。</li>
+  </ul>
+  <div class="note">头像资源量可控：NPC 约 8–12 张、伙伴约 16–24 张，每张 32×32×4bit ≈ 0.5KB，整包 < 20KB。完全在无 PSRAM 预算内。</div>
+</section>
+
+<section id="p9">
+  <h2>系统⑥ 打怪掉落 <span class="tag">需求6</span></h2>
+  <table>
+    <tr><th>掉落物</th><th>用途</th><th>来源权重</th></tr>
+    <tr><td>金币</td><td>购买底材/消耗品</td><td>所有怪</td></tr>
+    <tr><td>怪物材料</td><td>炼金 + 装备打造</td><td>按物种</td></tr>
+    <tr><td>药草</td><td>炼金</td><td>地图节点为主</td></tr>
+    <tr><td>装备（白/蓝）</td><td>直接穿 / 当底材</td><td>普通怪</td></tr>
+    <tr><td>捕获球/精油</td><td>捕捉/打造</td><td>精英怪</td></tr>
+    <tr><td>SSR/UR 碎片</td><td>合成稀有伙伴</td><td>Boss 保底</td></tr>
+  </table>
+  <p>掉落随<b>区域等级</b>与<b>敌人稀有度</b>加权；Boss 必掉 1 件紫装或 1 个 UR 碎片，杜绝"白打工"。</p>
+  <div class="borrow"><b>抄自：</b>《暗黑》《宝可梦》"怪物掉材料、Boss 掉好货"的标准循环。</div>
+</section>
+
+<section id="p10">
+  <h2>系统⑧ 自研魔法（核心创新） <span class="tag">需求8</span></h2>
+  <p class="lead">最值得做的点。用"形态 + 元素 + 修饰"三槽拼装，每个键选一类，简单但有深度。</p>
+  <table>
+    <tr><th>槽（绑键）</th><th>可选词缀</th><th>作用</th></tr>
+    <tr><td>形态 Form <span class="kbd">A</span></td><td>弹射 / 锥形 / 领域 / 自身 / 链</td><td>决定魔法怎么打出去、打哪</td></tr>
+    <tr><td>元素 Effect <span class="kbd">B</span></td><td>火 / 水 / 风 / 雷 / 光 / 暗 / 治疗 / 封印 / 护盾</td><td>决定伤害属性与效果</td></tr>
+    <tr><td>修饰 Meta <span class="kbd">C</span></td><td>强化 / 扩散 / 穿透 / 减速 / 灼烧 / 连发</td><td>改伤害、范围、附加异常</td></tr>
+  </table>
+  <h3>拼装示例</h3>
+  <ul>
+    <li>弹射 + 火 + 扩散 = <b>火焰散射</b>（清小怪）</li>
+    <li>领域 + 暗 + 封印 = <b>暗影牢笼</b>（控场+封印魔兽）</li>
+    <li>自身 + 治疗 + 连发 = <b>回春术</b>（持续回血）</li>
+    <li>链 + 雷 + 穿透 = <b>雷 Chain</b>（多目标爆发）</li>
+  </ul>
+  <h3>文字词条拼接（进阶）</h3>
+  <p>探索中收集<b>词条碎片</b>（如「爆裂」「寒霜」「回响」「禁锢」），可在魔法书里像拼乐高一样塞进修饰槽，拼出配方<b>命名并保存</b>，形成你的独门魔法库。高阶修饰（如"回响=连锁触发"）需晋升解锁。</p>
+  <div class="borrow"><b>抄自：</b>①《Noita》法杖=武器、法术=弹药、修饰从左往右作用；②《Ars Magica / Pathfinder 词缀法术》的"形态+效果+元"三段模型；③《Magicka》元素相生相克。</div>
+  <div class="own"><b>我的自创：</b>把这三段模型<b>直接绑到 3 个物理按键</b>——拼魔法时用键选类，战斗里按键即放。并加入<b>词条碎片收集+命名保存</b>，让"自研"有成长感和收藏感，而不只是临时拼一下。</div>
+</section>
+
+<section id="p11">
+  <h2>系统⑨ 战斗 & 魔法专属动作 <span class="tag">需求9</span></h2>
+  <p class="lead">你强调"不能太粗制滥造"——所以每个实体/技能都要有<b>独立动画与 VFX</b>，不是换色贴图。</p>
+  <h3>动画规范（每个角色/怪物必备帧组）</h3>
+  <table>
+    <tr><th>动作</th><th>帧数</th><th>说明</th></tr>
+    <tr><td>Idle 待机</td><td>4</td><td>呼吸/飘浮微动</td></tr>
+    <tr><td>Walk 行走</td><td>4</td><td>横版迈步</td></tr>
+    <tr><td>Attack 普攻</td><td>4</td><td>杖击/爪击专属姿态</td></tr>
+    <tr><td>Cast 吟唱</td><td>4</td><td>举杖蓄力 + 光点聚拢</td></tr>
+    <tr><td>Skill 大招</td><td>6</td><td>专属演出（龙=展翼吐息，兽娘=突进斩）</td></tr>
+    <tr><td>Hit 受击</td><td>2</td><td>后仰闪白</td></tr>
+    <tr><td>Faint 倒下</td><td>3</td><td>倒地/消散</td></tr>
+  </table>
+  <h3>魔法 VFX 分层（保证不"换色了事"）</h3>
+  <ul>
+    <li><b>施法姿态</b>：玩家举杖动作随元素变色（火=红焰、水=蓝波、光=金环）。</li>
+    <li><b>弹道/范围</b>：火=拖尾火星、水=水泡弧线、雷=折线、风=透明气旋、暗=紫黑裂痕。</li>
+    <li><b>命中表现</b>：火=爆燃、水=溅射、雷=麻痹电花、暗=封印锁链缠绕。</li>
+    <li><b>异色专属</b>：Shiny 伙伴释放时附加金粉拖尾，一眼可辨。</li>
+  </ul>
+  <div class="note">实现上：精灵用 LVGL <code>lv_img</code> 序列帧 + 简单位移/缩放/透明度 tween 即可做出"有演出感"的动作，无需骨骼动画，省资源且可控。</div>
+</section>
+
+<section id="p12">
+  <h2>借鉴对照表（抄了谁 · 改了啥） <span class="tag">总览</span></h2>
+  <table>
+    <tr><th>借鉴对象</th><th>抄来的</th><th>我的改造</th></tr>
+    <tr><td>宝可梦</td><td>捕获公式/稀有度/进化/图鉴/异色</td><td>兽娘魅惑捕获、封印收服魔兽、IV+技能池随机</td></tr>
+    <tr><td>Idle Ascent / Auto Pixel Battle / Counter:Side</td><td>横版自动战斗 + 手动技能爆发 + 元素连携 + 重复收益</td><td>3 键操作映射、挂机走路自动遇敌</td></tr>
+    <tr><td>Noita / Ars Magica / Magicka</td><td>词缀拼装魔法、元素相克</td><td>3 槽绑 3 键、词条碎片收集+命名保存</td></tr>
+    <tr><td>Atelier / 暗黑4</td><td>炼金做一切、草药→材料链路、词缀修饰器</td><td>采→炼→造闭环、词缀做减法(主倾向+2副词条)</td></tr>
+    <tr><td>霍格沃茨 Legacy / 黑色五叶草</td><td>多样化挑战升级、魔法帝目标</td><td>试炼清单式晋升（打/炼/捕/采混合）</td></tr>
+    <tr><td>PuLiRuLa（街机3键）</td><td>三键：攻击/召唤/切换</td><td>直接作为本机 A/B/C 定义</td></tr>
+    <tr><td>葬送的芙莉莲 / 哈利波特</td><td>魔法学院氛围、平静叙事基调</td><td>"小锐"主角 IP 统一</td></tr>
+  </table>
+</section>
+
+<section id="p13">
+  <h2>资源 & 动画清单（评估工作量用） <span class="tag">Asset</span></h2>
+  <ul>
+    <li><b>角色精灵</b>：玩家 1 + 导师/NPC 8–12 + 伙伴 16–24（每体 7 帧组）= 约 200–280 张小图。</li>
+    <li><b>怪物精灵</b>：按区域 30–50 种，Boss 8–10 种。</li>
+    <li><b>头像贴图</b>：32×32 约 30–40 张。</li>
+    <li><b>魔法 VFX</b>：9 元素 ×（弹道/范围/命中）≈ 30–50 组粒子/帧。</li>
+    <li><b>场景</b>：城镇节点 6 + 区域背景 5 + 战斗地形 tile。</li>
+    <li><b>UI</b>：主城/战斗/伙伴卡/魔法书/锻造 5 套界面线框（见上）。</li>
+  </ul>
+  <div class="note">像素美术可用 Aseprite 绘制后脚本转 C 数组；若需"不那么粗制滥造"，建议找一位像素画师按统一 16 色板产出首批 20–30 张核心精灵作为风格锚点，其余用程序化/模板扩充。</div>
+</section>
+
+<section id="p14">
+  <h2>分阶段开发路线（MVP → 完整） <span class="tag">Roadmap</span></h2>
+  <div class="phase"><div class="n">1</div><div class="c"><b>MVP 核心循环（验证手感）</b><br>城镇节点地图 + 横版自动战斗 + 1 个自研魔法(3槽) + 1 只可捕精灵 + 基础掉落。先证明"3 键好玩"。</div></div>
+  <div class="phase"><div class="n">2</div><div class="c"><b>养成闭环</b><br>4 类伙伴 + 5 档稀有度 + 捕获公式 + 药草采集 + 炼金台 + 装备打造(主倾向+2副词条)。</div></div>
+  <div class="phase"><div class="n">3</div><div class="c"><b>魔法深度</b><br>词条碎片收集 + 命名保存魔法库 + 元素相克战斗 + Shiny/异色 + 图鉴临界捕获。</div></div>
+  <div class="phase"><div class="n">4</div><div class="c"><b>主线与演出</b><br>7 阶晋升试炼全链路 + 魔法帝终章 + 全套专属动作/VFX 打磨 + 头像贴图 + Boss 战。</div></div>
+  <div class="phase"><div class="n">5</div><div class="c"><b>打磨与平衡</b><br>数值 tuning、存档、省电挂机、音效（8-bit BGM/SFX）。</div></div>
+  <div class="own" style="margin-top:14px"><b>我的建议：</b>先只做阶段 1，约 2–3 周可出一个能在 AIpassport 上跑的 demo，你拿真机摸一摸"3 键自动战斗 + 拼魔法"的手感，满意了再往后续投。这样风险最低。</div>
+</section>
+
+<section>
+  <h2>下一步需要你拍板的事 <span class="tag">待确认</span></h2>
+  <ol>
+    <li><b>是否同意先走阶段 1（MVP）？</b> 还是想一口气做全？</li>
+    <li><b>美术来源</b>：你自己画 / 我找像素画师规范 / 先用占位方块跑通逻辑？</li>
+    <li><b>存档与持久化</b>：本机 NVS 存档即可，还是要可导出？</li>
+    <li><b>音效</b>：要 8-bit BGM 吗？还是先静音？</li>
+    <li><b>主角名</b>：用短剧里的"小锐"作默认主角 OK 吗？</li>
+  </ol>
+  <p class="lead">确认后我再进入"动手制作"阶段，按阶段 1 出可运行 demo。本文件仅供评审，未写任何代码。</p>
+</section>
+
+<footer>《魔法帝之路》设计方桉 V1 · 为 AIpassport (240×320 / 3键) 定制 · 锐胜红 #99003A 主题</footer>
+</div>
+</body>
+</html>

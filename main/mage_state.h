@@ -143,4 +143,16 @@ void battle_start_wild(int chapter);
 void battle_start_dungeon(int dungeonId);
 void battle_start_boss(int chapter);
 
+/* 衍生查询（供 UI 场景使用，1:1 复刻 HTML 辅助函数） */
+int  discoveredCount(void);
+int  discoveredKeyAt(int i);            /* 第 i 个已习得魔法 key（越界返回 -1） */
+int  enemyIndex(const char *type);      /* DEXORDER 下标；找不到返回 -1 */
+int  activeLoadoutKeys(int *out, int cap); /* 返回有效出战魔法 key 数 */
+int  spellPower2(int key, int lv);      /* 指定等级威力（research/mupgrade 预览） */
+int  questProg(const QuestDef *q);
+const char *speciesZones(int idx);      /* 返回静态缓冲 */
+int  mage_can_craft(const RecipeDef *r);
+int  skillIndex(const char *s);         /* 技能字符串 → SKILLS 下标 */
+int  traitIndex(const char *s);         /* 特性字符串 → TRAITS 下标 */
+
 #endif /* MAGE_STATE_H */

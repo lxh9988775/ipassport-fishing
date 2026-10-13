@@ -16,6 +16,7 @@
 extern const char *RANKS[7];
 extern const int   RANK_KILLS[7];          /* 晋升所需击杀 */
 extern const char *TIER_NAMES[5];           /* 初级/中级/高级/国家级/古代 */
+extern const char *ARANKS[7];              /* 公会冒险者等级 F/E/D/C/B/A/S */
 
 typedef struct { const char *n; float pow; float cost; int range; const char *des; } FormDef;
 extern const FormDef FORMS[3];              /* 弹/光束/爆发 */
@@ -108,5 +109,21 @@ typedef struct { const char *n; const char *d; int scene; } LocDef;
 extern const LocDef LOCATIONS[7];
 typedef struct { const char *n; int scene; } FuncDef;
 extern const FuncDef FUNCS[8];
+
+/* ============ 公会委托 ============ */
+typedef struct { const char *n; const char *type; int need; int gold;
+                 int orbs; int potions; int crystals; const char *sub; int rank; } QuestDef;
+extern const QuestDef QUESTS[4];
+
+/* ============ 魔法黑市 ============ */
+/* holdField: 0 月光草 / 1 兽骨 / 2 魔晶 / 3 封印卡 / -1 魔法书(随机习得) */
+typedef struct { const char *n; int price; const char *sub; int holdField; } MarketDef;
+extern const MarketDef MARKET[5];
+
+/* ============ 炼金配方 ============ */
+/* cH/cM/cC = 月光草/兽骨/魔晶 消耗；makeStone=1..4 产对应魔石；
+   outName="potions"/"orbs"/"seals" 则产出对应道具，"" 表示只产魔石 */
+typedef struct { const char *n; int cH, cM, cC; int makeStone; const char *outName; const char *desc; } RecipeDef;
+extern const RecipeDef RECIPES[7];
 
 #endif /* MAGE_DATA_H */

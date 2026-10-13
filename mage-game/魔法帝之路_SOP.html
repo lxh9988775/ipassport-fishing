@@ -1,0 +1,448 @@
+<!DOCTYPE html><html lang="zh"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1"><title>魔法帝之路 · 游戏 SOP（剧情 / 玩法 / 内容总览）</title>
+<style>
+  :root{--bg:#0c0a16;--bg2:#15102a;--bg3:#1d1636;--gold:#ffd93d;--gold2:#c9a227;--frame:#3a2f5e;--txt:#e8e2ff;--dim:#9a8fc0;--red:#ff6b6b;--blue:#5ec8f2;--green:#7fdc8a;--purple:#c06bff;--pink:#ff6bd6;}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{background:var(--bg);color:var(--txt);font-family:"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;}
+  a{color:var(--gold);text-decoration:none}
+  .wrap{max-width:980px;margin:0 auto;padding:0 16px 80px}
+  header{padding:48px 16px 28px;text-align:center;background:radial-gradient(circle at 50% 0%,#2a1d52 0%,var(--bg) 70%);border-bottom:1px solid var(--frame)}
+  header h1{font-size:30px;color:var(--gold);letter-spacing:2px;text-shadow:0 2px 12px rgba(255,217,61,.35)}
+  header p{color:var(--dim);margin-top:8px;font-size:13px}
+  .ver{display:inline-block;margin-top:12px;padding:3px 12px;border:1px solid var(--gold2);border-radius:20px;color:var(--gold2);font-size:12px}
+  nav{position:sticky;top:0;z-index:10;background:rgba(12,10,22,.92);backdrop-filter:blur(6px);border-bottom:1px solid var(--frame);padding:10px 0}
+  nav .wrap{padding-top:0;padding-bottom:0;display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:center}
+  nav a{font-size:12.5px;color:var(--dim)}
+  nav a:hover{color:var(--gold)}
+  section{margin-top:38px}
+  h2{font-size:20px;color:var(--gold);border-left:4px solid var(--gold);padding-left:10px;margin-bottom:6px}
+  h3{font-size:15px;color:var(--blue);margin:18px 0 8px}
+  h4{font-size:13.5px;color:var(--pink);margin:12px 0 4px}
+  p,li{font-size:13.5px;color:#d3cce8}
+  .lead{color:var(--dim);font-size:13px;margin:4px 0 14px}
+  .card{background:var(--bg2);border:1px solid var(--frame);border-radius:10px;padding:16px 18px;margin:12px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  @media(max-width:720px){.grid2,.grid3{grid-template-columns:1fr}}
+  .kpi{background:var(--bg3);border:1px solid var(--frame);border-radius:8px;padding:12px}
+  .kpi b{display:block;color:var(--gold);font-size:20px}
+  .kpi span{color:var(--dim);font-size:11.5px}
+  table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}
+  th,td{border:1px solid var(--frame);padding:6px 8px;text-align:left;vertical-align:top}
+  th{background:var(--bg3);color:var(--gold);font-weight:700}
+  td.yes{color:var(--green)} td.no{color:var(--red)} td.seal{color:var(--purple)}
+  ul{margin:6px 0 6px 20px}
+  .tag{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11px;margin:1px 2px}
+  .t-orb{background:rgba(94,200,242,.15);color:var(--blue);border:1px solid rgba(94,200,242,.4)}
+  .t-seal{background:rgba(192,107,255,.15);color:var(--purple);border:1px solid rgba(192,107,255,.4)}
+  .t-no{background:rgba(255,107,107,.13);color:var(--red);border:1px solid rgba(255,107,107,.4)}
+  .t-boss{background:rgba(255,217,61,.15);color:var(--gold);border:1px solid rgba(255,217,61,.4)}
+  .t-cap{background:rgba(127,220,138,.13);color:var(--green);border:1px solid rgba(127,220,138,.4)}
+  .step{counter-reset:s;list-style:none;margin-left:0!important}
+  .step li{position:relative;padding:8px 12px 8px 44px;border-left:2px solid var(--frame);margin-bottom:6px;background:var(--bg2);border-radius:0 8px 8px 0}
+  .step li:before{counter-increment:s;content:counter(s);position:absolute;left:10px;top:8px;width:24px;height:24px;border-radius:50%;background:var(--gold);color:#1a0e04;font-weight:700;text-align:center;line-height:24px;font-size:13px}
+  .note{border-left:3px solid var(--gold2);background:rgba(201,162,39,.08);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#ece3c0}
+  .warn{border-left:3px solid var(--red);background:rgba(255,107,107,.08);padding:10px 14px;margin:10px 0;font-size:12.5px;color:#ffd0d0}
+  .scroll{overflow-x:auto}
+  code{background:var(--bg3);padding:1px 5px;border-radius:4px;color:var(--gold);font-size:12px}
+  footer{text-align:center;color:var(--dim);font-size:11.5px;margin-top:50px;border-top:1px solid var(--frame);padding-top:18px}
+  .pill{font-size:11px;color:var(--dim)}
+</style></head>
+<body>
+<header>
+  <h1>魔法帝之路</h1>
+  <p>MAGE OF THE MAGIC EMPEROR · 单文件 Canvas RPG 玩法 / 剧情 / 内容标准操作手册（SOP）</p>
+  <span class="ver">交付版本 v7.4.4 · 屏幕 240×320 · 3 键操作</span>
+</header>
+
+<nav><div class="wrap">
+  <a href="#overview">① 总览</a>
+  <a href="#story">② 剧情主线</a>
+  <a href="#control">③ 操作说明</a>
+  <a href="#loop">④ 核心循环</a>
+  <a href="#walk">⑤ 推进 SOP</a>
+  <a href="#scene">⑥ 场景地图</a>
+  <a href="#magic">⑦ 魔法系统</a>
+  <a href="#capture">⑧ 捕捉 / 伙伴</a>
+  <a href="#equip">⑨ 装备 / 物品</a>
+  <a href="#dungeon">⑩ 副本秘境</a>
+  <a href="#battle">⑪ 战斗机制</a>
+  <a href="#monster">⑫ 怪物图鉴</a>
+  <a href="#append">⑬ 数据附录</a>
+</div></nav>
+
+<div class="wrap">
+
+<!-- ① -->
+<section id="overview">
+  <h2>① 游戏总览</h2>
+  <p class="lead">一句话：你扮演一名见习魔法师，踏平五道封印、收服魔物伙伴、研习 135 种魔法，最终登顶「魔法帝」。</p>
+  <div class="grid3">
+    <div class="kpi"><b>50+</b><span>可遇魔物种类（11 基础 + 39 扩充）</span></div>
+    <div class="kpi"><b>135</b><span>魔法组合数（3 形态 × 9 元素 × 5 修饰）</span></div>
+    <div class="kpi"><b>30</b><span>随机副本 / 地下迷宫 / 古代遗迹</span></div>
+    <div class="kpi"><b>7</b><span>魔法师阶位（见习 → 魔法帝）</span></div>
+    <div class="kpi"><b>5</b><span>主线章节 · 每章 1 体 BOSS</span></div>
+    <div class="kpi"><b>3</b><span>操作键（A/B/C）</span></div>
+  </div>
+  <div class="card">
+    <h4>定位与设计基调</h4>
+    <ul>
+      <li><b>平台</b>：单文件 <code>index.html</code>，浏览器 / 手机直接打开即玩；进度自动存 <code>localStorage</code>（支持导出 / 导入 JSON 存档）。</li>
+      <li><b>节奏</b>：升级曲线刻意放慢（约 1.8 倍），靠副本与 BOSS 的额外经验推进；<b>装备门禁</b>——没装备时打章节 BOSS 会非常吃力，逼你做装备。</li>
+      <li><b>画风</b>：八方旅人 / HD-2D 像素风，深靛紫底 + 描金 UI + 像素怪物立绘（统一规范驱动，50 怪共用一套立绘生成器）。</li>
+      <li><b>版本注</b>：文件标题里写的版本号是 <code>v6.4</code>，与本次交付的实际代码 <code>v7.4.4</code> 不一致；以交付版本为准。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ② -->
+<section id="story">
+  <h2>② 剧情主线 · 五道封印</h2>
+  <p class="lead">主线采用「章节门禁」：必须击败上一章 BOSS，才能解锁并进入下一章。每章首次进入播入场剧情，击败 BOSS 播通关剧情。</p>
+  <table class="scroll">
+    <tr><th style="width:42px">章</th><th>区域</th><th>BOSS</th><th>主线剧情（一句话）</th></tr>
+    <tr><td>一</td><td>试炼森林</td><td class="no">哥布林王</td><td>森林的「森之符」被哥布林王抢走，林地正在凋零。踏碎嘲笑着人类的王座。</td></tr>
+    <tr><td>二</td><td>幽暗洞窟</td><td class="no">骸骨领主</td><td>骸骨领主用亡者拼凑军队，上一任见习魔法师再没能走出来——这一次换你终结它。</td></tr>
+    <tr><td>三</td><td>灰烬火山</td><td class="no">熔岩巨像</td><td>熔岩巨像吞下三块「炎之心」，封印松动，大陆正被烤焦。</td></tr>
+    <tr><td>四</td><td>霜风雪原</td><td class="no">霜牙狼王</td><td>狼王咬碎「冬之铃」，每嚎叫一次春天就晚到一年，要让你嚎声永远停息。</td></tr>
+    <tr><td>五</td><td>浮空遗迹</td><td class="no">遗迹守卫神</td><td>最顶层守着「魔法帝之冠」，击败它，你才配得上「魔法师」三个字。</td></tr>
+  </table>
+  <div class="note">击败每章 BOSS 后会掉落<b>高品质装备 + 2 魔晶 + 2 捕捉球 + 1 封印卡</b>，并解锁下一章。终章 BOSS 倒下，主角从「见习生」正式成为踏过五道封印的魔法师。</div>
+  <h4>职业晋升（独立于战斗）</h4>
+  <p>阶位由 <code>魔法学院 → 职业晋升考核</code> 推进，条件是<b>击杀数达标</b> + <b>完成足够公会委托</b>（详见 ⑥ 学院 / 公会）。战斗胜利<b>不会</b>自动晋升，避免「打几仗就自动升级」让晋升形同虚设。</p>
+</section>
+
+<!-- ③ -->
+<section id="control">
+  <h2>③ 操作说明（3 键）</h2>
+  <div class="grid3">
+    <div class="kpi"><b>A = Z</b><span>确定 / 攻击 / 进入 / 施法</span></div>
+    <div class="kpi"><b>B = X</b><span>切换 / 选择下一项</span></div>
+    <div class="kpi"><b>C = C</b><span>菜单 / 返回 / 道具</span></div>
+  </div>
+  <div class="card">
+    <ul>
+      <li>键盘映射：<code>Z</code>=A、<code>X</code>=B、<code>C</code>=C（另 <code>Enter</code>=A、方向键左右上下 = B/C 切换）。</li>
+      <li>手机：直接点屏幕下方三个按钮 <b>A 确定/攻击</b> / <b>B 切换</b> / <b>C 菜单/返回</b>。</li>
+      <li>绝大多数界面遵循「B 选择、A 确定、C 返回」三键逻辑；战斗时 C 打开道具栏（含捕捉球 / 封印卡）。</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ④ -->
+<section id="loop">
+  <h2>④ 核心玩法循环</h2>
+  <div class="card">
+    <ol class="step">
+      <li><b>城里整备</b>：魔法学院学魔法 / 升级、锻造房造装备、住宅炼金造药水与捕捉道具、黑市补素材。</li>
+      <li><b>出野外远征</b>：选章节 → 打 10 波（第 5 波精英、第 10 波 BOSS），途中插探索事件（宝箱 / 陷阱 / 泉水 / 药草）。</li>
+      <li><b>战斗</b>：法师站桩远程输出，普攻 / 魔法 / 伙伴协同 / 用药 / 捕捉球收服；元素相性破防是核心技巧。</li>
+      <li><b>成长</b>：击杀拿经验升级、金币、材料、药水；满足条件后回城晋升阶位 / 冒险者等级。</li>
+      <li><b>深化</b>：用魔石升级魔法、用材料炼高级道具、收服并进化伙伴、刷随机副本拿稀有装备与魔石。</li>
+    </ol>
+  </div>
+  <div class="note">挂机友好：可开<b>自动战斗</b>与<b>自动捕捉</b>（系统菜单里切换）。自动模式下编队魔法轮流放，虚弱可捕怪会自动扔球 / 卡；关掉自动捕时，被锁血的怪会主动逃走清场，不会卡死。</div>
+</section>
+
+<!-- ⑤ -->
+<section id="walk">
+  <h2>⑤ 新手推进 SOP（照着走即可通关主线）</h2>
+  <div class="card">
+    <ol class="step">
+      <li><b>开始</b>：标题页选「新的旅程」→ 命名（B 切换 7 个预设名，A 确定）→ 进入魔法小镇。</li>
+      <li><b>首战前整备</b>：去<b>魔法学院</b>花 45 金「学习属性魔法」至少学 1 门；去<b>锻造房</b>升 1 级武器（+攻击）。</li>
+      <li><b>试炼森林</b>：城镇地图选「野外试炼 → 试炼森林」(建议 Lv1+)，A 出发。自动/手动打完 10 波，第 10 波是<b>哥布林王</b>。</li>
+      <li><b>捕捉练习</b>：途中把史莱姆 / 猫灵打到残血，C 开道具 → A 投捕捉球收服（猫灵全图小概率出没，是稳定伙伴来源）。</li>
+      <li><b>回城晋升</b>：击杀够了去<b>冒险者公会</b>接委托、<b>魔法学院</b>参加「职业晋升考核」升阶位（见习 → 初级魔法师）。</li>
+      <li><b>解锁下一章</b>：拿到哥布林王掉落后，野外试炼里下一章（幽暗洞窟）自动解锁；重复 ②~⑤ 直到五章通关。</li>
+      <li><b>后期深化</b>：刷 30 张随机副本拿<b>古代魔石</b>，在<b>魔法升级</b>里把古代级魔法升满；收齐 50 怪图鉴；通关<b>遗迹秘境</b>(连过 3 层)拿豪华奖励。</li>
+    </ol>
+  </div>
+  <div class="warn">装备门禁提醒：每章 BOSS 血量约为小怪的 7.5 倍、攻 1.85 倍，且有 5 层破防盾。没武器/护甲就硬刚会很苦——打 BOSS 前务必先锻造 / 攒一套 BOSS 掉的高品质装备。</div>
+</section>
+
+<!-- ⑥ -->
+<section id="scene">
+  <h2>⑥ 场景地图（魔法小镇 + 功能）</h2>
+  <p class="lead">城镇是 hub：上方一行 7 个地点，下方 8 张功能卡。B 切换、A 进入、C 在地图 / 功能栏之间切换。</p>
+  <div class="grid2">
+    <div class="card">
+      <h4>地点（地图模式）</h4>
+      <ul>
+        <li><b>魔法学院</b>：魔力修行(+上限)、学习属性魔法(随机一门)、职业晋升考核。</li>
+        <li><b>野外试炼</b>：5 章 + 遗迹秘境 + 随机副本入口（主线推进核心）。</li>
+        <li><b>冒险者公会</b>：接委托、交付、升冒险者等级(F→S)。</li>
+        <li><b>住宅</b>：休息(满血满蓝)、炼金台、魔法研究。</li>
+        <li><b>锻造房</b>：锻造武器(+攻)、法袍(+血上限)。</li>
+        <li><b>魔法黑市</b>：买月光草/兽骨/魔晶/封印卡/魔法书。</li>
+        <li><b>魔物图鉴</b>：收录进度、出没、捕捉条件、天赋/特性/进化。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>功能卡（功能模式）</h4>
+      <ul>
+        <li><b>角色</b> STATUS：看属性、装备、出战魔法。</li>
+        <li><b>伙伴</b> PARTNERS：出战 / 进化 / 放生。</li>
+        <li><b>魔法书</b> BOOK：节点图管理已学魔法、编出战队列、研究新魔法。</li>
+        <li><b>炼金</b> ALCHEMY：用药草/兽骨/魔晶炼药水、球、卡、魔石。</li>
+        <li><b>背包</b> BAG：按分类(药品20/材料40/魔石/道具)浏览全部物品。</li>
+        <li><b>装备</b> EQUIP：装备 / 替换武器·护甲·饰品。</li>
+        <li><b>魔法升级</b> MUPGRADE：耗魔石+金币升魔法等级。</li>
+        <li><b>系统</b> MENU：自动战斗 / 自动捕捉 / 音效 / 难度 / 存档导入导出 / 重开。</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ⑦ -->
+<section id="magic">
+  <h2>⑦ 魔法系统（三槽组合）</h2>
+  <p class="lead">每门魔法 = <b>形态 × 元素 × 修饰</b> 三个槽位。3 形态 × 9 元素 × 5 修饰 = <b>135 种</b>组合，再按修饰槽位分 <b>5 个阶级</b>。</p>
+  <div class="grid3">
+    <div class="card"><h4>形态 FORMS</h4>
+      <ul><li>弹：单体远距</li><li>光束：直线远距</li><li>爆发：范围</li></ul></div>
+    <div class="card"><h4>元素 ELEMS（9）</h4>
+      <ul><li>火 / 水 / 雷 / 风 / 土 / 冰 / 光 / 暗 / 虚无</li><li>各有威力系数，影响相性与伤害</li></ul></div>
+    <div class="card"><h4>修饰 MODS（5）</h4>
+      <ul><li>普通 / 强力(×1.5耗魔+) / 广域(命中全体)</li><li>连发(最多3目标) / 古代(×2.4耗魔极高)</li></ul></div>
+  </div>
+  <h4>阶级与「学得起用不起」设计</h4>
+  <p>阶级由<b>修饰槽位</b>决定：<code>TIER_NAMES = 初级 / 中级 / 高级 / 国家级 / 古代</code>。低等级也能研究最高级魔法，但<b>耗魔巨大放不出来</b>——魔力上限随等级成长，这就是代价。</p>
+  <ul>
+    <li><b>研究新魔法</b>：BOOK → 节点图选「+ 研究新魔法」→ CRAFT 三槽自由拼装（A 切槽、B 换选项、C 装配录入魔法书）。</li>
+    <li><b>魔法等级</b>：RESEARCH(住宅) 耗月光草×2+兽骨×2 提升单门等级（等级越高成功率越低）；<b>魔法升级 MUPGRADE</b> 耗魔石+金币直接升（高阶级需对应魔石）。</li>
+    <li><b>出战编队</b>：BOOK 里 A 加入 / 移出，最多 4 门；战斗中自动模式按编队轮流放。</li>
+    <li><b>耗魔公式</b>：<code>3×形态系数×修饰耗魔 + 阶级×8</code>（初级≈3，古代弹≈39+），等级低时高阶魔法放不出。</li>
+  </ul>
+  <div class="note">魔石（stones[1~4]）对应 中级/高级/国家级/古代魔石，是魔法升级货币：可<b>炼金</b>造、副本/宝箱掉落、BOSS 击杀附带。</div>
+</section>
+
+<!-- ⑧ -->
+<section id="capture">
+  <h2>⑧ 捕捉与伙伴系统</h2>
+  <div class="card">
+    <h4>两类捕捉道具</h4>
+    <ul>
+      <li><b>捕捉球（orb）</b>：成功概率 = 怪稀有度上限 × 虚弱系数；N 满血约 37% → 残血 95%；UR 满血仅 11%（克制高稀有）。</li>
+      <li><b>魔法封印卡（seal）</b>：固定 75%~95%（血越少越高），<b>无视稀有度压制</b>，专治 SSR/UR 与浮空遗迹类怪。炼金需兽骨×2+魔晶×1。</li>
+      <li>伙伴特性<b>幸运 +10%</b> / <b>柔软 +15%</b> 提升捕捉概率。</li>
+    </ul>
+  </div>
+  <div class="warn"><b>捕捉门槛</b>：怪可分两类——① 任意血量+持有对应道具即可捕（球类）；② 必须压到指定血线以下才能捕（如霜牙雪狼需血&lt;40%、遗迹魔像&lt;25%、远古怨灵&lt;30%）；③ 部分怪<b>只能用封印卡</b>（冰晶灵、遗迹魔像、远古怨灵、幼龙、符文傀儡等）。BOSS 不可捕捉。</div>
+  <div class="card">
+    <h4>伙伴养成</h4>
+    <ul>
+      <li><b>出战</b>：PARTNERS 页 A 设当前出战位（出战伙伴会在战斗里协同攻击）。</li>
+      <li><b>天赋技能</b>：利爪/疾风/毒牙/吸血/余烬/霜咬/守护（出战命中或回合生效）。</li>
+      <li><b>特性</b>：凶暴/坚壁/灵巧/沉静/幸运/柔软/贪吃（被动，收服时随机 1 条）。</li>
+      <li><b>资质 ivs</b>：攻/防/速 0~15，总和 26~45 评级 B/A/S；影响伙伴面板。</li>
+      <li><b>进化</b>：达等级阈值后 PARTNERS→菜单→进化，改名(如·月影/·泰坦)并提升资质与稀有度上限。</li>
+      <li><b>收服优先级</b>：自动捕捉优先选「图鉴未收录 &gt; 非猫灵 &gt; 血越低」的怪，保证收集多样性。</li>
+    </ul>
+  </div>
+  <p class="pill">手动捕捉：战斗中把怪打到残血 → 按 C 开道具栏（有可捕残血怪会自动跳到对应球/卡）→ A 投掷收服。</p>
+</section>
+
+<!-- ⑨ -->
+<section id="equip">
+  <h2>⑨ 装备 / 物品 / 炼金</h2>
+  <div class="grid2">
+    <div class="card">
+      <h4>装备（三槽，品质=稀有度）</h4>
+      <ul>
+        <li><b>武器</b>：+攻击（如星陨神杖）。</li>
+        <li><b>护甲</b>：+减伤（如龙鳞法袍）。</li>
+        <li><b>饰品</b>：+法强%（如贤者之石）。</li>
+        <li>品质 N / R / SR / SSR / UR；BOSS 必掉高品质。</li>
+        <li>锻造房：武器每级 +2 攻、法袍每级 +8 血上限。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>物品（背包按分类浏览）</h4>
+      <ul>
+        <li><b>药水 20 种</b>：回血/回蓝/解毒/各属性免疫/攻击·法强增益/经验/不死鸟之羽(复活)等，含普通~传说稀有度。</li>
+        <li><b>材料 40 种</b>：月光草/兽骨/魔晶/各类怪掉落素材，分 普通16·稀有14·史诗7·传说3。</li>
+        <li><b>魔石 / 道具</b>：捕捉球、封印卡、月光草、兽骨、魔晶、体力药水单独计数。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card">
+    <h4>炼金配方（ALCHEMY）</h4>
+    <table>
+      <tr><th>产物</th><th>材料</th><th>说明</th></tr>
+      <tr><td>体力药水</td><td>月光草×2</td><td>回 40%HP+30%MP</td></tr>
+      <tr><td>捕捉球</td><td>兽骨×2</td><td>捕捉伙伴必备</td></tr>
+      <tr><td>魔法封印卡</td><td>兽骨×2 + 魔晶×1</td><td>高级捕捉 75~95%</td></tr>
+      <tr><td>中级魔石</td><td>兽骨×6</td><td>升中级魔法</td></tr>
+      <tr><td>高级魔石</td><td>魔晶×3</td><td>升高级魔法</td></tr>
+      <tr><td>国家级魔石</td><td>魔晶×6 + 兽骨×4</td><td>升国家级魔法</td></tr>
+      <tr><td>古代魔石</td><td>魔晶×10</td><td>升古代魔法</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- ⑩ -->
+<section id="dungeon">
+  <h2>⑩ 随机副本 / 秘境（30 张）</h2>
+  <p class="lead">每次进野外试炼随机刷 <b>1~2 张</b>（副本 / 地下迷宫 / 古代遗迹 各 10 张）。通过或死亡后刷新。达到设定轮数即通关，按 <code>dropRar</code> 给稀有装备+魔石+材料。</p>
+  <div class="grid3">
+    <div class="card"><h4>副本（10）</h4>
+      <p class="pill">翠木/幽穴/熔岩/霜原/遗迹/暗影/毒沼/烈风/炽核/月华副本</p>
+      <p>推荐 Lv1~6，轮数 20~44，掉落品质 2(稀)~3(史诗)。</p></div>
+    <div class="card"><h4>地下迷宫（10）</h4>
+      <p class="pill">迷雾/骸骨/熔脉/冰封/符文/荆棘/蛛网/焰心/风雪/深渊迷宫</p>
+      <p>推荐 Lv5~12，轮数 30~56，掉落品质 2~3。</p></div>
+    <div class="card"><h4>古代遗迹（10）</h4>
+      <p class="pill">远古祭坛/失落神殿/龙之巢穴/冰封王座/森之圣域/熔火炼狱/虚空回响/星陨遗迹/不死深渊/终焉之塔</p>
+      <p>推荐 Lv12~18，轮数 38~70，掉落品质 3~4(史诗~传说)。<b>终焉之塔</b>登顶者方配称魔法帝。</p></div>
+  </div>
+  <div class="note">进入比推荐等级低的副本不会拦你，但会很难；强行进入会有「⚠ 推荐 LvX，会很苦」提示。每章野外远征本身是一次 10 波远征（非副本），而<b>遗迹秘境</b>是独立入口：连过 3 层拿豪华奖励（金币+魔晶+球+卡）。</div>
+</section>
+
+<!-- ⑪ -->
+<section id="battle">
+  <h2>⑪ 战斗机制</h2>
+  <div class="grid2">
+    <div class="card">
+      <h4>战斗结构</h4>
+      <ul>
+        <li><b>远征</b>：每章 10 波，第 5 波精英、第 10 波 BOSS；波间插探索事件。</li>
+        <li><b>副本</b>：达设定轮数即通关发奖，<b>绝不刷 BOSS</b>。</li>
+        <li><b>精英</b>：血量×2.2、攻×1.5、2 层破防盾。</li>
+        <li><b>BOSS</b>：约 7.5 倍血、1.85 倍攻、<b>5 层破防盾</b>、随机 2 魔抗、蓄力大招、半血狂暴、每回合回血。</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>元素相性（破防核心）</h4>
+      <ul>
+        <li>命中<b>弱点属性</b> → 伤害 ×1.5 + 削 1 层盾。</li>
+        <li>盾空 = <b>破防</b>：硬直 + 所有来源伤害 ×1.4。</li>
+        <li>BOSS 随机 2 个<b>魔抗属性</b>（不与弱点重叠）：该属性伤害 ×0.45，挂机无脑轮放会砸在抗性上 → 手动看抗性换属性才有优势。</li>
+        <li>不破盾打 BOSS 几乎白费（它每回合回血），逼你走「弱点破防循环」。</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card">
+    <h4>回合流程（手动）</h4>
+    <ol class="step">
+      <li>菜单选「攻击(普攻) / 魔法 / 道具(C 开)」→ A 行动。</li>
+      <li>行动后伙伴协同出击（技能/特性生效）。</li>
+      <li>清场则胜利结算；否则进入敌方回合，怪物走近→冲锋伤害→退回。</li>
+      <li>血量归零 = 力竭，战斗结束回城（不删档）。</li>
+    </ol>
+  </div>
+  <div class="warn">BOSS 大招（蓄力中）记得<b>破盾或防御</b>化解；守护技能、铁壁药剂、不死鸟之羽（复活）是硬扛资本。BOSS 战胜利后会显示<b>整体计算画面</b>（总击杀/金币/经验/素材 + BOSS 专属掉落），停留约 2 秒再回城。</div>
+</section>
+
+<!-- ⑫ -->
+<section id="monster">
+  <h2>⑫ 怪物图鉴（50 种）</h2>
+  <p class="lead">共 50 种：11 基础 + 39 扩充。下列「捕捉」列：<span class="tag t-orb">球</span> 捕捉球即可、<span class="tag t-seal">封</span> 需封印卡、<span class="tag t-no">不可</span> 无法收服、<span class="tag t-boss">BOSS</span>。带 <code>(血&lt;X%)</code> 表示须压到该血线以下。</p>
+  <div class="scroll">
+  <table>
+    <tr><th>名称</th><th>区域</th><th>捕捉</th><th>进化(Lv)</th><th>天赋 / 特性(示例)</th></tr>
+    <tr><td>哥布林</td><td>试炼森林</td><td><span class="tag t-boss">BOSS</span></td><td>—</td><td>不可捕 · 淘气小鬼</td></tr>
+    <tr><td>史莱姆</td><td>试炼森林</td><td><span class="tag t-orb">球</span></td><td>·王(14)</td><td>利爪 / 坚壁·灵巧</td></tr>
+    <tr><td>猫灵</td><td>全图</td><td><span class="tag t-orb">球</span></td><td>·月影(16)</td><td>疾风·吸血 / 灵巧·幸运·柔软</td></tr>
+    <tr><td>洞穴蝙蝠</td><td>幽暗洞窟</td><td><span class="tag t-orb">球</span></td><td>·暗翼(15)</td><td>疾风 / 灵巧·凶暴</td></tr>
+    <tr><td>骷髅兵</td><td>幽暗洞窟</td><td><span class="tag t-no">不可</span></td><td>—</td><td>洞窟复活的枯骨战士</td></tr>
+    <tr><td>熔岩史莱姆</td><td>灰烬火山</td><td><span class="tag t-orb">球</span></td><td>·炽核(16)</td><td>余烬 / 凶暴·坚壁</td></tr>
+    <tr><td>火蜥蜴</td><td>灰烬火山</td><td><span class="tag t-no">不可</span></td><td>—</td><td>烈焰蜥，性子暴</td></tr>
+    <tr><td>霜牙雪狼</td><td>霜风雪原</td><td><span class="tag t-orb">球(&lt;40%)</span></td><td>·极光(18)</td><td>霜咬·利爪 / 凶暴·灵巧</td></tr>
+    <tr><td>冰晶灵</td><td>霜风雪原</td><td><span class="tag t-seal">封</span></td><td>·极寒(17)</td><td>霜咬 / 沉静·柔软</td></tr>
+    <tr><td>遗迹魔像</td><td>浮空遗迹</td><td><span class="tag t-seal">封(&lt;25%)</span></td><td>·泰坦(22)</td><td>守护 / 坚壁·贪吃</td></tr>
+    <tr><td>远古怨灵</td><td>浮空遗迹</td><td><span class="tag t-seal">封(&lt;30%)</span></td><td>·虚空(20)</td><td>吸血 / 沉静·幸运</td></tr>
+    <tr><td>环纹黄蜂</td><td>森林</td><td><span class="tag t-orb">球</span></td><td>·蜂后(14)</td><td>疾风 / 灵巧·凶暴</td></tr>
+    <tr><td>蘑菇怪</td><td>森林</td><td><span class="tag t-orb">球</span></td><td>·巨伞(15)</td><td>守护 / 坚壁·沉静</td></tr>
+    <tr><td>獠牙野猪</td><td>森林</td><td><span class="tag t-no">不可</span></td><td>—</td><td>横冲直撞</td></tr>
+    <tr><td>小树精</td><td>森林</td><td><span class="tag t-seal">封(&lt;35%)</span></td><td>·古树(18)</td><td>守护 / 坚壁·沉静</td></tr>
+    <tr><td>沼泽蛙</td><td>森林</td><td><span class="tag t-orb">球</span></td><td>·沼王(13)</td><td>吸血 / 柔软·沉静</td></tr>
+    <tr><td>斑鹿</td><td>森林</td><td><span class="tag t-orb">球(&lt;40%)</span></td><td>·林王(17)</td><td>疾风 / 灵巧·幸运</td></tr>
+    <tr><td>雾蜗牛</td><td>森林</td><td><span class="tag t-orb">球</span></td><td>—</td><td>守护 / 沉静·柔软</td></tr>
+    <tr><td>灵狐</td><td>森林</td><td><span class="tag t-orb">球(&lt;45%)</span></td><td>·九尾(16)</td><td>疾风·吸血 / 幸运·灵巧</td></tr>
+    <tr><td>穴居狼蛛</td><td>洞窟</td><td><span class="tag t-orb">球(&lt;40%)</span></td><td>·蛛后(16)</td><td>毒牙 / 凶暴·灵巧</td></tr>
+    <tr><td>狗头人</td><td>洞窟</td><td><span class="tag t-orb">球</span></td><td>·酋长(15)</td><td>利爪 / 贪吃·凶暴</td></tr>
+    <tr><td>食尸鬼</td><td>洞窟</td><td><span class="tag t-no">不可</span></td><td>—</td><td>啃食残骸的恶鬼</td></tr>
+    <tr><td>毒泥怪</td><td>洞窟</td><td><span class="tag t-orb">球</span></td><td>·毒渊(15)</td><td>毒牙 / 坚壁·柔软</td></tr>
+    <tr><td>灯眼鱼</td><td>洞窟</td><td><span class="tag t-orb">球</span></td><td>—</td><td>吸血 / 沉静·幸运</td></tr>
+    <tr><td>石笋魔</td><td>洞窟</td><td><span class="tag t-no">不可</span></td><td>—</td><td>钟乳石成精</td></tr>
+    <tr><td>洞鼬</td><td>洞窟</td><td><span class="tag t-orb">球</span></td><td>·风鼬(14)</td><td>疾风 / 灵巧·贪吃</td></tr>
+    <tr><td>暗影</td><td>洞窟</td><td><span class="tag t-seal">封(&lt;35%)</span></td><td>·深渊(18)</td><td>吸血 / 沉静·幸运</td></tr>
+    <tr><td>小恶魔</td><td>火山</td><td><span class="tag t-orb">球(&lt;40%)</span></td><td>·焰魔(17)</td><td>余烬 / 凶暴·贪吃</td></tr>
+    <tr><td>烬羽鸦</td><td>火山</td><td><span class="tag t-orb">球</span></td><td>·焚天(16)</td><td>余烬 / 灵巧·凶暴</td></tr>
+    <tr><td>熔岩犬</td><td>火山</td><td><span class="tag t-orb">球(&lt;35%)</span></td><td>·狱炎(19)</td><td>余烬·利爪 / 凶暴·坚壁</td></tr>
+    <tr><td>黑曜傀儡</td><td>火山</td><td><span class="tag t-no">不可</span></td><td>—</td><td>无意识黑曜兵器</td></tr>
+    <tr><td>幼凤凰</td><td>火山</td><td><span class="tag t-seal">封(&lt;30%)</span></td><td>·不死(22)</td><td>余烬 / 幸运·凶暴</td></tr>
+    <tr><td>地火虫</td><td>火山</td><td><span class="tag t-orb">球</span></td><td>—</td><td>余烬 / 坚壁·沉静</td></tr>
+    <tr><td>灰烬幽浮</td><td>火山</td><td><span class="tag t-seal">封(&lt;35%)</span></td><td>—</td><td>吸血 / 沉静</td></tr>
+    <tr><td>熔渣兽</td><td>火山</td><td><span class="tag t-no">不可</span></td><td>—</td><td>熔炉废渣兽</td></tr>
+    <tr><td>雪怪</td><td>雪原</td><td><span class="tag t-orb">球(&lt;35%)</span></td><td>·冰川(20)</td><td>利爪·守护 / 坚壁·柔软</td></tr>
+    <tr><td>冰狐</td><td>雪原</td><td><span class="tag t-orb">球(&lt;40%)</span></td><td>·极北(17)</td><td>霜咬 / 幸运·灵巧</td></tr>
+    <tr><td>冰企鹅</td><td>雪原</td><td><span class="tag t-orb">球</span></td><td>·帝企鹅(14)</td><td>守护 / 柔软·沉静</td></tr>
+    <tr><td>雹精</td><td>雪原</td><td><span class="tag t-orb">球</span></td><td>—</td><td>霜咬 / 灵巧·沉静</td></tr>
+    <tr><td>幼猛犸</td><td>雪原</td><td><span class="tag t-seal">封(&lt;30%)</span></td><td>·远古(24)</td><td>守护·利爪 / 坚壁</td></tr>
+    <tr><td>雪枭</td><td>雪原</td><td><span class="tag t-orb">球</span></td><td>—</td><td>疾风 / 沉静·幸运</td></tr>
+    <tr><td>冰海豹</td><td>雪原</td><td><span class="tag t-orb">球</span></td><td>·冰海王(16)</td><td>吸血 / 柔软·沉静</td></tr>
+    <tr><td>风雪妖</td><td>雪原</td><td><span class="tag t-seal">封(&lt;30%)</span></td><td>·极风(21)</td><td>霜咬·吸血 / 沉静</td></tr>
+    <tr><td>符文傀儡</td><td>遗迹</td><td><span class="tag t-seal">封(&lt;30%)</span></td><td>·天工(24)</td><td>守护 / 坚壁·沉静</td></tr>
+    <tr><td>宝箱怪</td><td>遗迹</td><td><span class="tag t-orb">球(&lt;30%)</span></td><td>·吞金(20)</td><td>利爪 / 贪吃·凶暴</td></tr>
+    <tr><td>巨眼魔</td><td>遗迹</td><td><span class="tag t-seal">封(&lt;35%)</span></td><td>·万目(22)</td><td>吸血 / 沉静·凶暴</td></tr>
+    <tr><td>亡魂骑士</td><td>遗迹</td><td><span class="tag t-no">不可</span></td><td>—</td><td>仍执行千年守卫令</td></tr>
+    <tr><td>守卫像</td><td>遗迹</td><td><span class="tag t-no">不可</span></td><td>—</td><td>遗迹大厅石像</td></tr>
+    <tr><td>幼龙</td><td>遗迹</td><td><span class="tag t-seal">封(&lt;25%)</span></td><td>·真龙(26)</td><td>余烬·利爪 / 凶暴·幸运</td></tr>
+    <tr><td>斯芬克斯</td><td>遗迹</td><td><span class="tag t-seal">封(&lt;30%)</span></td><td>·谜语者(25)</td><td>守护·疾风 / 沉静·幸运</td></tr>
+  </table>
+  </div>
+  <p class="pill">注：每个区域专属怪 ~9 种，猫灵全图小概率(26%)出没；元素/弱点数据驱动相性破防（见 ⑪）。</p>
+</section>
+
+<!-- ⑬ -->
+<section id="append">
+  <h2>⑬ 数据附录 & 系统参数</h2>
+  <div class="grid2">
+    <div class="card">
+      <h4>阶位与晋升条件</h4>
+      <ul>
+        <li>阶位：见习→初级→中级→高级→大魔法师→魔导师→魔法帝</li>
+        <li>击杀门槛：6 / 16 / 30 / 48 / 70 / 96 / 无尽</li>
+        <li>晋升还需：完成公会委托数 ≥ 当前阶位+1</li>
+      </ul>
+    </div>
+    <div class="card">
+      <h4>难度档（系统菜单切换）</h4>
+      <ul>
+        <li>轻松：怪血/攻×0.7、受伤×0.7</li>
+        <li>普通(默认)：×1.0</li>
+        <li>困难：怪血×1.5、攻×1.3、BOSS攻×1.5、受伤×1.25</li>
+        <li>炼狱：怪血×2.1、攻×1.6、BOSS攻×1.9、受伤×1.4</li>
+      </ul>
+    </div>
+  </div>
+  <div class="card">
+    <h4>升级 / 经济曲线</h4>
+    <ul>
+      <li>升级所需经验：<code>16 + 等级×11</code>（刻意放慢约 1.8 倍）。</li>
+      <li>每级 +6 血上限、+3 蓝上限、回满状态。</li>
+      <li>小怪难度微调：血量/攻击 ×1.05（用户反馈略简单后调整）。</li>
+      <li>探索事件概率 45% 且每轮保底 1 次（第 4 波前强制来一次），含宝箱/陷阱/泉水/药草。</li>
+    </ul>
+  </div>
+  <div class="card">
+    <h4>存档与健壮性</h4>
+    <ul>
+      <li>自动存 <code>localStorage('mage_save_v1')</code>，支持系统菜单「导出 / 导入」JSON 存档。</li>
+      <li>读档经 <code>normalizeState()</code> 全字段净化（数值 NaN/null/越界 → 默认值），所有读取走安全助手（<code>slv/stoneN/slvSet</code>），旧档 / 脏档不会崩溃。</li>
+      <li>战斗崩溃时屏幕顶部显示红色错误条（6 秒自动消失），不会卡死。</li>
+    </ul>
+  </div>
+  <div class="note">
+    <b>本 SOP 依据游戏源码（v7.4.4，2611 行）逐项核对整理</b>，涵盖剧情、操作、核心循环、推进流程、场景、魔法、捕捉、装备、副本、战斗、怪物图鉴与系统参数。可作为策划评审、继续开发或玩家手册的底稿。
+  </div>
+</section>
+
+<footer>
+  魔法帝之路 · 游戏 SOP ｜ 生成于 2026-10-13 ｜ 基于 mage-game/index.html v7.4.4 ｜ 单文件 HTML，浏览器 / 手机可直接查看
+</footer>
+
+</div>
+</body></html>
