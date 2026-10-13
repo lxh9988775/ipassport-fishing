@@ -155,6 +155,11 @@ static void set_hidden(lv_obj_t *o, bool h) {
 }
 static int spellModLen(int slot) { return slot == 0 ? 3 : slot == 1 ? 9 : 5; }
 
+/* 对照实验开关：0=关闭全屏贴图（调试用），1=开启 */
+#ifndef MAGE_ART_FULLSCREEN
+#define MAGE_ART_FULLSCREEN 0
+#endif
+
 /* ===================== 战斗引擎（M3，1:1 复刻 HTML 战斗逻辑）前向声明 ===================== */
 static void battle_render(void);
 static void battle_handle(int act);
@@ -197,6 +202,9 @@ static void build_ui(void) {
      * 必须建在所有文字之后并移到最底层，否则会盖住标题文字。 */
     lv_obj_t *t_bg = NULL, *t_hero = NULL;
     ESP_LOGI("mage", "T1 建 title 底图");
+    /* 对照实验开关：设 MAGE_ART_FULLSCREEN=0 可临时关闭全屏贴图，
+     * 用于确认崩溃是否由「240x320 全屏贴图渲染」本身引起。 */
+#if MAGE_ART_FULLSCREEN
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
     ESP_LOGI("mage", "T2 title 完成 %p", (void *)t_bg);
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
@@ -204,6 +212,9 @@ static void build_ui(void) {
     mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);
     ESP_LOGI("mage", "T4 sp_hero 完成 %p", (void *)t_hero);
     if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
+#else
+    ESP_LOGW("mage", "MAGE_ART_FULLSCREEN=0，已关闭标题页全屏贴图");
+#endif
     ESP_LOGI("mage", "T5 标题页美术完成");
 
     /* 命名组 */
@@ -1181,7 +1192,13 @@ static void game_task(void *arg) {
             g_last_ui_ms = now;
             g_last_scene = g_scene;
             g_need_refresh = 0;
-            if (bsp_lvgl_lock(100)) { refresh_ui(); bsp_lvgl_unlock(); }
+            if (bsp_lvgl_lock(100)) {
+                refresh_ui();
+                bsp_lvgl_unlock();
+                ESP_LOGI("mage", "G1 周期刷新完成 scene=%d", (int)g_scene);
+            } else {
+                ESP_LOGW("mage", "G0 拿不到 LVGL 锁");
+            }
         }
         vTaskDelay(pdMS_TO_TICKS(20));
     }
