@@ -16,14 +16,6 @@
 
 static const char *TAG = "mage_draw";
 
-/* 每张贴图对应的运行时 LVGL 图片描述符（惰性构建，用过即常驻） */
-typedef struct {
-    lv_image_dsc_t dsc;
-    bool           ready;
-} mage_img_t;
-
-static mage_img_t s_imgs[MAGE_SPRITE_COUNT];
-
 const void *mage_sprite_def(const char *name)
 {
     for (int i = 0; i < mage_sprite_count; i++) {
@@ -34,29 +26,23 @@ const void *mage_sprite_def(const char *name)
     return NULL;
 }
 
+/* 直接返回生成器编译期静态初始化好的 lv_image_dsc_t。
+ * 绝不在运行时 memset/逐字段赋值 —— 钓鱼游戏（assets/sprites）已验证
+ * 只有「编译期静态初始化 + const uint8_t 数据」这条路在 ESP32-C3 上不崩。 */
 const lv_image_dsc_t *mage_img(const char *name)
 {
     for (int i = 0; i < mage_sprite_count; i++) {
-        const mage_sprite_t *def = &mage_sprites[i];
-        if (strcmp(def->name, name) != 0) {
+        if (strcmp(mage_sprites[i].name, name) != 0) {
             continue;
         }
-        if (!s_imgs[i].ready) {
-            mage_img_t *im = &s_imgs[i];
-            memset(&im->dsc, 0, sizeof(im->dsc));
-            im->dsc.header.magic  = LV_IMAGE_HEADER_MAGIC;
-            im->dsc.header.cf     = LV_COLOR_FORMAT_RGB565;
-            im->dsc.header.flags  = 0;   /* v9.5 无 LV_IMAGE_FLAGS_NONE，用 0 */
-            im->dsc.header.w      = def->w;
-            im->dsc.header.h      = def->h;
-            im->dsc.header.stride = LV_DRAW_BUF_STRIDE(def->w, LV_COLOR_FORMAT_RGB565);
-            im->dsc.data_size     = (uint32_t)((size_t)def->w * def->h * sizeof(uint16_t));
-            /* 生成器已输出小端 RGB565，可直接作为图像数据，无需逐像素转换 */
-            im->dsc.data          = (const uint8_t *)def->rgb;
-            im->ready             = true;
-            ESP_LOGI(TAG, "贴图就绪 %s %ux%u", def->name, def->w, def->h);
+        const mage_sprite_t *def = &mage_sprites[i];
+        if (!def->dsc) {
+            ESP_LOGE(TAG, "贴图描述符为空 %s", name);
+            return NULL;
         }
-        return &s_imgs[i].dsc;
+        ESP_LOGI(TAG, "贴图 %s %ux%u", def->name,
+                 (unsigned)def->dsc->header.w, (unsigned)def->dsc->header.h);
+        return def->dsc;
     }
     ESP_LOGW(TAG, "找不到贴图 %s", name ? name : "(null)");
     return NULL;

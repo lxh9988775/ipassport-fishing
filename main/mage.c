@@ -196,9 +196,15 @@ static void build_ui(void) {
     /* 标题页主视觉：与 HTML 一致用 title_art 全屏铺底。
      * 必须建在所有文字之后并移到最底层，否则会盖住标题文字。 */
     lv_obj_t *t_bg = NULL, *t_hero = NULL;
+    ESP_LOGI("mage", "T1 建 title 底图");
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
-    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);    if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
+    ESP_LOGI("mage", "T2 title 完成 %p", (void *)t_bg);
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
+    ESP_LOGI("mage", "T3 建 sp_hero 立绘");
+    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);
+    ESP_LOGI("mage", "T4 sp_hero 完成 %p", (void *)t_hero);
+    if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
+    ESP_LOGI("mage", "T5 标题页美术完成");
 
     /* 命名组 */
     g_name_grp = lv_obj_create(g_root);

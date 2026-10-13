@@ -122,8 +122,23 @@ def main():
 
         sym = s["name"]
         parts.append(f"/* ---- {sym}  {tw}x{th} ---- */")
-        parts.append(f"static const uint16_t {sym}_rgb[{tw * th}] __attribute__((aligned(4))) = {{")
-        parts.append(c_array_of(out))
+        # 按字节数组输出：与 assets/sprites/bg_sprites.c 里已验证可用的写法完全一致
+        parts.append(f"static const uint8_t {sym}_map[{tw * th * 2}] = {{")
+        byte_vals = []
+        for v in out:
+            byte_vals.append(v & 0xFF)
+            byte_vals.append((v >> 8) & 0xFF)
+        parts.append(c_array_of(byte_vals, per_line=16))
+        parts.append("};")
+        parts.append("")
+        parts.append(f"const lv_image_dsc_t {sym}_dsc = {{")
+        parts.append("    .header.magic = LV_IMAGE_HEADER_MAGIC,")
+        parts.append("    .header.cf = LV_COLOR_FORMAT_RGB565,")
+        parts.append(f"    .header.w = {tw},")
+        parts.append(f"    .header.h = {th},")
+        parts.append(f"    .header.stride = {tw * 2},")
+        parts.append(f"    .data_size = sizeof({sym}_map),")
+        parts.append(f"    .data = {sym}_map,")
         parts.append("};")
         parts.append("")
 
@@ -133,7 +148,7 @@ def main():
 
     parts.append("const mage_sprite_t mage_sprites[] = {")
     for sym, w, h in index:
-        parts.append(f"    {{ \"{sym}\", {w}, {h}, {sym}_rgb }},")
+        parts.append(f"    {{ \"{sym}\", {w}, {h}, &{sym}_dsc }},")
     parts.append("};")
     parts.append("")
     parts.append(f"const int mage_sprite_count = {len(index)};")
@@ -141,6 +156,7 @@ def main():
 
     with open(OUT_C, "w", encoding="utf-8") as f:
         f.write("\n".join(parts))
+        f.write('\n')
 
     with open(OUT_H, "w", encoding="utf-8") as f:
         f.write("""/* 本文件由 tools/gen_mage_sprites.py 自动生成，请勿手改。 */
@@ -148,16 +164,17 @@ def main():
 #define MAGE_SPRITES_H
 
 #include <stdint.h>
+#include "lvgl.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct {
-    const char *name;
-    uint16_t    w;
-    uint16_t    h;
-    const uint16_t *rgb;
+    const char            *name;
+    uint16_t               w;
+    uint16_t               h;
+    const lv_image_dsc_t  *dsc;
 } mage_sprite_t;
 
 extern const mage_sprite_t mage_sprites[];
