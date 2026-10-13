@@ -200,7 +200,8 @@ static void build_ui(void) {
     lv_obj_t *t_bg = NULL, *t_hero = NULL;
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
-    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);
+    /* 标题页主角：与 HTML/战斗一致按 sp_hero 原生 36x46 绘制（1:1 免缩放） */
+    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 46, 1.0f, 0.0f, &t_hero);
     if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
 
     /* 命名组 */
