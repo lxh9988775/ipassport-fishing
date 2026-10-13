@@ -36,6 +36,7 @@
 #include "fap_screenshot.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 static const char *TAG = "fap_ss";
 
@@ -49,10 +50,11 @@ static const char *TAG = "fap_ss";
 #define SS_TASK_PRIO        (3)          /* 低于 LVGL 的 4 */
 #define SS_TASK_STACK       (8192)
 
-/* 静态全屏 RGB565 缓冲（64 字节对齐，永不在运行时分配）。
- * 用 LVGL 官方宏声明：它会把 stride / data_size / flags 一并算好，
- * 避免手写 lv_draw_buf_init 时参数个数或顺序出错（v9.5 是 7 参数）。 */
-static LV_ATTRIBUTE_MEM_ALIGN uint8_t s_fb[SS_BUF_BYTES];
+/* 全屏 RGB565 缓冲：按需分配。
+ * 绝不能用 static 数组常驻 —— 150KB 会挤爆 C3 的内部 RAM，
+ * 导致 LVGL 后续渲染全屏贴图时分配失败 → Load access fault。
+ * 改为首次收到截屏命令时才 malloc，游戏正常运行期零占用。 */
+static uint8_t *s_fb = NULL;
 static lv_draw_buf_t s_drawbuf;
 static bool s_buf_inited = false;
 
@@ -78,11 +80,37 @@ static void ss_send_bytes(const uint8_t *p, size_t n)
     }
 }
 
+/* 按需分配 150KB 缓冲并初始化 draw_buf。游戏正常运行期不会被调用。 */
+static bool ss_ensure_buf(void)
+{
+    if (s_buf_inited) {
+        return true;
+    }
+    s_fb = (uint8_t *)malloc(SS_BUF_BYTES);
+    if (!s_fb) {
+        ESP_LOGE(TAG, "截屏缓冲申请失败(%u 字节)", (unsigned)SS_BUF_BYTES);
+        return false;
+    }
+    /* v9.5 签名：lv_draw_buf_init(draw_buf, w, h, cf, stride, data, data_size) */
+    lv_result_t r = lv_draw_buf_init(&s_drawbuf, SS_W, SS_H, LV_COLOR_FORMAT_RGB565,
+                                     LV_DRAW_BUF_STRIDE(SS_W, LV_COLOR_FORMAT_RGB565),
+                                     s_fb, SS_BUF_BYTES);
+    if (r != LV_RESULT_OK) {
+        ESP_LOGE(TAG, "lv_draw_buf_init 失败(%d)", (int)r);
+        free(s_fb);
+        s_fb = NULL;
+        return false;
+    }
+    lv_draw_buf_set_flag(&s_drawbuf, LV_IMAGE_FLAGS_MODIFIABLE);
+    s_buf_inited = true;
+    ESP_LOGI(TAG, "截屏缓冲已按需分配 %u 字节", (unsigned)SS_BUF_BYTES);
+    return true;
+}
+
 /* 抓当前活动屏并以 RGB565LE 回传；任何失败都静默返回 */
 static void ss_capture(void)
 {
-    if (!s_buf_inited) {
-        ESP_LOGW(TAG, "drawbuf 未初始化，跳过截屏");
+    if (!ss_ensure_buf()) {
         return;
     }
 
@@ -165,18 +193,8 @@ static void ss_task(void *arg)
 
 void fap_screenshot_init(void)
 {
-    /* 初始化静态绘制缓冲（一次性，永不释放）。
-     * v9.5 签名：lv_draw_buf_init(draw_buf, w, h, cf, stride, data, data_size) */
-    lv_result_t r = lv_draw_buf_init(&s_drawbuf, SS_W, SS_H, LV_COLOR_FORMAT_RGB565,
-                                     LV_DRAW_BUF_STRIDE(SS_W, LV_COLOR_FORMAT_RGB565),
-                                     s_fb, SS_BUF_BYTES);
-    if (r != LV_RESULT_OK) {
-        ESP_LOGE(TAG, "lv_draw_buf_init 失败(%d)", (int)r);
-        return;
-    }
-    lv_draw_buf_set_flag(&s_drawbuf, LV_IMAGE_FLAGS_MODIFIABLE);
-    s_buf_inited = true;
-
+    /* 只起任务，不碰任何大内存。
+     * 缓冲与 draw_buf 都在首次收到命令时才分配（见 ss_ensure_buf）。 */
     BaseType_t ok = xTaskCreate(ss_task, "fap_ss", SS_TASK_STACK, NULL, SS_TASK_PRIO, NULL);
     if (ok != pdPASS) {
         ESP_LOGE(TAG, "无法创建截屏任务");

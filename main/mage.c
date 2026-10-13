@@ -1167,7 +1167,11 @@ static void game_task(void *arg) {
     (void)arg;
     for (;;) {
         btn_ev_t e;
-        while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
+        if (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) {
+            ESP_LOGI("mage", "K1 收到按键 btn=%d ev=%d", (int)e.btn, (int)e.ev);
+            handle_btn(e.btn, e.ev);
+            ESP_LOGI("mage", "K2 按键处理完成");
+        }
 
         uint32_t now = now_ms();
         if (bt.active) battle_tick();
@@ -1996,5 +2000,6 @@ void mage_app_start(void) {
         bsp_lvgl_unlock();
     }
     bsp_button_init(mage_on_key, NULL);
+    ESP_LOGI("mage", "B4 按键初始化完成，启动流程结束");
     xTaskCreate(game_task, "mage", 12288, NULL, 5, NULL);
 }
