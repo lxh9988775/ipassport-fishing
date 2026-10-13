@@ -144,8 +144,8 @@ static void fx_build(void)
      * 每槽默认挂 sp_goblin，进入战斗时按怪种切 src。 */
     {
         static const char *spr0[FOE_MAX] = {"sp_goblin", "sp_slime", "sp_cat"};
-        static const int   sw0[FOE_MAX]  = {60, 84, 84};
-        static const int   sh0[FOE_MAX]  = {80, 54, 76};
+        static const int   sw0[FOE_MAX]  = {30, 48, 29};
+        static const int   sh0[FOE_MAX]  = {40, 24, 32};
         for (int i = 0; i < FOE_MAX; i++) {
             lv_obj_t *o = lv_image_create(g_fx_parent);
             lv_image_set_src(o, mage_img(spr0[i]));
@@ -161,15 +161,15 @@ static void fx_build(void)
     lv_obj_set_style_bg_opa(F.catShadow, LV_OPA_50, 0);
     F.cat = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.cat);
-    lv_obj_set_size(F.cat, 84, 76);
-    mage_draw_bg(F.cat, "sp_cat", 0, 0, 84, 76);
+    lv_obj_set_size(F.cat, 29, 32);
+    mage_draw_bg(F.cat, "sp_cat", 0, 0, 29, 32);
 
     F.heroShadow = mk_dot(g_fx_parent, 14, 0x000000, 7);
     lv_obj_set_style_bg_opa(F.heroShadow, LV_OPA_50, 0);
     F.hero = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.hero);
-    lv_obj_set_size(F.hero, 84, 108);
-    mage_draw_bg(F.hero, "sp_hero", 0, 0, 84, 108);
+    lv_obj_set_size(F.hero, 36, 46);
+    mage_draw_bg(F.hero, "sp_hero", 0, 0, 36, 46);
 
     /* 前景草丛：HTML 画两组三角，这里用一排深绿小三角块近似（视差 1.3） */
     F.grassFg = lv_obj_create(g_fx_parent);
@@ -334,8 +334,8 @@ void mage_fx_render(void)
 
     /* ---- 敌方立绘 ---- */
     const char *spr[FOE_MAX] = {"sp_goblin", "sp_slime", "sp_cat"};
-    const int   sprH[FOE_MAX] = {80, 54, 76};
-    const int   sprW[FOE_MAX] = {60, 84, 84};
+    const int   sprH[FOE_MAX] = {40, 24, 32};   /* HTML ENEMY.h: goblin40/slime24/cat32 */
+    const int   sprW[FOE_MAX] = {30, 48, 29};
     int drawn = 0;
 
     for (int i = 0; i < bt.enemyCount && drawn < FOE_MAX; i++) {
@@ -426,7 +426,7 @@ void mage_fx_render(void)
         float cp = fclampf(1.0f - bt.catLungeT / bt.catLungeDur, 0.0f, 1.0f);
         psx += sinf(cp * 3.14159f) * 70.0f;
     }
-    lv_obj_set_pos(F.cat, (int)psx, 250 - 76);
+    lv_obj_set_pos(F.cat, (int)psx - 14, 250 - 32);
     lv_obj_set_pos(F.catShadow, (int)psx - 6, 250 - 2);
 
     /* ---- 主角（HTML: hBob/lunge/hTilt + 受击闪红） ---- */
@@ -435,8 +435,8 @@ void mage_fx_render(void)
     float hTilt = (bt.lungeT > 0.0f) ? 0.1f : sinf(bt.walkF * 0.8f) * 0.05f;
     (void)hTilt;   /* 不用旋转，倾斜效果由 lunge 位移近似 */
     /* 主角：不使用 transform 旋转，同样只改 pos（零软件变换） */
-    lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 42,
-                   (int)(250.0f + hBob) - 108);
+    lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 18,
+                   (int)(250.0f + hBob) - 46);
     /* 主角受击闪白：仅状态翻转帧设置 */
     if (bt.hurtT > 0.0f) {
         lv_obj_set_style_img_opa(F.hero, LV_OPA_60, 0);

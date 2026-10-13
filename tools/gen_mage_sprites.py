@@ -27,11 +27,13 @@ SPRITES = {
     "title": ("title_art.png", 240, 320),
     "town":  ("town_art.png", 240, 320),
     "battle_bg": ("battle_bg_k.png", 240, 132),
-    # 战斗立绘：同样按屏上实际像素尺寸 1:1 生成，全程零缩放
-    "sp_hero":   ("sp_hero_k.png", 84, 108),
-    "sp_goblin": ("sp_goblin_k.png", 60, 80),
-    "sp_slime":  ("sp_slime_k.png", 84, 54),
-    "sp_cat":    ("sp_cat_k.png", 84, 76),
+    # 战斗立绘：严格按 HTML 原版 drawSprite 的实际显示高度 1:1 生成
+    # （HTML: drawSprite('spHero',...,46,...) / spCat=26 / bd.h: goblin=40, slime=24, cat=32）
+    # 这不是缩放降级，而是原版就该这么小 —— 之前误用原图全高导致主角 oversized 一倍。
+    "sp_hero":   ("sp_hero_k.png",  36, 46),   # 原图 84x108 -> 原版 h=46
+    "sp_goblin": ("sp_goblin_k.png", 30, 40),  # 原图 60x80  -> ENEMY.goblin.h=40
+    "sp_slime":  ("sp_slime_k.png",  48, 24),  # 原图 84x54  -> ENEMY.slime.h=24
+    "sp_cat":    ("sp_cat_k.png",   29, 32),   # 原图 84x76  -> ENEMY.cat.h=32
     # 图标/头像（HTML: 32~76px），一律取偶数宽高
     "hero_icon": ("hero.png", 80, 80),
     "cat_icon":  ("catspirit.png", 56, 56),

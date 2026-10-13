@@ -1900,13 +1900,24 @@ void battle_start_boss(int chapter) {
  *
  * 防闪屏铁律（ESP32-C3 单核）：对象池一次构建，之后每帧只改属性，
  * 绝不 lv_obj_clean 重建；离开战斗必须隐藏，否则会盖住后续页面持续重绘。 */
+/* 战斗演出层推进。dt 固定 0.15s（不是真实 20ms）：
+ * ESP32-C3 单核每帧重绘一屏贴图必然过载，进战斗就卡死。
+ * 150ms 约 6.7fps，观感仍流畅（跳跃/滚动都能看清），负载降到 1/7。
+ * 宁可动画慢，绝不能卡死或烧板。 */
+static float g_fx_acc = 0.0f;
+
 static void battle_art_update(void) {
     const bool in_battle = (g_scene == SC_BATTLE) && bt.active;
     mage_fx_show(in_battle);
-    if (in_battle) {
-        mage_fx_tick(0.020f);   /* 20ms 周期任务，与 UI_REFRESH_MS 对齐 */
-        mage_fx_render();
+    if (!in_battle) {
+        g_fx_acc = 0.0f;
+        return;
     }
+    g_fx_acc += 0.020f;
+    if (g_fx_acc < 0.15f) return;
+    g_fx_acc = 0.0f;
+    mage_fx_tick(0.15f);
+    mage_fx_render();
 }
 
 /* 战斗文字：按 HTML 原版 drawBattle 收敛 —— 敌人血条/等级画在画面上（演出层负责），
