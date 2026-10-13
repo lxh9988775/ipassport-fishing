@@ -15,6 +15,7 @@
 #include "esp_log.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdint.h>
 
 #define SCR_W 240
 #define SCR_H 320
@@ -37,6 +38,10 @@ typedef struct {
     lv_obj_t *cardBadge[3];   /* 键位字母圆片 */
     lv_obj_t *turnBox;        /* 回合徽标 */
     lv_obj_t *turnTx;
+    int8_t shown;         /* 上一次 show/hide 的值（-1=未初始化），防每帧重复切 flag */
+    /* 文本与条宽的记忆值：只有真正变化时才调 LVGL，防每帧重排导致卡死 */
+    char hpTxt[24], mpTxt[24], waveTxt[40], statTxt[40], turnTxt[24];
+    int  hpW, mpW;
     bool built;
 } HudLayer;
 
@@ -88,12 +93,15 @@ void mage_hud_attach(lv_obj_t *parent)
 {
     g_hud_parent = parent;
     H.built = false;
+    H.shown = -1;   /* -1 = 尚未设置过，保证首次 show/hide 一定会执行 */
 }
 
 void mage_hud_build(void)
 {
     if (H.built || !g_hud_parent) return;
+    const int8_t keepShown = H.shown;   /* memset 会清零 shown，必须保留 */
     memset(&H, 0, sizeof(H));
+    H.shown = keepShown;
 
     /* 根容器：整个 HUD 组的显隐开关 */
     H.root = lv_obj_create(g_hud_parent);
@@ -164,9 +172,16 @@ void mage_hud_build(void)
     ESP_LOGI(TAG, "战斗 HUD 就绪（1:1 复刻原版：顶部血条 + 底部三卡）");
 }
 
+/* 防卡死铁律：refresh_ui 每 60ms 调一次本函数，而
+ * lv_obj_add_flag / remove_flag 每次调用都会触发样式重算与区域 invalidate。
+ * 在主界面（非战斗）in_bt 恒为 false，若无条件 add_flag 就是每 60ms
+ * 触发一次全屏重绘 -> mage 任务占满 CPU -> IDLE 饿死 -> 5s 看门狗反复
+ * 重启，表现为「卡死在主界面进不去」。
+ * 修法：记住上一次状态，只在真正变化时切 flag。 */
 void mage_hud_show(bool on)
 {
     if (!g_hud_parent) return;
+    if (H.shown == (int8_t)on && (on ? H.built : 1)) return;
     if (on) {
         mage_hud_build();
         if (!H.built) return;
@@ -179,50 +194,72 @@ void mage_hud_show(bool on)
         lv_obj_add_flag(H.root, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_hud_parent, LV_OBJ_FLAG_HIDDEN);
     }
+    H.shown = (int8_t)on;
 }
 
-/* 每帧只改文本与条宽，不建对象 */
+/* 每帧只改文本与条宽，不建对象。
+ *
+ * 【卡死修复】lv_label_set_text 每次调用都会重新排版 + invalidate；
+ * 本函数由 refresh_ui 每 60ms 调一次，一轮 5 次 = 每秒 80 次文本重排，
+ * 在全屏贴图场景下足以让 C3 单核被 mage 任务占满、IDLE 饿死触发看门狗。
+ * 改为：文本与条宽都先与上次比对，相同则完全不动 LVGL。 */
 void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
                      int wave, int waveMax, bool crawl,
                      bool autoMode, bool autoCap, int loadout, int orbs, int seals, int potions,
                      int turn)
 {
     if (!H.built) return;
-    char buf[48];
+    char buf[64];
+    char want[64];
     int w;
 
-    /* HP/MP 条与数值：HTML bar(...) + txt(ceil(hp)+'/'+max) */
+    /* HP 数值：HTML bar(...) + txt(ceil(hp)+'/'+max) */
     w = maxHp > 0 ? (int)((float)hp * 58.0f / (float)maxHp) : 0;
     if (w < 0) { w = 0; }
     if (w > 58) { w = 58; }
-    lv_obj_set_size(H.hpBar, w, 7);
-    lv_obj_set_size(H.hpTx, 46, 16);
-    snprintf(buf, sizeof(buf), "%d/%d", hp, maxHp);
-    lv_label_set_text(H.hpTx, buf);
+    if (w != H.hpW) { H.hpW = w; lv_obj_set_size(H.hpBar, w, 7); }
+    snprintf(want, sizeof(want), "%d/%d", hp, maxHp);
+    if (strcmp(H.hpTxt, want) != 0) {
+        snprintf(H.hpTxt, sizeof(H.hpTxt), "%s", want);
+        lv_label_set_text(H.hpTx, want);
+    }
 
     w = maxMp > 0 ? (int)((float)mp * 58.0f / (float)maxMp) : 0;
     if (w < 0) { w = 0; }
     if (w > 58) { w = 58; }
-    lv_obj_set_size(H.mpBar, w, 5);
-    snprintf(buf, sizeof(buf), "%d/%d", mp, maxMp);
-    lv_label_set_text(H.mpTx, buf);
+    if (w != H.mpW) { H.mpW = w; lv_obj_set_size(H.mpBar, w, 5); }
+    snprintf(want, sizeof(want), "%d/%d", mp, maxMp);
+    if (strcmp(H.mpTxt, want) != 0) {
+        snprintf(H.mpTxt, sizeof(H.mpTxt), "%s", want);
+        lv_label_set_text(H.mpTx, want);
+    }
 
     /* 波次：HTML wlabel */
-    if (crawl) snprintf(buf, sizeof(buf), "试炼 %d/%d", wave, waveMax);
-    else       snprintf(buf, sizeof(buf), "%d/%d%s", wave, waveMax,
+    if (crawl) snprintf(want, sizeof(want), "试炼 %d/%d", wave, waveMax);
+    else       snprintf(want, sizeof(want), "%d/%d%s", wave, waveMax,
                         wave == 10 ? " \xe2\x98\xa0BOSS" : (wave == 5 ? " \xe2\x9a\x94\xe7\xb2\xbe\xe8\x8b\xb1" : ""));
-    lv_label_set_text(H.waveTx, buf);
+    if (strcmp(H.waveTxt, want) != 0) {
+        snprintf(H.waveTxt, sizeof(H.waveTxt), "%s", want);
+        lv_label_set_text(H.waveTx, want);
+    }
 
     /* 状态行：HTML txt((auto?'AUTO':'手动')+...+' 编'+n+' 球'+..)
      * 放在顶部面板第二行右侧（y=13），字号小一点避免与波次行撞在一起 */
-    snprintf(buf, sizeof(buf), "%s \xe7\xbc\x96%d \xe7\x90\x83%d \xe5\x8d\xa1%d \xe8\x8d\xaf%d",
+    snprintf(want, sizeof(want), "%s \xe7\xbc\x96%d \xe7\x90\x83%d \xe5\x8d\xa1%d \xe8\x8d\xaf%d",
              autoMode ? "AUTO" : "\xe6\x89\x8b\xe5\x8a\xa8", loadout, orbs, seals, potions);
     (void)autoCap;
-    lv_label_set_text(H.statTx, buf);
+    if (strcmp(H.statTxt, want) != 0) {
+        snprintf(H.statTxt, sizeof(H.statTxt), "%s", want);
+        lv_label_set_text(H.statTx, want);
+    }
 
     /* 回合徽标 */
-    snprintf(buf, sizeof(buf), "\xe5\x9b\x9e\xe5\x90\x88 %d", turn);
-    lv_label_set_text(H.turnTx, buf);
+    snprintf(want, sizeof(want), "\xe5\x9b\x9e\xe5\x90\x88 %d", turn);
+    if (strcmp(H.turnTxt, want) != 0) {
+        snprintf(H.turnTxt, sizeof(H.turnTxt), "%s", want);
+        lv_label_set_text(H.turnTx, want);
+    }
+    (void)buf;
 }
 
 bool mage_hud_ready(void)

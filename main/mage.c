@@ -106,6 +106,8 @@ static uint32_t g_last_save_ms = 0;
 
 /* toast */
 static char g_toast_buf[64];
+/* 上一次已渲染到 label 的 toast 文本（比对用，避免每 60ms 重复 set_text 触发重排） */
+static char g_toast_t[64];
 static uint32_t g_toast_until = 0;
 
 /* 正文缓冲 */
@@ -151,10 +153,46 @@ static int  g_str_field(const char *name);
 static void bagItemAt(int idx, char *cat, char *nm, int *cnt, int *col);
 static int  researchRateFor(int key);
 static int  spellModLen(int slot);
+/* 显示/隐藏统一入口。
+ *
+ * 【卡死根因修复，2026-10-13】原先无条件调 lv_obj_add_flag/remove_flag，
+ * 而 refresh_ui 每 60ms 跑一次、每次要调用本函数约 10 次。LVGL 每次
+ * add_flag/remove_flag 都会做样式重算并把对象所在区域标脏重绘 ——
+ * 于是在 240x320 全屏贴图之上每秒产生 160+ 次 invalidate。
+ * ESP32-C3 单核 160MHz 扛不住：mage 任务占满 CPU 不放，IDLE 任务被饿死，
+ * 5 秒任务看门狗反复触发重启（串口日志：task_wdt: CPU 0: mage）。
+ * 症状就是「卡死在主界面，连游戏都进不去」。
+ *
+ * 修法：记住每个对象上一次的隐藏状态，只在真正翻转时才调 LVGL API。
+ * 对象指针即身份，静态表足够（本文件对象总数 < 40）。
+ */
+#define HIDDEN_TRACK_MAX 48
+static struct { const lv_obj_t *o; uint8_t hidden; } s_hidden_track[HIDDEN_TRACK_MAX];
+static uint8_t s_hidden_cnt = 0;
+
 static void set_hidden(lv_obj_t *o, bool h) {
     if (!o) return;
+    /* 查表：若记录的状态与目标一致，说明无需改动 LVGL */
+    for (uint8_t i = 0; i < s_hidden_cnt; i++) {
+        if (s_hidden_track[i].o == o) {
+            if ((s_hidden_track[i].hidden != 0) == h) return;
+            s_hidden_track[i].hidden = h ? 1 : 0;
+            break;
+        }
+    }
     if (h) lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
     else   lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+
+    /* 新对象：登记一次（登记本身不改 flag，只记状态） */
+    bool found = false;
+    for (uint8_t i = 0; i < s_hidden_cnt; i++) {
+        if (s_hidden_track[i].o == o) { found = true; break; }
+    }
+    if (!found && s_hidden_cnt < HIDDEN_TRACK_MAX) {
+        s_hidden_track[s_hidden_cnt].o = o;
+        s_hidden_track[s_hidden_cnt].hidden = h ? 1 : 0;
+        s_hidden_cnt++;
+    }
 }
 static int spellModLen(int slot) { return slot == 0 ? 3 : slot == 1 ? 9 : 5; }
 
@@ -304,6 +342,24 @@ static void build_ui(void) {
     lv_obj_move_to_index(hud_root, 2);   /* 在 fx 层之上、普通文字之下 */
     mage_hud_attach(hud_root);
     lv_obj_add_flag(hud_root, LV_OBJ_FLAG_HIDDEN);
+
+    /* 把 build_ui 里各处直接 add_flag 设定的初始隐藏状态登记进跟踪表，
+     * 否则首次 set_hidden(...,false) 会被误判为「状态没变」而跳过。 */
+    s_hidden_cnt = 0;
+    static const lv_obj_t *init_hidden[] = {
+        g_title_grp, g_name_grp, g_hud,
+        g_toast,
+    };
+    for (size_t k = 0; k < sizeof(init_hidden)/sizeof(init_hidden[0]); k++) {
+        s_hidden_track[s_hidden_cnt].o = init_hidden[k];
+        s_hidden_track[s_hidden_cnt].hidden = 1;
+        s_hidden_cnt++;
+    }
+    for (int k = 0; k < 14; k++) {
+        s_hidden_track[s_hidden_cnt].o = g_stars[k];
+        s_hidden_track[s_hidden_cnt].hidden = 1;
+        s_hidden_cnt++;
+    }
 }
 
 /* ===================== 通用小工具 ===================== */
@@ -787,7 +843,10 @@ static void refresh_ui(void) {
     else lv_label_set_text(g_scene_title, SCENE_NAME[g_scene]);
     lv_label_set_text(g_scene_body, s_b);
 
-    /* 战斗页：隐藏通用 HUD/正文/提示，改用 1:1 原版 HUD；其余页面反过来隐藏原版 HUD。 */
+    /* 战斗页：隐藏通用 HUD/正文/提示，改用 1:1 原版 HUD；其余页面反过来隐藏原版 HUD。
+     * 防卡死：set_hidden 内部调 lv_obj_add_flag/remove_flag，每 60ms 调一次
+     * 会持续触发样式重算 -> mage 任务占满 CPU -> IDLE 饿死 -> 看门狗重启。
+     * 只有状态真正翻转时才动手。 */
     {
         const bool in_bt = (g_scene == SC_BATTLE);
         mage_hud_show(in_bt);
@@ -795,7 +854,6 @@ static void refresh_ui(void) {
         set_hidden(g_scene_body, in_bt);
         set_hidden(g_scene_hint, in_bt);
         set_hidden(g_scene_title, in_bt);
-        if (!in_bt) set_hidden(g_toast, !(now_ms() < g_toast_until));
     }
 
 
@@ -806,12 +864,17 @@ static void refresh_ui(void) {
         lv_obj_set_style_pad_all(g_scene_body, 0, 0);
     }
 
-    /* toast 显隐 */
+    /* toast 显隐（显隐已由 set_hidden 做状态记忆，这里只处理文本） */
     if (now_ms() < g_toast_until) {
-        lv_obj_clear_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
-        lv_label_set_text(g_toast, g_toast_buf);
+        set_hidden(g_toast, false);
+        /* lv_label_set_text 每次都会重排文本并 invalidate。
+         * refresh_ui 每 60ms 跑一次，必须先比对内容，相同则跳过。 */
+        if (strcmp(g_toast_t, g_toast_buf) != 0) {
+            snprintf(g_toast_t, sizeof(g_toast_t), "%s", g_toast_buf);
+            lv_label_set_text(g_toast, g_toast_buf);
+        }
     } else {
-        lv_obj_add_flag(g_toast, LV_OBJ_FLAG_HIDDEN);
+        set_hidden(g_toast, true);
     }
 }
 
