@@ -26,7 +26,7 @@ SPRITES = {
     # 需要额外的全屏 draw buffer，而 LV_MEM 只有几十 KB，必然分配失败 → Load access fault。
     "title": ("title_art.png", 240, 320),
     "town":  ("town_art.png", 240, 320),
-    "battle_bg": ("battle_bg_k.png", 240, 132),
+    "battle_bg": ("battle_bg_k.png", 240, 320),  # HTML: 整屏铺满 WxH（cover 裁切，非拉伸）
     # 战斗立绘：严格按 HTML 原版 drawSprite 的实际显示高度 1:1 生成
     # （HTML: drawSprite('spHero',...,46,...) / spCat=26 / bd.h: goblin=40, slime=24, cat=32）
     # 这不是缩放降级，而是原版就该这么小 —— 之前误用原图全高导致主角 oversized 一倍。
@@ -69,8 +69,24 @@ def emit(name: str, src_name: str, tw: int, th: int) -> dict:
         alpha = Image.new("L", rgb.size, 255)
 
     # 按显示尺寸降采样（LANCZOS 保持边缘干净）
-    rgb = rgb.resize((tw, th), Image.LANCZOS)
-    alpha = alpha.resize((tw, th), Image.LANCZOS)
+    # 全屏背景走 cover 裁切（复刻 HTML drawImage 的「源裁剪窗口 + 目标铺满」），
+    # 而不是直接拉伸变形 —— 这也是 drawBattle 背景只取中间竖窗的原因。
+    if name == "battle_bg":
+        # HTML drawBattle: sw_ = round(bg.height*(W/H)); range = bg.width-sw_;
+        #                sx = (cam*0.14 + t*3) % range;  drawImage(bg,sx,0,sw_,bg.height,0,0,W,H)
+        # 即：源图取一个「高宽比 = 屏幕高宽比」的竖窗，整高压到屏幕全高。
+        # 这里固定取 range 中点（视差起点），运行时 1:1 直接铺满，不做缩放。
+        sw_, sh_ = rgb.size
+        win = int(round(sh_ * (tw / th)))
+        if win > sw_:
+            win = sw_
+        left = (sw_ - win) // 2
+        rgb = rgb.crop((left, 0, left + win, sh_)).resize((tw, th), Image.LANCZOS)
+        if alpha.size != rgb.size:
+            alpha = alpha.resize((sw_, sh_), Image.LANCZOS).crop((left, 0, left + win, sh_)).resize((tw, th), Image.LANCZOS)
+    else:
+        rgb = rgb.resize((tw, th), Image.LANCZOS)
+        alpha = alpha.resize((tw, th), Image.LANCZOS)
 
     px = list(rgb.getdata())
     al = list(alpha.getdata())

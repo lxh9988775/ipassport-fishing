@@ -29,8 +29,11 @@
 
 /* 活动带：HTML 里人物站在 y≈250，背景占 y=60..250，草在 y=318 */
 #define GROUND_Y   250
-#define BG_Y        62
-#define BG_H       132      /* 必须等于 battle_bg 原图高度，否则被 1:1 规则拒绝绘制 */
+/* HTML drawBattle(): ctx.drawImage(bg,sx,0,sw,bg.height, 0,0,W,H)
+     * 原版是**整屏铺满**（源裁剪横向视差窗，目标铺满 WxH），不是只贴中间一条。
+     * 之前误设为 BG_Y=62/BG_H=132 的一条窄带，导致画面上下大片空白。 */
+#define BG_Y        0
+#define BG_H        320      /* 整屏高 */
 #define FOE_MAX      3      /* 同屏最多画 3 只怪的立绘（与 HTML 一致） */
 
 static const char *TAG = "mage_fx";
@@ -93,8 +96,9 @@ static void fx_build(void)
 {
     if (F.built || !g_fx_parent) return;
 
-    /* 滚动背景：素材 battle_bg 原图 240x132，两幅并排实现无缝横向滚动。
-     * 注意：必须严格按原图尺寸 240x132 绘制，否则被 1:1 免缩放规则拒绝。 */
+    /* 战斗背景：HTML drawImage(bg,sx,0,sw,bg.height, 0,0,W,H) 整屏铺满。
+     * 素材已按 cover 预生成为 240x320（整屏原生尺寸），故 1:1 直接铺满全屏，
+     * 无需也不能做缩放。横向视差改由「压暗层 + 前景草丛」表达。 */
     F.bg = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.bg);
     lv_obj_set_size(F.bg, SCR_W, BG_H);
@@ -106,9 +110,6 @@ static void fx_build(void)
         lv_obj_t *b0 = lv_image_create(F.bg);
         lv_image_set_src(b0, mage_img("battle_bg"));
         lv_obj_set_pos(b0, 0, 0);
-        lv_obj_t *b1 = lv_image_create(F.bg);
-        lv_image_set_src(b1, mage_img("battle_bg"));
-        lv_obj_set_pos(b1, SCR_W, 0);
     }
 
     /* 活动带压暗：HTML 的 gDim 渐变。用一层半透明黑近似（240x130） */
@@ -306,17 +307,9 @@ void mage_fx_render(void)
         shakeX = (int)(sinf(bt.fxT * 60.0f) * bt.shake * 4.0f);
     }
 
-    /* ---- 滚动背景：移动两幅子图实现无缝循环（只改 pos，无变换开销） ---- */
+    /* ---- 背景：整屏单幅，只做震屏平移（不做缩放/横向滚动，避免露出空白） ---- */
     if (F.bg && !lv_obj_has_flag(F.bg, LV_OBJ_FLAG_HIDDEN)) {
-        int off = (int)fx_wrap(bt.cam, SCR_W, SCR_W);   /* 0..239 */
-        uint32_t n = lv_obj_get_child_count(F.bg);
-        for (uint32_t i = 0; i < n && i < 2; i++) {
-            lv_obj_t *c = lv_obj_get_child(F.bg, (int32_t)i);
-            if (c) {
-                lv_obj_set_pos(c, (int)i * SCR_W - off + shakeX, 0);
-            }
-        }
-        lv_obj_set_pos(F.bg, 0, BG_Y);
+        lv_obj_set_pos(F.bg, shakeX, BG_Y);
     }
 
     /* ---- 飘浮光尘 ---- */

@@ -1904,7 +1904,7 @@ void battle_start_boss(int chapter) {
  * 绝不 lv_obj_clean 重建；离开战斗必须隐藏，否则会盖住后续页面持续重绘。 */
 /* 战斗演出层推进。dt 固定 0.15s（不是真实 20ms）：
  * ESP32-C3 单核每帧重绘一屏贴图必然过载，进战斗就卡死。
- * 150ms 约 6.7fps，观感仍流畅（跳跃/滚动都能看清），负载降到 1/7。
+ * 250ms 约 4fps，动画偏慢但绝不卡死（宁可慢，不能卡）。
  * 宁可动画慢，绝不能卡死或烧板。 */
 static float g_fx_acc = 0.0f;
 
@@ -1916,9 +1916,11 @@ static void battle_art_update(void) {
         return;
     }
     g_fx_acc += 0.020f;
-    if (g_fx_acc < 0.15f) return;
+    /* 250ms（4fps）。整屏 240x320 RGB565 = 153600B/帧，ESP32-C3 单核软件
+     * 光栅化扛不住每帧重绘，150ms 仍会卡死。降到 250ms 实测可稳。 */
+    if (g_fx_acc < 0.25f) return;
     g_fx_acc = 0.0f;
-    mage_fx_tick(0.15f);
+    mage_fx_tick(0.25f);
     mage_fx_render();
 }
 
