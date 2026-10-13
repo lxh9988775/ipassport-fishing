@@ -32,6 +32,11 @@ void mage_fx_render(void);
 /* 生成一个粒子 */
 void mage_fx_spawn(int kind, float x, float y, int color, float r, float life);
 
+/* 生成一条伤害飘字（1:1 复刻 HTML bt.nums）
+ * worldX/worldY 为世界坐标（会减去 cam），value 为伤害数字，color 为字色。
+ * 英雄受击传 (BTPX, 200)；敌人受击传 (e->x, 250-34)。 */
+void mage_fx_num(int worldX, int worldY, int value, uint32_t color);
+
 #ifdef __cplusplus
 }
 #endif

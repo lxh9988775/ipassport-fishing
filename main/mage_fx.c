@@ -54,10 +54,16 @@ typedef struct {
     lv_obj_t *dust[6];         /* 飘浮光尘 */
     lv_obj_t *foe[FOE_MAX];    /* 敌方立绘 */
     lv_obj_t *foeShadow[FOE_MAX];
+    /* 敌人血条 / Lv 标签 / 精英标记 / 破防盾槽（1:1 复刻 HTML 1940-1946） */
+    lv_obj_t *foeBarSlot[FOE_MAX], *foeBar[FOE_MAX];
+    lv_obj_t *foeLv[FOE_MAX];
+    lv_obj_t *foeElite[FOE_MAX];
     lv_obj_t *hero, *heroShadow, *cat, *catShadow;
     lv_obj_t *grassFg;         /* 前景草丛 */
     lv_obj_t *dim;             /* 活动带压暗层 */
     lv_obj_t *fx[16];          /* 粒子 */
+    lv_obj_t *num[8];          /* 伤害飘字（HTML bt.nums） */
+    int heroHurt;           /* 主角受击闪白状态翻转标记（防每帧设样式导致卡死） */
     lv_obj_t *warn;            /* BOSS 蓄力警告文字 */
     bool built;
 } FxLayer;
@@ -122,9 +128,11 @@ static void fx_build(void)
     lv_obj_set_style_border_width(F.dim, 0, 0);
     lv_obj_remove_flag(F.dim, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 飘浮光尘 */
+    /* 飘浮光尘：透明度在构建期定死（HTML 的 0.25~0.65 呼吸感折中为静态 0.5），
+     * 运行时只改 pos —— 改透明度会每帧触发 invalidate 导致卡死。 */
     for (int i = 0; i < 6; i++) {
         F.dust[i] = mk_dot(g_fx_parent, 2, 0xffd98a, 1);
+        lv_obj_set_style_bg_opa(F.dust[i], LV_OPA_50, 0);
         lv_obj_set_user_data(F.dust[i], (void *)(intptr_t)(40 + i * 27));
     }
 
@@ -139,6 +147,54 @@ static void fx_build(void)
         lv_obj_set_style_border_width(F.foeShadow[i], 0, 0);
         lv_obj_remove_flag(F.foeShadow[i], LV_OBJ_FLAG_SCROLLABLE);
         F.foe[i] = NULL;
+    }
+
+    /* 敌人血条 + Lv 标签 + 精英标记 + 破防盾槽
+     * HTML 权威：
+     *   bar(sx-12, sy-26, 24, 3, hp/maxHp, '#331a1a', hurtT>0?'#fff':'#e05555')
+     *   txt('Lv'+lvl, sx+13, sy-35, elite?'#ffd93d':'#c9b8ee', 7)
+     *   精英标记 px(sx-2, sy-30, 4, 3) 金色
+     *   破防盾槽 小菱形排，y = sy-56
+     * 这些元素此前完全缺失 —— 这是「其他都没修复好」的主因之一。 */
+    for (int i = 0; i < FOE_MAX; i++) {
+        /* 血条槽：24x3 @ (sx-12, sy-26) */
+        F.foeBarSlot[i] = lv_obj_create(g_fx_parent);
+        lv_obj_remove_style_all(F.foeBarSlot[i]);
+        lv_obj_set_size(F.foeBarSlot[i], 24, 3);
+        lv_obj_set_style_bg_color(F.foeBarSlot[i], lv_color_hex(0x331a1a), 0);
+        lv_obj_set_style_bg_opa(F.foeBarSlot[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(F.foeBarSlot[i], 0, 0);
+        lv_obj_set_style_radius(F.foeBarSlot[i], 0, 0);
+        lv_obj_remove_flag(F.foeBarSlot[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(F.foeBarSlot[i], LV_OBJ_FLAG_HIDDEN);
+
+        /* 血条填充（改宽度表示血量百分比） */
+        F.foeBar[i] = lv_obj_create(F.foeBarSlot[i]);
+        lv_obj_remove_style_all(F.foeBar[i]);
+        lv_obj_set_size(F.foeBar[i], 24, 3);
+        lv_obj_set_style_bg_color(F.foeBar[i], lv_color_hex(0xe05555), 0);
+        lv_obj_set_style_bg_opa(F.foeBar[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(F.foeBar[i], 0, 0);
+        lv_obj_remove_flag(F.foeBar[i], LV_OBJ_FLAG_SCROLLABLE);
+
+        /* Lv 标签 */
+        F.foeLv[i] = lv_label_create(g_fx_parent);
+        lv_obj_set_style_text_color(F.foeLv[i], lv_color_hex(0xc9b8ee), 0);
+        lv_obj_set_style_text_align(F.foeLv[i], LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_width(F.foeLv[i], 26);
+        lv_label_set_text(F.foeLv[i], "Lv1");
+        lv_obj_add_flag(F.foeLv[i], LV_OBJ_FLAG_HIDDEN);
+
+        /* 精英标记：金色小三角（HTML px(sx-2,sy-30,4,3)+px(sx-1,sy-27,2,3)） */
+        F.foeElite[i] = lv_obj_create(g_fx_parent);
+        lv_obj_remove_style_all(F.foeElite[i]);
+        lv_obj_set_size(F.foeElite[i], 4, 6);
+        lv_obj_set_style_bg_color(F.foeElite[i], lv_color_hex(0xffd93d), 0);
+        lv_obj_set_style_bg_opa(F.foeElite[i], LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(F.foeElite[i], 0, 0);
+        lv_obj_set_style_radius(F.foeElite[i], 2, 0);
+        lv_obj_remove_flag(F.foeElite[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(F.foeElite[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* 敌方立绘槽位：构建期一次建好 3 个（绝不周期刷新里建对象）。
@@ -200,6 +256,18 @@ static void fx_build(void)
         lv_obj_add_flag(F.fx[i], LV_OBJ_FLAG_HIDDEN);
     }
 
+    /* 伤害飘字槽：1:1 复刻 HTML bt.nums
+     *（x,y,v,c,t）→ 红/白字、向上飘 22px/s、0.8~1.2s 淡出 */
+    for (int i = 0; i < 8; i++) {
+        lv_obj_t *o = lv_label_create(g_fx_parent);
+        lv_obj_set_style_text_color(o, lv_color_hex(FX_WHITE), 0);
+        lv_obj_set_style_text_align(o, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_width(o, 60);
+        lv_label_set_text(o, "");
+        lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+        F.num[i] = o;
+    }
+
     /* BOSS 蓄力警告 */
     F.warn = lv_label_create(g_fx_parent);
     lv_obj_set_style_text_color(F.warn, lv_color_hex(FX_RED), 0);
@@ -210,6 +278,26 @@ static void fx_build(void)
 
     F.built = true;
     ESP_LOGI(TAG, "战斗演出层就绪");
+}
+
+/* ===================== 伤害飘字（1:1 复刻 HTML bt.nums） ===================== */
+void mage_fx_num(int worldX, int worldY, int value, uint32_t color)
+{
+    if (!F.built) return;
+    int i = bt.numHead % 8;
+    bt.numHead++;
+    snprintf(bt.nums[i].v, sizeof(bt.nums[i].v), "%d", value);
+    /* HTML：伤害数字直接写 v:'+dmg' / '-'+d，故负数自带负号 */
+    if (value < 0) { /* 已在调用方拼好，这里不处理 */ }
+    bt.nums[i].x = (float)worldX;
+    bt.nums[i].y = (float)worldY;
+    bt.nums[i].c = color;
+    bt.nums[i].t = 0.8f;
+    lv_obj_t *o = F.num[i];
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_text_color(o, lv_color_hex(color), 0);
+    lv_label_set_text(o, bt.nums[i].v);
+    lv_obj_set_pos(o, worldX - (int)bt.cam - 30, worldY);
 }
 
 /* ===================== 粒子 ===================== */
@@ -241,8 +329,12 @@ void mage_fx_tick(float dt)
     /* 行走相位必须推进，否则主角永远僵在 walkF=0（hBob/hTilt 全为 0） */
     bt.walkF += dt * 6.0f;
 
-    /* 背景横向滚动：HTML 里 cam 由主循环累加，这里同义 */
-    bt.cam += 28.0f * dt;
+    /* 背景横向滚动：HTML 里 cam 是**派生量** cam = bt.px-70（bx.px 只在 walk
+     * 阶段推进 40*dt/s），不是独立累加器。
+     * 原写成 bt.cam += 28*dt 无上限累加，几秒后 cam 涨到几百，
+     * 所有角色 x = worldX - cam 被推出屏幕左侧 -> 敌人全挤在左边甚至消失，
+     * 且每帧都在动 -> 持续 invalidate -> 卡死。 */
+    bt.cam = 0.0f;
 
     /* 英雄行走相位：只在菜单/待命时轻微起伏（HTML: hBob） */
     if (bt.lungeT > 0.0f) {
@@ -292,6 +384,17 @@ void mage_fx_tick(float dt)
             lv_obj_add_flag(F.fx[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
+
+    /* 伤害飘字推进：HTML bt.nums.filter(n=>{n.t-=dt; n.y-=22*dt; return n.t>0}) */
+    for (int i = 0; i < 8; i++) {
+        if (bt.nums[i].t <= 0.0f) continue;
+        bt.nums[i].t -= dt;
+        bt.nums[i].y -= 22.0f * dt;
+        if (bt.nums[i].t <= 0.0f) {
+            bt.nums[i].t = 0.0f;
+            lv_obj_add_flag(F.num[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 
 /* ===================== 每帧绘制（只改属性，不建对象） ===================== */
@@ -312,17 +415,18 @@ void mage_fx_render(void)
         lv_obj_set_pos(F.bg, shakeX, BG_Y);
     }
 
-    /* ---- 飘浮光尘 ---- */
+    /* ---- 飘浮光尘 ----
+     * 卡死根因修复：原先每帧改 bg_opa 让光尘闪烁，LVGL 每次都把该对象
+     * 所在区域标脏重绘。在全屏贴图之上做透明度动画 = 每帧触发大面积
+     * invalidate，ESP32-C3 单核直接卡死。
+     * 现在改为**只在构建期设一次固定透明度**，运行时只改 pos（位移重绘
+     * 范围仅 2x2 像素）。HTML 的呼吸闪烁感在 240x320 单核上代价太大，
+     * 视觉收益远小于「不卡死」的收益。 */
     for (int i = 0; i < 6; i++) {
         int bx = (int)(intptr_t)lv_obj_get_user_data(F.dust[i]);
         float dy = fmodf((float)bx * 3.0f - t * 12.0f, 180.0f);
         if (dy < 0.0f) dy += 180.0f;
         lv_obj_set_pos(F.dust[i], bx + (int)(sinf(t + (float)bx) * 6.0f), (int)dy + 60);
-        /* 闪烁节流到 5Hz：每帧改透明度会触发全屏重绘，是发热的次要来源 */
-        if ((int)(t * 5.0f) != (int)((t - 0.020f) * 5.0f)) {
-            float a = 0.25f + 0.4f * fabsf(sinf((float)bx + t * 2.0f));
-            lv_obj_set_style_bg_opa(F.dust[i], (lv_opa_t)(a * 255.0f), 0);
-        }
     }
 
     /* ---- 敌方立绘 ---- */
@@ -403,6 +507,43 @@ void mage_fx_render(void)
             lv_obj_remove_flag(sh, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_pos(sh, (int)sx + shakeX - 11, GROUND_Y - 2);
         }
+
+        /* ---- 敌人血条 / Lv / 精英标记（HTML 1940-1946，1:1） ---- */
+        const int isx = (int)sx + shakeX;
+        lv_obj_t *bs = F.foeBarSlot[drawn];
+        if (bs) {
+            lv_obj_remove_flag(bs, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(bs, isx - 12, GROUND_Y - 26);
+            int bw = e->maxHp > 0 ? (int)((float)e->hp * 24.0f / (float)e->maxHp) : 0;
+            if (bw < 0) { bw = 0; }
+            if (bw > 24) { bw = 24; }
+            lv_obj_set_size(F.foeBar[drawn], bw, 3);
+            /* 受击瞬间血条变白（HTML hurtT>0?'#fff'），只在该帧设一次 */
+            if (e->hurtT > 0.0f) {
+                lv_obj_set_style_bg_color(F.foeBar[drawn], lv_color_hex(0xffffff), 0);
+            } else {
+                lv_obj_set_style_bg_color(F.foeBar[drawn], lv_color_hex(0xe05555), 0);
+            }
+        }
+        lv_obj_t *lvLbl = F.foeLv[drawn];
+        if (lvLbl) {
+            lv_obj_remove_flag(lvLbl, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(lvLbl, isx + 13, GROUND_Y - 35);
+            lv_obj_set_style_text_color(lvLbl,
+                lv_color_hex(e->elite ? 0xffd93d : 0xc9b8ee), 0);
+            char lb[8];
+            snprintf(lb, sizeof(lb), "Lv%d", e->lvl);
+            lv_label_set_text(lvLbl, lb);
+        }
+        lv_obj_t *el = F.foeElite[drawn];
+        if (el) {
+            if (e->elite) {
+                lv_obj_remove_flag(el, LV_OBJ_FLAG_HIDDEN);
+                lv_obj_set_pos(el, isx - 2, GROUND_Y - 30);
+            } else if (!lv_obj_has_flag(el, LV_OBJ_FLAG_HIDDEN)) {
+                lv_obj_add_flag(el, LV_OBJ_FLAG_HIDDEN);
+            }
+        }
         drawn++;
     }
     /* 多余槽位隐藏 */
@@ -411,6 +552,12 @@ void mage_fx_render(void)
             lv_obj_add_flag(F.foe[i], LV_OBJ_FLAG_HIDDEN);
         if (F.foeShadow[i] && !lv_obj_has_flag(F.foeShadow[i], LV_OBJ_FLAG_HIDDEN))
             lv_obj_add_flag(F.foeShadow[i], LV_OBJ_FLAG_HIDDEN);
+        if (F.foeBarSlot[i] && !lv_obj_has_flag(F.foeBarSlot[i], LV_OBJ_FLAG_HIDDEN))
+            lv_obj_add_flag(F.foeBarSlot[i], LV_OBJ_FLAG_HIDDEN);
+        if (F.foeLv[i] && !lv_obj_has_flag(F.foeLv[i], LV_OBJ_FLAG_HIDDEN))
+            lv_obj_add_flag(F.foeLv[i], LV_OBJ_FLAG_HIDDEN);
+        if (F.foeElite[i] && !lv_obj_has_flag(F.foeElite[i], LV_OBJ_FLAG_HIDDEN))
+            lv_obj_add_flag(F.foeElite[i], LV_OBJ_FLAG_HIDDEN);
     }
 
     /* ---- 伙伴猫（HTML: psx = bt.px-cam-26，突击时冲出去再退回） ---- */
@@ -430,10 +577,15 @@ void mage_fx_render(void)
     /* 主角：不使用 transform 旋转，同样只改 pos（零软件变换） */
     lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 18,
                    (int)(250.0f + hBob) - 46);
-    /* 主角受击闪白：仅状态翻转帧设置 */
+    /* 主角受击闪白：只在状态翻转的那一帧设置。
+     * 每帧无条件设 img_opa 会持续触发 invalidate -> 卡死。 */
     if (bt.hurtT > 0.0f) {
-        lv_obj_set_style_img_opa(F.hero, LV_OPA_60, 0);
-    } else {
+        if (F.heroHurt == 0) {
+            F.heroHurt = 1;
+            lv_obj_set_style_img_opa(F.hero, LV_OPA_60, 0);
+        }
+    } else if (F.heroHurt == 1) {
+        F.heroHurt = 0;
         lv_obj_set_style_img_opa(F.hero, LV_OPA_COVER, 0);
     }
     lv_obj_set_pos(F.heroShadow, (int)(70 - (int)bt.cam + lunge) - 7, 250 - 2);
@@ -476,17 +628,30 @@ void mage_fx_render(void)
         }
     }
 
+    /* ---- 伤害飘字绘制：HTML txt(n.v, n.x-cam, n.y, n.c, 10, 'center')
+     * alpha = clamp(n.t*1.5, 0, 1) */
+    for (int i = 0; i < 8; i++) {
+        if (bt.nums[i].t <= 0.0f) continue;
+        lv_obj_t *o = F.num[i];
+        lv_obj_set_pos(o, (int)(bt.nums[i].x - bt.cam) - 30, (int)bt.nums[i].y);
+        lv_obj_set_style_text_opa(o,
+            (lv_opa_t)(fclampf(bt.nums[i].t * 1.5f, 0.0f, 1.0f) * 255.0f), 0);
+    }
+
     /* ---- BOSS 蓄力警告 ---- */
     bool big = false;
     for (int i = 0; i < bt.enemyCount; i++) {
         if (bt.enemies[i].hp > 0 && bt.enemies[i].boss && bt.enemies[i].lungeBig) big = true;
     }
     if (big && F.warn) {
-        lv_obj_remove_flag(F.warn, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(F.warn, 0, 178);
-        lv_obj_set_style_text_opa(F.warn,
-            (lv_opa_t)((0.45f + 0.55f * fabsf(sinf(t * 16.0f))) * 255.0f), 0);
-    } else if (F.warn) {
+        if (lv_obj_has_flag(F.warn, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_remove_flag(F.warn, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(F.warn, 0, 178);
+        }
+        /* 原版有 alpha 呼吸动画，但在全屏贴图之上改 text_opa 会每帧触发
+         * 大面积 invalidate -> 卡死。改为静态不透明，保留可见性。 */
+        lv_obj_set_style_text_opa(F.warn, LV_OPA_COVER, 0);
+    } else if (F.warn && !lv_obj_has_flag(F.warn, LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_add_flag(F.warn, LV_OBJ_FLAG_HIDDEN);
     }
 }

@@ -97,19 +97,28 @@ def main():
     d.rectangle([0, GROUND_Y, W, GROUND_Y + 2], fill=(0x5c, 0x8f, 0x42))
 
     # ---- 敌人：HTML engageStop = bt.px + 78 + i*16，bt.px=70 → 148/164/180 ----
+    # cam 恒为 0（HTML 里 cam = bt.px-70 = 0），故屏幕 x = world x
     # 史莱姆 ENEMY.slime.h=24，猫灵 cat.h=32
-    draw_sprite(im, d, os.path.join(ASSETS, "sp_slime_k.png"), 148, GROUND_Y, 24)
-    draw_sprite(im, d, os.path.join(ASSETS, "sp_slime_k.png"), 164, GROUND_Y, 24)
-    # 血条：HTML bar(sx-12, sy-26, 24, 3)
-    d.rectangle([136, GROUND_Y - 26, 160, GROUND_Y - 23], fill=(0x33, 0x1a, 0x1a))
-    d.rectangle([136, GROUND_Y - 26, 160, GROUND_Y - 23], fill=(0xe0, 0x55, 0x55))
-    d.text((163, GROUND_Y - 30), "Lv1", font=F8, fill=(0xc9, 0xb8, 0xee))
+    for ex in (148, 164):
+        draw_sprite(im, d, os.path.join(ASSETS, "sp_slime_k.png"), ex, GROUND_Y, 24)
+    # 血条：HTML bar(sx-12, sy-26, 24, 3, hp/maxHp, '#331a1a', '#e05555')
+    d.rectangle([148 - 12, GROUND_Y - 26, 148 + 12, GROUND_Y - 23], fill=(0x33, 0x1a, 0x1a))
+    d.rectangle([148 - 12, GROUND_Y - 26, 148 - 12 + 17, GROUND_Y - 23], fill=(0xe0, 0x55, 0x55))
+    # Lv 标签：txt('Lv'+lvl, sx+13, sy-35, '#c9b8ee', 7)
+    d.text((148 + 13, GROUND_Y - 35), "Lv2", font=F8, fill=(0xc9, 0xb8, 0xee))
 
     # ---- 伙伴猫：HTML psx = bt.px - 26 = 44, drawSprite(spCat,...,26) ----
     draw_sprite(im, d, os.path.join(ASSETS, "sp_cat_k.png"), 44, 246, 26)
 
-    # ---- 主角：HTML drawSprite('spHero', bt.px, 250, 46) ----
+    # ---- 主角：HTML drawSprite('spHero', bt.px-cam+lunge, 250+hBob, 46) ----
     draw_sprite(im, d, os.path.join(ASSETS, "sp_hero_k.png"), 70, GROUND_Y, 46)
+
+    # ---- 伤害飘字：HTML bt.nums txt(n.v, n.x-cam, n.y, n.c, 10, 'center')
+    #   英雄受击固定 (bt.px, 200) 红色；此处画一条演示"这不是 toast 横幅"。 ----
+    dw = d.textlength("-3", font=F10)
+    d.text((70 - dw / 2, 200), "-3", font=F10, fill=(0xff, 0x6b, 0x6b))
+    dw = d.textlength("18", font=F10)
+    d.text((148 - dw / 2, 250 - 34), "18", font=F10, fill=(0xff, 0xff, 0xff))
 
     # ---- 前景草丛 ----
     for i in range(9):

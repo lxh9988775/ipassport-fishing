@@ -1338,6 +1338,8 @@ static void deal_to(BattleEnemy *e, int dmg) {
     e->flashT = 0.15f;
     mage_fx_spawn(FX_K_PARTICLE, (float)(e->x - 70) - (float)(int)bt.cam,
                    250.0f - (float)e->typeIdx * 20.0f, 0xff9ad5, 5.0f, 0.45f);
+    /* 1:1 复刻 HTML：bt.nums.push({x:e.x, y:enemyFeetY()-34, v:''+dmg, c:'#fff', t:0.8}) */
+    mage_fx_num(e->x, 250 - 34, dmg, 0xffffff);
     if (dmg > 0) bt.shake = 0.35f;   /* 伤害震屏 */
     if (e->boss && !e->enraged && e->hp > 0 && e->hp <= (int)(e->maxHp * 0.65f)) {
         e->enraged = 1; e->atk = (int)(e->atk * 1.6f + 0.5f);
@@ -1577,7 +1579,10 @@ static void apply_enemy_hit(BattleEnemy *e, int big) {
     if (pr && pr->traitIdx == traitIndex("tough")) d = (int)(d * 0.9f + 0.5f);
     if (bt.guardBlock > 0) { int cut = (int)(d * bt.guardBlock + 0.5f); d -= cut; if (d < 1) d = 1; bt.guardBlock -= 0.15f; if (bt.guardBlock < 0) bt.guardBlock = 0; }
     g.hp -= d; if (g.hp < 0) g.hp = 0;
-    toast("-%d HP", d);
+    /* 1:1 复刻 HTML：bt.nums.push({x:bt.px, y:200, v:'-'+d, c:PAL.red, t:0.8})
+     * 原版是**红色飘字**（向上飘 22px/s，0.8s 淡出），不是 toast 横幅。
+     * 之前用 toast("-%d HP") 在底部拉了一条蓝底白字横条，与原版完全不同。 */
+    mage_fx_num(BTPX, 200, d, 0xff6b6b);
     /* 演出：敌方冲锋前倾 + BOSS 大招蓄力警告 + 英雄受击后仰闪红 */
     e->lungeT = 0.35f; e->lungeDur = 0.35f;
     if (big) e->lungeBig = 1;

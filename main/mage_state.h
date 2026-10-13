@@ -110,6 +110,15 @@ typedef struct {
         int   shard;
     } fx[16];
     int   fxHead;       /* 环形写指针 */
+    /* 伤害飘字池：1:1 复刻 HTML bt.nums
+     *   nums.push({x, y, v, c, t:0.8~1.2})，每帧 y -= 22*dt、t -= dt，t>0 才画。
+     *   英雄受击固定在 (bt.px, 200)；敌人受击在 (e.x, enemyFeetY()-34)。 */
+    struct {
+        float x, y, t;
+        char  v[12];
+        uint32_t c;
+    } nums[8];
+    int   numHead;
     int enemyCount;
     BattleEnemy enemies[BATTLE_MAX_ENEMIES];
 } BattleState;

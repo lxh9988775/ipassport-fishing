@@ -122,7 +122,7 @@ void mage_hud_build(void)
 
     H.waveTx = mk_tx(H.panel, "1/10", SCR_W - 70, 1, 68, 0xffd93d, 10);
     lv_obj_set_style_text_align(H.waveTx, LV_TEXT_ALIGN_RIGHT, 0);
-    H.statTx = mk_tx(H.panel, "AUTO 3 球 卡 药", SCR_W - 96, 13, 94, 0x7fdc8a, 8);
+    H.statTx = mk_tx(H.panel, "AUTO 3 球 卡 药", SCR_W - 104, 13, 102, 0x7fdc8a, 8);
     lv_obj_set_style_text_align(H.statTx, LV_TEXT_ALIGN_RIGHT, 0);
 
     /* ---- 底部三张动作卡：HTML y=H-44=276, x=8+i*78, 72x40 ---- */
@@ -166,15 +166,18 @@ void mage_hud_build(void)
 
 void mage_hud_show(bool on)
 {
-    if (!H.built) {
-        if (!on) return;
-        mage_hud_build();
-    }
-    if (!H.built) return;
+    if (!g_hud_parent) return;
     if (on) {
+        mage_hud_build();
+        if (!H.built) return;
+        /* 关键：父容器 hud_root 在 build_ui 里被加了 HIDDEN，
+         * 只切子对象 H.root 的 flag 父级仍隐藏 -> 整个 HUD 永远不显示。
+         * 必须父子两个一起切。 */
+        lv_obj_remove_flag(g_hud_parent, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(H.root, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(H.root, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(g_hud_parent, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -210,8 +213,9 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
                         wave == 10 ? " \xe2\x98\xa0BOSS" : (wave == 5 ? " \xe2\x9a\x94\xe7\xb2\xbe\xe8\x8b\xb1" : ""));
     lv_label_set_text(H.waveTx, buf);
 
-    /* 状态行：HTML txt((auto?'AUTO':'手动')+...+' 编'+n+' 球'+..) */
-    snprintf(buf, sizeof(buf), "%s\xe7\xbc\x96%d \xe7\x90\x83%d \xe5\x8d\xa1%d \xe8\x8d\xaf%d",
+    /* 状态行：HTML txt((auto?'AUTO':'手动')+...+' 编'+n+' 球'+..)
+     * 放在顶部面板第二行右侧（y=13），字号小一点避免与波次行撞在一起 */
+    snprintf(buf, sizeof(buf), "%s \xe7\xbc\x96%d \xe7\x90\x83%d \xe5\x8d\xa1%d \xe8\x8d\xaf%d",
              autoMode ? "AUTO" : "\xe6\x89\x8b\xe5\x8a\xa8", loadout, orbs, seals, potions);
     (void)autoCap;
     lv_label_set_text(H.statTx, buf);
