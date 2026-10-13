@@ -14,6 +14,9 @@ on:
       # 本仓 main 已只编电子宠物（口袋兔，社区 948），钓鱼源码留在 fishing-app 分支上，
       # 两条线各自出各自的整镜像；这个分支不往 main 合。
       - fishing-app
+      # 魔法师 RPG（社区投稿，纯 C+LVGL 复刻《魔法帝之路》）专用构建线。
+      # mage-game 分支只编魔法师固件，不往 main / fishing-app 合。
+      - mage-game
     paths-ignore:
       - "docs/**"
       - "plays/**"
