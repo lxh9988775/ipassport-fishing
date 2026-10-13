@@ -308,7 +308,9 @@ static void refresh_ui(void) {
     set_hidden(g_name_grp, !naming);
     set_hidden(g_scene_grp, title || naming);
     set_hidden(g_hud, !hud_on);
+    ESP_LOGI("mage", "R1 组显隐完成");
     for (int i = 0; i < 14; i++) set_hidden(g_stars[i], !title);
+    ESP_LOGI("mage", "R2 星星完成");
 
     /* 离开城镇页时清掉主视觉，下次进入再重建（避免周期刷新里贴图无限叠加） */
     if (g_scene != SC_CITY && g_city_art_shown) {
@@ -316,6 +318,7 @@ static void refresh_ui(void) {
         g_city_art = NULL;
         g_city_art_shown = false;
     }
+    ESP_LOGI("mage", "R3 城镇清理完成");
 
     if (title) {
         /* 星星闪烁动画已停用：在全屏贴图之上做透明度动画会每帧触发全屏重绘，
@@ -1985,8 +1988,11 @@ void mage_app_start(void) {
     s_btn_q = xQueueCreate(16, sizeof(btn_ev_t));
     mage_init();
     if (bsp_lvgl_lock(1000)) {
+        ESP_LOGI("mage", "B1 开始建 UI");
         build_ui();
+        ESP_LOGI("mage", "B2 build_ui 返回");
         refresh_ui();
+        ESP_LOGI("mage", "B3 refresh_ui 返回");
         bsp_lvgl_unlock();
     }
     bsp_button_init(mage_on_key, NULL);
