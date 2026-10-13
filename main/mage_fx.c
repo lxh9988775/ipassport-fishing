@@ -117,7 +117,7 @@ static void fx_build(void)
     /* 飘浮光尘 */
     for (int i = 0; i < 6; i++) {
         F.dust[i] = mk_dot(g_fx_parent, 2, 0xffd98a, 1);
-        F.dust[i]->user.data = (void *)(intptr_t)(40 + i * 27);
+        lv_obj_set_user_data(F.dust[i], (void *)(intptr_t)(40 + i * 27));
     }
 
     /* 地面阴影（椭圆用圆角矩形近似） */
@@ -166,7 +166,7 @@ static void fx_build(void)
             lv_obj_set_style_radius(g, 6, 0);
             lv_obj_remove_flag(g, LV_OBJ_FLAG_SCROLLABLE);
             lv_obj_set_pos(g, i * 22 - 10, 8);
-            g->user.data = (void *)(intptr_t)(i * 22 - 10);
+            lv_obj_set_user_data(g, (void *)(intptr_t)(i * 22 - 10));
         }
     }
 
@@ -214,6 +214,8 @@ void mage_fx_tick(float dt)
 
     /* HTML bt.t 时间轴 */
     bt.fxT += dt;
+    /* 行走相位必须推进，否则主角永远僵在 walkF=0（hBob/hTilt 全为 0） */
+    bt.walkF += dt * 6.0f;
 
     /* 背景横向滚动：HTML 里 cam 由主循环累加，这里同义 */
     bt.cam += 28.0f * dt;
@@ -290,7 +292,7 @@ void mage_fx_render(void)
 
     /* ---- 飘浮光尘 ---- */
     for (int i = 0; i < 6; i++) {
-        int bx = (int)(intptr_t)F.dust[i]->user.data;
+        int bx = (int)(intptr_t)lv_obj_get_user_data(F.dust[i]);
         float dy = fmodf((float)bx * 3.0f - t * 12.0f, 180.0f);
         if (dy < 0.0f) dy += 180.0f;
         float a = 0.25f + 0.4f * fabsf(sinf((float)bx + t * 2.0f));
@@ -323,11 +325,11 @@ void mage_fx_render(void)
             lv_obj_set_size(slot, sprW[k], sprH[k]);
             mage_draw_bg(slot, spr[k], 0, 0, sprW[k], sprH[k]);
             F.foe[drawn] = slot;
-        } else if (slot->user.data != (void *)(intptr_t)(k + 1)) {
+        } else if (lv_obj_get_user_data(slot) != (void *)(intptr_t)(k + 1)) {
             /* 换了怪种，重设贴图与尺寸 */
             lv_obj_set_size(slot, sprW[k], sprH[k]);
             mage_draw_bg(slot, spr[k], 0, 0, sprW[k], sprH[k]);
-            slot->user.data = (void *)(intptr_t)(k + 1);
+            lv_obj_set_user_data(slot, (void *)(intptr_t)(k + 1));
         }
         lv_obj_remove_flag(slot, LV_OBJ_FLAG_HIDDEN);
 
@@ -364,13 +366,10 @@ void mage_fx_render(void)
         lv_obj_set_style_transform_pivot_x(slot, hPix / 2, 0);
         lv_obj_set_style_transform_pivot_y(slot, hPix, 0);
         lv_obj_set_style_transform_scale_y(slot, (int32_t)(sq * 256), 0);
-        if (eTilt != 0.0f) {
-            lv_obj_set_style_transform_angle(slot, (int32_t)(eTilt * 10), 0);
-        }
-        /* 受击闪红（HTML: 主角受击 px 红色半透明） */
-        if (e->flashT > 0.0f) {
-            lv_obj_set_style_bg_opa(slot, LV_OPA_20, 0);
-        }
+        /* 角度必须每帧无条件复位，否则会残留上一次的倾斜 */
+        lv_obj_set_style_transform_angle(slot, (int32_t)(eTilt * 10), 0);
+        /* 受击闪白（HTML: 主角受击 px 白色半透明一闪） */
+        lv_obj_set_style_img_opa(slot, (e->flashT > 0.0f) ? LV_OPA_60 : LV_OPA_COVER, 0);
 
         /* 影子 */
         lv_obj_t *sh = F.foeShadow[drawn];
@@ -406,12 +405,13 @@ void mage_fx_render(void)
     lv_obj_set_style_transform_pivot_x(F.hero, 42, 0);
     lv_obj_set_style_transform_pivot_y(F.hero, 108, 0);
     lv_obj_set_style_transform_angle(F.hero, (int32_t)(hTilt * 57.3f * 10.0f), 0);
+    /* 主角受击闪白 */
+    lv_obj_set_style_img_opa(F.hero,
+                             (bt.hurtT > 0.0f) ? LV_OPA_60 : LV_OPA_COVER, 0);
     lv_obj_set_pos(F.heroShadow, (int)(70 - (int)bt.cam + lunge) - 7, 250 - 2);
 
     /* ---- 前景草丛视差 1.3 ---- */
     if (F.grassFg) {
-        lv_obj_t *c = lv_obj_get_child(F.grassFg, 0);
-        (void)c;
         float gx = -fx_wrap(bt.cam * 1.3f, 264.0f, 264.0f);
         lv_obj_set_pos(F.grassFg, (int)gx, SCR_H - 20);
     }
