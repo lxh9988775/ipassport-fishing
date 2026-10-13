@@ -9,9 +9,13 @@
  *     FAP_SCREENSHOT_V1 <w> <h> RGB565LE <bytes>\n
  *     紧接 <bytes> 个小端 RGB565 像素（行主序）。
  *
- * 设计要点（全部来自 docs/reference/y2lin/serial-screenshot-protocol.md）：
- *  - 本固件已开启 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG，驱动由控制台初始化装好，
- *    故直接读 usb_serial_jtag_*:*:*，不再重复安装/挂载，避免 NULL 驱动崩溃循环。
+ * 通道说明（关键改动，解决 IDF 5.5.3 组件名问题）：
+ *  本固件已开启 CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG，控制台在启动时已把
+ *  USB-CDC 挂载为 VFS 的 stdin/stdout。本模块直接对 fd 0 读、fd 1 写，
+ *  等价使用同一根 CDC 通道，且无需 REQUIRES 那个无法被 CMake 解析的
+ *  usb_serial_jtag 组件名。
+ *
+ * 设计要点（来自 docs/reference/y2lin/serial-screenshot-protocol.md）：
  *  - reader 任务优先级 3（低于 LVGL 的 4），空闲必 vTaskDelay，出错退避 200ms，绝不忙等。
  *  - 命令以滑动窗口做子串匹配，兼容 Windows 终端吞掉末尾换行的情况。
  *  - 帧缓冲静态 64 字节对齐、240x320x2=153600 字节，永不动用 LVGL/系统堆。
@@ -23,12 +27,14 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "usb_serial_jtag.h"
 #include "lvgl.h"
 #include "lv_snapshot.h"
 #include "esp_log.h"
 #include "bsp_display.h"
 #include "fap_screenshot.h"
+
+#include <unistd.h>
+#include <string.h>
 
 static const char *TAG = "fap_ss";
 
@@ -56,7 +62,7 @@ static void ss_send_bytes(const uint8_t *p, size_t n)
     while (off < n) {
         size_t chunk = n - off;
         if (chunk > SS_CHUNK) chunk = SS_CHUNK;
-        int r = usb_serial_jtag_write_bytes(p + off, chunk, pdMS_TO_TICKS(2000));
+        ssize_t r = write(STDOUT_FILENO, p + off, chunk);
         if (r <= 0) return;               /* 主机拔线：放弃传输但保留任务 */
         off += (size_t)r;
     }
@@ -120,11 +126,7 @@ static void ss_task(void *arg)
     (void)arg;
     uint8_t rb[64];
     while (1) {
-        if (!usb_serial_jtag_is_driver_installed()) {
-            vTaskDelay(pdMS_TO_TICKS(200));
-            continue;
-        }
-        int n = usb_serial_jtag_read_bytes(rb, sizeof(rb), pdMS_TO_TICKS(100));
+        ssize_t n = read(STDIN_FILENO, rb, sizeof(rb));
         if (n < 0) {                      /* 错误：退避，绝不忙等 */
             vTaskDelay(pdMS_TO_TICKS(200));
             continue;
@@ -133,7 +135,7 @@ static void ss_task(void *arg)
             vTaskDelay(pdMS_TO_TICKS(10));
             continue;
         }
-        for (int i = 0; i < n; i++) {
+        for (ssize_t i = 0; i < n; i++) {
             char c = (char)rb[i];
             if (c == '\n' || c == '\r') { /* 行终止符重置窗口 */
                 s_wpos = 0;
@@ -163,5 +165,5 @@ void fap_screenshot_init(void)
         ESP_LOGE(TAG, "无法创建截屏任务");
         return;
     }
-    ESP_LOGI(TAG, "FAP_SCREENSHOT_V1 串口截屏就绪 (COM/USB-CDC, %dx%d)", SS_W, SS_H);
+    ESP_LOGI(TAG, "FAP_SCREENSHOT_V1 串口截屏就绪 (USB-CDC stdin/stdout, %dx%d)", SS_W, SS_H);
 }
