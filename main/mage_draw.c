@@ -70,6 +70,16 @@ bool mage_draw_sprite(lv_obj_t *parent, const char *name,
                       int cx, int foot_y, int h_pix,
                       float squash, float tilt_deg)
 {
+    return mage_draw_sprite_ret(parent, name, cx, foot_y, h_pix, squash, tilt_deg, NULL);
+}
+
+bool mage_draw_sprite_ret(lv_obj_t *parent, const char *name,
+                          int cx, int foot_y, int h_pix,
+                          float squash, float tilt_deg, lv_obj_t **out)
+{
+    if (out) {
+        *out = NULL;
+    }
     const lv_image_dsc_t *img = mage_img(name);
     if (!img) {
         return false;
@@ -103,12 +113,23 @@ bool mage_draw_sprite(lv_obj_t *parent, const char *name,
     }
 
     lv_obj_set_pos(o, x, y);
+    if (out) {
+        *out = o;
+    }
     return true;
 }
 
 /* 画一张贴图铺满指定区域（左上角 + 宽高），用于全屏背景与标题/城镇主视觉。 */
 bool mage_draw_bg(lv_obj_t *parent, const char *name, int x, int y, int w, int h)
 {
+    return mage_draw_bg_ret(parent, name, x, y, w, h, NULL);
+}
+
+bool mage_draw_bg_ret(lv_obj_t *parent, const char *name, int x, int y, int w, int h, lv_obj_t **out)
+{
+    if (out) {
+        *out = NULL;
+    }
     const lv_image_dsc_t *img = mage_img(name);
     if (!img) {
         return false;
@@ -120,6 +141,9 @@ bool mage_draw_bg(lv_obj_t *parent, const char *name, int x, int y, int w, int h
     lv_image_set_src(o, img);
     lv_obj_set_size(o, w, h);
     lv_obj_set_pos(o, x, y);
+    if (out) {
+        *out = o;
+    }
     return true;
 }
 

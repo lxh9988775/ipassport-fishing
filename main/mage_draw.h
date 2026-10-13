@@ -24,8 +24,17 @@ bool mage_draw_sprite(lv_obj_t *parent, const char *name,
                       int cx, int foot_y, int h_pix,
                       float squash, float tilt_deg);
 
+/* 同上，但通过 out 返回创建出的对象指针，便于调用方调整 z-order（move_to_index）。 */
+bool mage_draw_sprite_ret(lv_obj_t *parent, const char *name,
+                          int cx, int foot_y, int h_pix,
+                          float squash, float tilt_deg, lv_obj_t **out);
+
 /* 铺图到 (x,y,w,h) 区域，用于全屏背景 */
 bool mage_draw_bg(lv_obj_t *parent, const char *name, int x, int y, int w, int h);
+
+/* 同上，但通过 out 返回创建出的对象指针 */
+bool mage_draw_bg_ret(lv_obj_t *parent, const char *name, int x, int y, int w, int h,
+                      lv_obj_t **out);
 
 /* 画正方形图标 */
 bool mage_draw_icon(lv_obj_t *parent, const char *name, int x, int y, int size);

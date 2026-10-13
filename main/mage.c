@@ -189,14 +189,17 @@ static void build_ui(void) {
     g_title_main = mk_label(g_title_grp, "魔法帝之路", 0, 42, C_GOLD);
     g_title_sub  = mk_label(g_title_grp, "— MAGE OF THE MAGIC EMPEROR —", 0, 74, C_DIM);
     g_title_tag  = mk_label(g_title_grp, "在试炼中成长，于魔法中登顶", 0, 100, C_WHITE);
-    /* 标题页主视觉：与 HTML 一致用 title_art 全屏铺底，主标题文字压在其上 */
-    mage_draw_bg(g_title_grp, "title", 0, 0, SCR_W, SCR_H);
     g_menu0      = mk_label(g_title_grp, "  继续冒险", 0, 156, C_GRAY);
     g_menu1      = mk_label(g_title_grp, "  新的旅程", 0, 190, C_GRAY);
-    /* 主角立绘（HTML 标题页有 hero 小像） */
-    mage_draw_sprite(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f);
     g_title_foot = mk_label(g_title_grp, "v6.4 · 魔法帝之路", 0, 272, C_DIM);
     g_title_hint = mk_label(g_title_grp, "↑↓ 选择 · OK 确定", 0, 296, C_DIM);
+    /* 标题页主视觉：与 HTML 一致用 title_art 全屏铺底。
+     * 必须建在所有文字之后并移到最底层，否则会盖住标题文字。 */
+    lv_obj_t *t_bg = NULL, *t_hero = NULL;
+    mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
+    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 108, 1.0f, 0.0f, &t_hero);
+    if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
+    if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
 
     /* 命名组 */
     g_name_grp = lv_obj_create(g_root);
@@ -310,10 +313,15 @@ static void refresh_ui(void) {
     }
 
     if (title) {
-        uint32_t t = now_ms();
-        for (int i = 0; i < 14; i++) {
-            int on = ((t / 400) + i * 3) % 5;
-            lv_obj_set_style_bg_opa(g_stars[i], on < 3 ? LV_OPA_COVER : LV_OPA_30, 0);
+        /* 星星闪烁动画已停用：在全屏贴图之上做透明度动画会每帧触发全屏重绘，
+         * ESP32-C3 单核扛不住 -> 整屏闪烁。星点保留为静态装饰（HTML 的呼吸感
+         * 在 240x320 + 单核上代价太大，视觉收益不值这个闪屏代价）。 */
+        static bool star_init = false;
+        if (!star_init) {
+            star_init = true;
+            for (int i = 0; i < 14; i++) {
+                lv_obj_set_style_bg_opa(g_stars[i], (i % 3 == 0) ? LV_OPA_60 : LV_OPA_25, 0);
+            }
         }
         lv_obj_set_style_text_color(g_menu0, g_titleSel == 0 ? C_GOLD : C_GRAY, 0);
         lv_obj_set_style_text_color(g_menu1, g_titleSel == 1 ? C_GOLD : C_GRAY, 0);
@@ -1786,10 +1794,35 @@ void battle_start_boss(int chapter) {
 /* ---------- 渲染 / 输入 / 自动推进 ---------- */
 
 /* 战斗画面美术层：HTML 用 battle_bg 全屏铺底 + 敌我立绘（drawSprite）。
- * 文字战报仍走 s_init/s_add 叠在美术之上，与 HTML 的「背景+立绘+战报」结构一致。 */
+ * 文字战报仍走 s_init/s_add 叠在美术之上，与 HTML 的「背景+立绘+战报」结构一致。
+ *
+ * 关键：refresh_ui 是周期调用（UI_REFRESH_MS），绝不能每次都 lv_obj_clean 重建，
+ * 否则全屏反复重绘 = 闪屏。这里用「敌人构成签名」判断，只有阵容变了才重画。 */
 static lv_obj_t *g_battle_art = NULL;
+static int      g_battle_sig = -1;      /* 上次绘制的阵容签名，-1 = 未绘制 */
 
-static void battle_art_rebuild(void) {
+static int battle_art_signature(void)
+{
+    int sig = bt.mode * 1000 + bt.wave * 100 + bt.enemyCount * 10;
+    for (int i = 0; i < bt.enemyCount; i++) {
+        const BattleEnemy *e = &bt.enemies[i];
+        sig = sig * 7 + (e->hp > 0 ? (e->typeIdx + 1) * 3 + (e->boss ? 1 : 0) : 0);
+    }
+    return sig;
+}
+
+static void battle_art_update(void) {
+    const bool in_battle = (g_scene == SC_BATTLE) && bt.active;
+
+    /* 离开战斗：立刻隐藏并作废签名，下次进入会重画 */
+    if (!in_battle) {
+        if (g_battle_art && !lv_obj_has_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN)) {
+            lv_obj_add_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN);
+        }
+        g_battle_sig = -1;
+        return;
+    }
+
     if (!g_battle_art) {
         g_battle_art = lv_obj_create(g_root);
         lv_obj_remove_style_all(g_battle_art);
@@ -1797,13 +1830,20 @@ static void battle_art_rebuild(void) {
         lv_obj_set_pos(g_battle_art, 0, 0);
         lv_obj_set_style_bg_opa(g_battle_art, LV_OPA_TRANSP, 0);
         lv_obj_set_scrollbar_mode(g_battle_art, LV_SCROLLBAR_MODE_OFF);
-        /* 置于 HUD 之下、战报之上 */
-        lv_obj_move_foreground(g_battle_art);
+        /* 压在 HUD 之下：scene_grp 是 g_root 的第 2 个子对象（index 1） */
         lv_obj_move_to_index(g_battle_art, 1);
     }
+    lv_obj_remove_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN);
+
+    /* 阵容没变就不重画 —— 这一条就是防闪屏的关键 */
+    const int sig = battle_art_signature();
+    if (sig == g_battle_sig) {
+        return;
+    }
+    g_battle_sig = sig;
     lv_obj_clean(g_battle_art);
 
-    /* 战斗背景（HTML: ctx.drawImage(bg,...) 铺满 240x320） */
+    /* 战斗背景（HTML: ctx.drawImage(bg,...) 铺满） */
     mage_draw_bg(g_battle_art, "battle_bg", 0, 0, SCR_W, 132);
 
     /* 敌方立绘：goblin/slime/cat 三型，与 HTML spr 映射一致；最多画 3 个 */
@@ -1827,11 +1867,7 @@ static void battle_render(void) {
     char hud[64];
     snprintf(hud, sizeof(hud), "Lv%d 金%d 球%d 卡%d 药%d", g.level, g.gold, g.orbs, g.seals, g.potions);
     lv_label_set_text(g_hud, hud);
-    /* 退出战斗后隐藏美术层，避免盖住城镇等页面 */
-    if (g_battle_art && !bt.active) {
-        lv_obj_add_flag(g_battle_art, LV_OBJ_FLAG_HIDDEN);
-    }
-    battle_art_rebuild();
+    battle_art_update();
     s_init();
     if (bt.mode == 1)      s_add("⚔ 副本 %s [%d/%d]\n", DUNGEONS[bt.dungeonId].name, bt.wave, bt.dungeonRounds);
     else if (bt.mode == 2) s_add("⚔ 遗迹秘境 [%d/3]\n", bt.wave);
