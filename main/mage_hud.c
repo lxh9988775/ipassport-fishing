@@ -71,17 +71,16 @@ static lv_obj_t *mk_bar(lv_obj_t *p, int x, int y, int w, int h, uint32_t col)
     return o;
 }
 
-static lv_obj_t *mk_tx(lv_obj_t *p, const char *t, int x, int y, int w, uint32_t col, int size)
+static lv_obj_t *mk_tx(lv_obj_t *p, const char *t, int x, int y, int w, uint32_t col, int fontSize)
 {
     lv_obj_t *o = lv_label_create(p);
     lv_obj_set_style_text_color(o, lv_color_hex(col), 0);
     lv_obj_set_width(o, w);
     lv_obj_set_style_text_align(o, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_text_font(o, &lv_font_montserrat_12, 0);
     lv_label_set_text(o, t);
     lv_obj_set_pos(o, x, y);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
-    (void)size;
+    (void)fontSize;
     return o;
 }
 
@@ -182,7 +181,7 @@ void mage_hud_show(bool on)
 /* 每帧只改文本与条宽，不建对象 */
 void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
                      int wave, int waveMax, bool crawl,
-                     bool auto, bool autoCap, int loadout, int orbs, int seals, int potions,
+                     bool autoMode, bool autoCap, int loadout, int orbs, int seals, int potions,
                      int turn)
 {
     if (!H.built) return;
@@ -191,14 +190,16 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
 
     /* HP/MP 条与数值：HTML bar(...) + txt(ceil(hp)+'/'+max) */
     w = maxHp > 0 ? (int)((float)hp * 58.0f / (float)maxHp) : 0;
-    if (w < 0) w = 0; if (w > 58) w = 58;
+    if (w < 0) { w = 0; }
+    if (w > 58) { w = 58; }
     lv_obj_set_size(H.hpBar, w, 7);
     lv_obj_set_size(H.hpTx, 46, 16);
     snprintf(buf, sizeof(buf), "%d/%d", hp, maxHp);
     lv_label_set_text(H.hpTx, buf);
 
     w = maxMp > 0 ? (int)((float)mp * 58.0f / (float)maxMp) : 0;
-    if (w < 0) w = 0; if (w > 58) w = 58;
+    if (w < 0) { w = 0; }
+    if (w > 58) { w = 58; }
     lv_obj_set_size(H.mpBar, w, 5);
     snprintf(buf, sizeof(buf), "%d/%d", mp, maxMp);
     lv_label_set_text(H.mpTx, buf);
@@ -211,7 +212,7 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
 
     /* 状态行：HTML txt((auto?'AUTO':'手动')+...+' 编'+n+' 球'+..) */
     snprintf(buf, sizeof(buf), "%s\xe7\xbc\x96%d \xe7\x90\x83%d \xe5\x8d\xa1%d \xe8\x8d\xaf%d",
-             auto ? "AUTO" : "\xe6\x89\x8b\xe5\x8a\xa8", loadout, orbs, seals, potions);
+             autoMode ? "AUTO" : "\xe6\x89\x8b\xe5\x8a\xa8", loadout, orbs, seals, potions);
     (void)autoCap;
     lv_label_set_text(H.statTx, buf);
 

@@ -11,7 +11,7 @@ void mage_hud_build(void);
 void mage_hud_show(bool on);
 void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
                      int wave, int waveMax, bool crawl,
-                     bool auto, bool autoCap, int loadout,
+                     bool autoMode, bool autoCap, int loadout,
                      int orbs, int seals, int potions, int turn);
 bool mage_hud_ready(void);
 
