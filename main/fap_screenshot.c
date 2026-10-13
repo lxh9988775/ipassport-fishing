@@ -47,8 +47,10 @@ static const char *TAG = "fap_ss";
 #define SS_TASK_PRIO        (3)          /* 低于 LVGL 的 4 */
 #define SS_TASK_STACK       (8192)
 
-/* 静态全屏 RGB565 缓冲（64 字节对齐，永不在运行时分配） */
-static __attribute__((aligned(64))) uint8_t s_fb[SS_BUF_BYTES];
+/* 静态全屏 RGB565 缓冲（64 字节对齐，永不在运行时分配）。
+ * 用 LVGL 官方宏声明：它会把 stride / data_size / flags 一并算好，
+ * 避免手写 lv_draw_buf_init 时参数个数或顺序出错（v9.5 是 7 参数）。 */
+static LV_ATTRIBUTE_MEM_ALIGN uint8_t s_fb[SS_BUF_BYTES];
 static lv_draw_buf_t s_drawbuf;
 static bool s_buf_inited = false;
 
@@ -156,8 +158,16 @@ static void ss_task(void *arg)
 
 void fap_screenshot_init(void)
 {
-    /* 初始化静态绘制缓冲（一次性，永不释放） */
-    lv_draw_buf_init(&s_drawbuf, LV_COLOR_FORMAT_RGB565, SS_W, SS_H, s_fb, SS_BUF_BYTES);
+    /* 初始化静态绘制缓冲（一次性，永不释放）。
+     * v9.5 签名：lv_draw_buf_init(draw_buf, w, h, cf, stride, data, data_size) */
+    lv_result_t r = lv_draw_buf_init(&s_drawbuf, SS_W, SS_H, LV_COLOR_FORMAT_RGB565,
+                                     LV_DRAW_BUF_STRIDE(SS_W, LV_COLOR_FORMAT_RGB565),
+                                     s_fb, SS_BUF_BYTES);
+    if (r != LV_RESULT_OK) {
+        ESP_LOGE(TAG, "lv_draw_buf_init 失败(%d)", (int)r);
+        return;
+    }
+    lv_draw_buf_set_flag(&s_drawbuf, LV_IMAGE_FLAGS_MODIFIABLE);
     s_buf_inited = true;
 
     BaseType_t ok = xTaskCreate(ss_task, "fap_ss", SS_TASK_STACK, NULL, SS_TASK_PRIO, NULL);
