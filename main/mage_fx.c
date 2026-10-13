@@ -75,7 +75,7 @@ static float fx_wrap(float v, float max, float sp)
     return r;
 }
 
-static void mk_dot(lv_obj_t *parent, int size, int color, int radius)
+static lv_obj_t *mk_dot(lv_obj_t *parent, int size, int color, int radius)
 {
     lv_obj_t *o = lv_obj_create(parent);
     lv_obj_remove_style_all(o);
@@ -85,7 +85,7 @@ static void mk_dot(lv_obj_t *parent, int size, int color, int radius)
     lv_obj_set_style_radius(o, radius, 0);
     lv_obj_set_style_border_width(o, 0, 0);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
-    return;
+    return o;
 }
 
 /* ===================== 构建（只做一次） ===================== */
