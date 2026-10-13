@@ -320,7 +320,7 @@ static void refresh_ui(void) {
         if (!star_init) {
             star_init = true;
             for (int i = 0; i < 14; i++) {
-                lv_obj_set_style_bg_opa(g_stars[i], (i % 3 == 0) ? LV_OPA_60 : LV_OPA_25, 0);
+                lv_obj_set_style_bg_opa(g_stars[i], (i % 3 == 0) ? LV_OPA_60 : LV_OPA_20, 0);
             }
         }
         lv_obj_set_style_text_color(g_menu0, g_titleSel == 0 ? C_GOLD : C_GRAY, 0);
