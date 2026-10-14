@@ -117,36 +117,25 @@ def hint_bar_region(img: Image.Image) -> bytes:
     return im.crop((0, int(H * 0.88), W, H)).tobytes()
 
 
-def menu_index(img: Image.Image):
-    """读回菜单光标在第几行 —— 不靠任何绝对坐标，纯自校准。
+# 菜单项数：开始钓鱼/鱼竿/饵料/钓点/图鉴/声音。加了「声音」这一行后是 6。
+# 固件与实测脚本必须同时改，否则 menu_index 会因为"找不到 6 条文字带"直接放弃。
+MENU_ROWS = 6
 
-    为什么不能"红条中心 ÷ 30 再取整"：菜单行和选中胶囊都是 `g_menu` 容器的
-    子对象，用的是容器内的相对坐标，容器本身还在 HUD 之下并带内边距
-    （实测多出约 12px），再叠上模拟器截图的偏移 —— 直接换算会整体差一行。
-    所以这里改成：先找红条中心，再逐行扫出左侧那 5 条文字带的真实位置，
-    谁离红条最近就是第几行。容器怎么挪都不影响。
+
+def menu_bands(img: Image.Image):
+    """扫出菜单左侧那一列文字带的 y 区间（自校准，不依赖任何绝对坐标）。
+
+    菜单行与选中胶囊都是 `g_menu` 容器的子对象，用容器内相对坐标；容器还在 HUD
+    之下并带内边距（实测多出约 12px），再叠上模拟器截图偏移 —— 按绝对坐标换算
+    会整体差一行。所以一律以"屏上真实扫到的文字带"为准。
     """
     im = img.convert("RGB")
     W, H = im.size
     p = im.load()
 
-    red_ys = []
-    for y in range(H):
-        n = 0
-        for x in range(0, W, 2):
-            r, g, b = p[x, y]
-            if abs(r - 153) <= 22 and g <= 22 and abs(b - 58) <= 22:
-                n += 1
-        if n >= 20:
-            red_ys.append(y)
-    if not red_ys:
-        return None
-    bar_cy = (red_ys[0] + red_ys[-1]) / 2.0
-
-    # 左侧那一列行的标题（开始钓鱼/鱼竿/饵料/钓点/图鉴）是屏上唯一的五条白字带
     bands: list[list[int]] = []
     cur = None
-    for y in range(int(H * 0.08), int(H * 0.86)):
+    for y in range(int(H * 0.08), int(H * 0.88)):
         n = 0
         for x in range(int(W * 0.03), int(W * 0.55)):
             if min(p[x, y]) > 150:
@@ -165,15 +154,37 @@ def menu_index(img: Image.Image):
             merged[-1][1] = b[1]
         else:
             merged.append(list(b))
-    merged = [b for b in merged if b[1] - b[0] >= 3]
-    if len(merged) != 5:
+    return [b for b in merged if b[1] - b[0] >= 3]
+
+
+def menu_index(img: Image.Image):
+    """读回菜单光标在第几行。先找红条中心，再取离它最近的那条文字带。"""
+    im = img.convert("RGB")
+    W, H = im.size
+    p = im.load()
+
+    red_ys = []
+    for y in range(H):
+        n = 0
+        for x in range(0, W, 2):
+            r, g, b = p[x, y]
+            if abs(r - 153) <= 22 and g <= 22 and abs(b - 58) <= 22:
+                n += 1
+        if n >= 20:
+            red_ys.append(y)
+    if not red_ys:
+        return None
+    bar_cy = (red_ys[0] + red_ys[-1]) / 2.0
+
+    merged = menu_bands(img)
+    if len(merged) != MENU_ROWS:
         return None                      # 不是干净的菜单画面，别猜
     centers = [(b[0] + b[1]) / 2.0 for b in merged]
-    return min(range(5), key=lambda i: abs(centers[i] - bar_cy))
+    return min(range(MENU_ROWS), key=lambda i: abs(centers[i] - bar_cy))
 
 
 def goto_row(page, want, tries=8):
-    """把菜单光标挪到第 want 行（0..4）。每步都读回真实位置，只走最短方向。"""
+    """把菜单光标挪到第 want 行（0..MENU_ROWS-1）。每步读回真实位置，只走最短方向。"""
     img = None
     for _ in range(tries):
         img, kind = shot(page, "_probe_nav")
@@ -185,8 +196,8 @@ def goto_row(page, want, tries=8):
             continue
         if cur == want:
             return cur, img, kind
-        fwd = (want - cur) % 5
-        tap(page, "ArrowDown" if fwd <= 2 else "ArrowUp")
+        fwd = (want - cur) % MENU_ROWS
+        tap(page, "ArrowDown" if fwd <= MENU_ROWS // 2 else "ArrowUp")
         time.sleep(1.3)
     return None, img, "stuck"
 
@@ -300,6 +311,24 @@ def long_press_to_menu(page, tries=6):
     return False, img
 
 
+def white_mask(img: Image.Image, box) -> bytes:
+    """把区域里的近白像素抽成 0/1 掩码 —— 只比"文字"，不比底色。
+
+    菜单选中行底下是锐胜红胶囊、未选中是深蓝。光标一挪底色就变，拿原始像素直接比
+    一定会"有变化"，那是假通过（实测踩过：以为文字从 开 变 关，其实是延迟的
+    方向键把光标推走、红条移了位）。白字掩码只反映字形本身，与选中与否无关。
+    """
+    im = img.convert("RGB").crop(box)
+    p = im.load()
+    out = bytearray(im.width * im.height)
+    i = 0
+    for y in range(im.height):
+        for x in range(im.width):
+            out[i] = 1 if min(p[x, y]) > 150 else 0
+            i += 1
+    return bytes(out)
+
+
 def tap(page, key="Enter"):
     page.keyboard.press(key)
 
@@ -385,6 +414,41 @@ def main() -> int:
             img3.save(os.path.join(OUT, "sim_03_menu_spot.png"))
         check(img3 is not None and hint_bar_region(img3) != h_row0,
               "「钓点」行提示条与首行不同（=解锁进度提示按行变化）")
+
+        # ---- 3b) 声音开关：站到「声音」行，按 OK 应在 开/关 之间切换 ----
+        # 判据是那一行**白字掩码**变没变（不是原始像素 —— 光标一挪红条移位就会假通过）。
+        sound_ok = False
+        y0 = y1 = 0
+        for attempt in range(3):
+            if not in_menu(page):
+                long_press_to_menu(page, tries=2)
+            if settle_row(page, MENU_ROWS - 1) != MENU_ROWS - 1:
+                print("  第 %d 次走不到「声音」行，重开菜单再来" % (attempt + 1))
+                continue
+            img_s, kind_s = shot(page, "sim_06_menu_sound_on")
+            if kind_s != "menu":
+                print("  第 %d 次不在菜单（%s），再来" % (attempt + 1, kind_s))
+                continue
+            bands = menu_bands(img_s)
+            if len(bands) != MENU_ROWS:
+                print("  第 %d 次扫到的文字带不是 %d 条（实为 %d），再来"
+                      % (attempt + 1, MENU_ROWS, len(bands)))
+                continue
+            y0, y1 = bands[MENU_ROWS - 1]
+            W, H = img_s.size
+            box = (0, max(0, y0 - 3), int(W * 0.62), min(H, y1 + 3))
+            before = white_mask(img_s, box)
+            tap(page)                            # OK 直接切换 开/关（不进编辑态）
+            time.sleep(1.8)
+            img_s2, kind_s2 = shot(page, "sim_07_menu_sound_off")
+            if kind_s2 != "menu":
+                print("  第 %d 次切换后掉出菜单（%s），再来" % (attempt + 1, kind_s2))
+                continue
+            if white_mask(img_s2, box) != before:
+                sound_ok = True
+                break
+            print("  第 %d 次「声音」行文字没变化，再来" % (attempt + 1))
+        check(sound_ok, "「声音」行按 OK 能在 开/关 之间切换（文字带 y=%d..%d）" % (y0, y1))
 
         # ---- 4) 换竿：站到「鱼竿」行改值，再回钓场比对竿的像素 ----
         # 这一整块可重试。成功判据只有一条：回到钓场后竿的像素真的变了。

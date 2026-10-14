@@ -56,7 +56,8 @@ def build(update: bool) -> list[str]:
         "--description-en", read("description_en.txt"),
         "--instructions-zh-file", str(PUB / "instructions_zh.txt"),
         "--instructions-en-file", str(PUB / "instructions_en.txt"),
-        "--category", "games",
+        # 不传 --category / --tag：固件提交的主分类与全站标签由服务端 AI 自动判定
+        # （api.md：Omit category, tag_keys and discovery flags for firmware submissions）。
         "--firmware", str(ROOT / "build" / "FoloToy-AI-Passport-full.bin"),
         "--cover", str(PUB / "fishing-cover-3x4.png"),
         "--image", str(PUB / "fishing-shot-codex-3x4.png"),

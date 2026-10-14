@@ -1,6 +1,5 @@
-This update fills in the fishing scene and finally explains why a spot will not switch. The screen used to show a lone float; now you can see the rod in your hand, the line under tension, and the bait on the hook.
+This version makes fishing smoother: you can mute the sound, and the Codex now shows how big each fish grows and what it likes to eat.
 
-1. The scene now has a rod, a line and bait: a rod leans in from the left, the line runs from the rod tip down to the float, and the bait hangs below the float.
-2. Switching rods is now visible: the hand rod, lure rod and sea rod all look different, and the rod in your hand changes as soon as you leave the menu instead of you having to remember what the menu said.
-3. Switching bait is now visible: worm, dough and spinner hang below the float, so the difference is obvious at a glance.
-4. A locked spot now tells you why: the river unlocks at 8 fish landed in total, the deep sea at 20. With the cursor on the spot row, the menu shows "N more to unlock ...". Before, the up/down keys simply did nothing on a locked spot with no explanation, which made the menu look broken.
+1. New "Sound" toggle: long-press OK to open the menu and the last row is Sound — one press switches it on or off, and your choice is remembered after a power cycle.
+2. The Codex gains a "Size" line: it shows each fish's adult length range and its favourite bait, even for fish you haven't caught yet — a handy hint on what to use.
+3. Your personal best is now more visible: the old line becomes a gold "Max 24.5 cm · caught 6", so your record stands out at a glance.
