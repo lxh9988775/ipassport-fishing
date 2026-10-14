@@ -48,6 +48,11 @@ static const char *TAG = "mage";
 
 /* ===================== 字体 ===================== */
 LV_FONT_DECLARE(mage_cjk_16);
+LV_FONT_DECLARE(mage_cjk_12);   /* 12px 子集：frameBox 面板正文/行内小字（HTML 8-10px 的等价物） */
+static lv_obj_t *use_font12(lv_obj_t *o) {
+    lv_obj_set_style_text_font(o, &mage_cjk_12, LV_PART_MAIN | LV_STATE_DEFAULT);
+    return o;
+}
 static void use_cjk(lv_obj_t *o) {
     lv_obj_set_style_text_font(o, &mage_cjk_16, LV_PART_MAIN | LV_STATE_DEFAULT);
 }
@@ -88,6 +93,20 @@ static bool is_town_scene(int s) {
     }
 }
 
+/* frameBox 金框面板页：HTML 里这些页面全部包在 frameBox(10,10,W-20,H-50,标题) 里。
+ * 住宅/锻造房/魔法黑市/晋升仪式 在 HTML 里无金框，保持原样。 */
+static bool is_frame_scene(int s) {
+    switch (s) {
+    case SC_STATUS: case SC_PARTNERS: case SC_BOOK: case SC_ALCHEMY:
+    case SC_BAG: case SC_EQUIP: case SC_ACAD: case SC_WILD:
+    case SC_GUILD: case SC_DEX: case SC_MUPGRADE: case SC_MENU:
+    case SC_RESEARCH: case SC_CRAFT:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /* ===================== 动作枚举 ===================== */
 enum { ACT_OK = 0, ACT_NEXT, ACT_PREV, ACT_BACK };
 
@@ -115,6 +134,12 @@ static lv_obj_t *g_title_main = NULL, *g_title_sub = NULL, *g_title_tag = NULL;
 static lv_obj_t *g_menu0 = NULL, *g_menu1 = NULL, *g_title_foot = NULL, *g_title_hint = NULL;
 static lv_obj_t *g_name_prompt = NULL, *g_name_val = NULL, *g_name_hint = NULL;
 static lv_obj_t *g_scene_title = NULL, *g_scene_body = NULL, *g_scene_hint = NULL, *g_scene_img = NULL;
+/* frameBox 金框面板组（HTML frameBox 1:1，仅面板页显示） */
+static lv_obj_t *g_frame = NULL;        /* (10,10,220,270) 深底金框 */
+static lv_obj_t *g_frame_bar = NULL;    /* (10,9,220,16) 顶部标题条 */
+static lv_obj_t *g_frame_title = NULL;  /* 标题文字（左上，金色） */
+static lv_obj_t *g_dex_box = NULL;      /* 图鉴立绘盒 (86,36,68,58) */
+static lv_obj_t *g_part_card = NULL;    /* 伙伴立绘卡 (68,30,104,96) 描金双框 */
 static lv_obj_t *g_toast = NULL;
 static lv_obj_t *g_stars[14];
 
@@ -194,7 +219,7 @@ static int  spellModLen(int slot);
  * 修法：记住每个对象上一次的隐藏状态，只在真正翻转时才调 LVGL API。
  * 对象指针即身份，静态表足够（本文件对象总数 < 40）。
  */
-#define HIDDEN_TRACK_MAX 48
+#define HIDDEN_TRACK_MAX 64
 /* 用非 const 指针：与 lv_obj_t * 直接比较，避免 -Wpointer-sign（工程开 -Werror） */
 static struct { lv_obj_t *o; uint8_t hidden; } s_hidden_track[HIDDEN_TRACK_MAX];
 static uint8_t s_hidden_cnt = 0;
@@ -300,8 +325,91 @@ static void build_ui(void) {
     lv_obj_set_scrollbar_mode(g_scene_art, LV_SCROLLBAR_MODE_OFF);
     lv_obj_move_to_index(g_scene_art, 0);
 
-    /* 图鉴/伙伴立绘层：按 sp_<type> 原生尺寸展示，置于美术层之上、文字之下，
-     * 周期刷新用状态记忆（lastType 比对）防每帧重设 src 触发重绘。 */
+    /* ---- frameBox 金框面板组（HTML frameBox 1:1 复刻，1d1636 底 + c9a227 框 +
+     *      上下 2px 金沿 + 2a2348 标题条）。必须在 g_scene_img 之前创建，
+     *      保证立绘压在框上、文字压在立绘上。 ---- */
+    {
+        /* 主框：box(10,10,W-20,H-50,'#1d1636',PAL.gold2) */
+        g_frame = lv_obj_create(g_scene_grp);
+        lv_obj_remove_style_all(g_frame);
+        lv_obj_set_size(g_frame, 220, 270);
+        lv_obj_set_pos(g_frame, 10, 10);
+        lv_obj_set_style_bg_color(g_frame, lv_color_hex(0x1d1636), 0);
+        lv_obj_set_style_bg_opa(g_frame, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(g_frame, 1, 0);
+        lv_obj_set_style_border_color(g_frame, lv_color_hex(0xc9a227), 0);
+        lv_obj_set_style_radius(g_frame, 0, 0);
+        lv_obj_remove_flag(g_frame, LV_OBJ_FLAG_SCROLLABLE);
+        /* 上下 2px 金沿：HTML px(x,y,w,2,PAL.gold) / px(x,y+h-2,w,2,PAL.gold) */
+        static const int strip_y[2] = {0, 268};
+        for (int i = 0; i < 2; i++) {
+            lv_obj_t *s = lv_obj_create(g_frame);
+            lv_obj_remove_style_all(s);
+            lv_obj_set_size(s, 220, 2);
+            lv_obj_set_pos(s, 0, strip_y[i]);
+            lv_obj_set_style_bg_color(s, lv_color_hex(0xffd93d), 0);
+            lv_obj_set_style_bg_opa(s, LV_OPA_COVER, 0);
+            lv_obj_set_style_radius(s, 0, 0);
+        }
+        lv_obj_add_flag(g_frame, LV_OBJ_FLAG_HIDDEN);
+
+        /* 标题条：box(10,9,W-20,16,'#2a2348',PAL.gold2)，标题字 (x+8,y+11) 金色 */
+        g_frame_bar = lv_obj_create(g_scene_grp);
+        lv_obj_remove_style_all(g_frame_bar);
+        lv_obj_set_size(g_frame_bar, 220, 16);
+        lv_obj_set_pos(g_frame_bar, 10, 9);
+        lv_obj_set_style_bg_color(g_frame_bar, lv_color_hex(0x2a2348), 0);
+        lv_obj_set_style_bg_opa(g_frame_bar, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(g_frame_bar, 1, 0);
+        lv_obj_set_style_border_color(g_frame_bar, lv_color_hex(0xc9a227), 0);
+        lv_obj_set_style_radius(g_frame_bar, 0, 0);
+        lv_obj_remove_flag(g_frame_bar, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(g_frame_bar, LV_OBJ_FLAG_HIDDEN);
+
+        g_frame_title = lv_label_create(g_scene_grp);
+        use_font12(g_frame_title);
+        lv_obj_set_style_text_color(g_frame_title, C_GOLD, 0);
+        lv_obj_set_width(g_frame_title, 200);
+        lv_label_set_text(g_frame_title, "");
+        lv_obj_set_pos(g_frame_title, 18, 12);
+        lv_obj_add_flag(g_frame_title, LV_OBJ_FLAG_HIDDEN);
+
+        /* 图鉴立绘盒：HTML box(W/2-34,36,68,58,'rgba(20,15,40,.9)',PAL.gold2) */
+        g_dex_box = lv_obj_create(g_scene_grp);
+        lv_obj_remove_style_all(g_dex_box);
+        lv_obj_set_size(g_dex_box, 68, 58);
+        lv_obj_set_pos(g_dex_box, 86, 36);
+        lv_obj_set_style_bg_color(g_dex_box, lv_color_hex(0x140f28), 0);
+        lv_obj_set_style_bg_opa(g_dex_box, LV_OPA_90, 0);
+        lv_obj_set_style_border_width(g_dex_box, 1, 0);
+        lv_obj_set_style_border_color(g_dex_box, lv_color_hex(0xc9a227), 0);
+        lv_obj_set_style_radius(g_dex_box, 0, 0);
+        lv_obj_remove_flag(g_dex_box, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(g_dex_box, LV_OBJ_FLAG_HIDDEN);
+
+        /* 伙伴立绘卡：HTML 双框 box(68,30,104,96,'rgba(30,22,58,.9)',稀有度色)
+         *              + 内框 box(71,33,98,90,'rgba(16,11,36,.6)') */
+        g_part_card = lv_obj_create(g_scene_grp);
+        lv_obj_remove_style_all(g_part_card);
+        lv_obj_set_size(g_part_card, 104, 96);
+        lv_obj_set_pos(g_part_card, 68, 30);
+        lv_obj_set_style_bg_color(g_part_card, lv_color_hex(0x1e163a), 0);
+        lv_obj_set_style_bg_opa(g_part_card, LV_OPA_90, 0);
+        lv_obj_set_style_border_width(g_part_card, 1, 0);
+        lv_obj_set_style_border_color(g_part_card, lv_color_hex(0xc9a227), 0);
+        lv_obj_set_style_radius(g_part_card, 0, 0);
+        lv_obj_remove_flag(g_part_card, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_t *pin = lv_obj_create(g_part_card);
+        lv_obj_remove_style_all(pin);
+        lv_obj_set_size(pin, 98, 90);
+        lv_obj_set_pos(pin, 3, 3);
+        lv_obj_set_style_bg_color(pin, lv_color_hex(0x100b24), 0);
+        lv_obj_set_style_bg_opa(pin, LV_OPA_60, 0);
+        lv_obj_set_style_radius(pin, 0, 0);
+        lv_obj_add_flag(g_part_card, LV_OBJ_FLAG_HIDDEN);
+    }
+    /* 图鉴/伙伴/角色立绘层：按 sp_<type> 原生尺寸展示（位于金框之上、文字之下），
+     * 周期刷新用状态记忆（场景+物种键比对）防每帧重设 src 触发重绘。 */
     g_scene_img = lv_image_create(g_scene_grp);
     lv_obj_remove_style_all(g_scene_img);
     lv_obj_set_pos(g_scene_img, 150, 52);
@@ -323,7 +431,7 @@ static void build_ui(void) {
     lv_obj_set_pos(g_scene_body, 10, 38);
 
     g_scene_hint = lv_label_create(g_scene_grp);
-    use_cjk(g_scene_hint);
+    use_font12(g_scene_hint);   /* HTML 底部操作提示为 8-9px -> 12px 子集 */
     lv_obj_set_style_text_color(g_scene_hint, C_DIM, 0);
     lv_obj_set_style_text_align(g_scene_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_scene_hint, SCR_W);
@@ -909,31 +1017,79 @@ static void refresh_ui(void) {
     else lv_label_set_text(g_scene_title, SCENE_NAME[g_scene]);
     lv_label_set_text(g_scene_body, s_b);
 
-    /* 图鉴/伙伴立绘：按 sp_<type> 原生尺寸展示。状态记忆（lastType 比对）防每帧重设 src。 */
+    /* ---- frameBox 面板版式：只在切页时动一次（防周期重绘/重排导致卡死） ----
+     * 详情页（图鉴/伙伴/角色）正文从立绘下方开始并居中（对照 HTML 各行 y 坐标）；
+     * 列表页正文从框内顶部开始左对齐；非面板页恢复原版式。 */
     {
-        static char lastType[24] = "";
+        static int last_frame_scene = -999;
+        bool fon = is_frame_scene(g_scene);
+        if (last_frame_scene != g_scene) {
+            last_frame_scene = g_scene;
+            bool detail = (g_scene == SC_DEX || g_scene == SC_PARTNERS || g_scene == SC_STATUS);
+            set_hidden(g_frame, !fon);
+            set_hidden(g_frame_bar, !fon);
+            set_hidden(g_frame_title, !fon);
+            set_hidden(g_scene_title, fon);          /* 金框标题条替代旧居中标题 */
+            set_hidden(g_dex_box, !fon || g_scene != SC_DEX);
+            set_hidden(g_part_card, !fon || g_scene != SC_PARTNERS);
+            if (fon) {
+                lv_label_set_text(g_frame_title, s_ttl[0] ? s_ttl : SCENE_NAME[g_scene]);
+                int by = 34;                          /* 列表页：框内顶部 */
+                if (g_scene == SC_DEX || g_scene == SC_STATUS) by = 98;
+                else if (g_scene == SC_PARTNERS)      by = 136;
+                lv_obj_set_pos(g_scene_body, 16, by);
+                lv_obj_set_width(g_scene_body, 208);
+                lv_obj_set_style_text_font(g_scene_body, &mage_cjk_12, 0);
+                lv_obj_set_style_text_align(g_scene_body, 0,
+                    detail ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT);
+            } else {
+                lv_obj_set_pos(g_scene_body, 10, 38);
+                lv_obj_set_width(g_scene_body, SCR_W - 16);
+                lv_obj_set_style_text_font(g_scene_body, &mage_cjk_16, 0);
+                lv_obj_set_style_text_align(g_scene_body, 0, LV_TEXT_ALIGN_LEFT);
+            }
+        }
+    }
+
+    /* 图鉴/伙伴/角色立绘：按 sp_<type> 原生尺寸展示，脚底中心锚点对齐 HTML 布局
+     * （图鉴 foot=120,90；伙伴卡 foot=120,118；角色页 sp_hero foot=120,88）。
+     * 状态记忆键 = 场景:物种（同物种跨页也要重定位），只在键变化时碰 LVGL。 */
+    {
+        static char lastKey[32] = "";
+        char key[32] = "";
         const char *typeName = NULL;
+        int footY = 90;
         if (g_scene == SC_DEX) {
-            int t = enemyIndex(DEXORDER[clampi(dexIdx, 0, DEXORDER_COUNT - 1)]);
-            if (t >= 0) typeName = ENEMY[t].type;
+            int di = clampi(dexIdx, 0, DEXORDER_COUNT - 1);
+            if (g.dexSeen[di]) {                 /* HTML：未发现只画 '?' 不画立绘 */
+                int t = enemyIndex(DEXORDER[di]);
+                if (t >= 0) { typeName = ENEMY[t].type; footY = 90; }
+            }
         } else if (g_scene == SC_PARTNERS && g.npartners > 0) {
             int t = g.partners[clampi(partIdx, 0, g.npartners - 1)].typeIdx;
-            if (t >= 0) typeName = ENEMY[t].type;
+            if (t >= 0) { typeName = ENEMY[t].type; footY = 118; }
+        } else if (g_scene == SC_STATUS) {
+            typeName = "hero"; footY = 88;       /* HTML portrait('hero',...) */
         }
         if (typeName && typeName[0]) {
-            if (strcmp(lastType, typeName) != 0) {
+            snprintf(key, sizeof(key), "%d:%s", (int)g_scene, typeName);
+            if (strcmp(lastKey, key) != 0) {
                 char nm[32]; snprintf(nm, sizeof(nm), "sp_%s", typeName);
                 const lv_image_dsc_t *dsc = mage_img(nm);
                 if (dsc) {
+                    int w = (int)dsc->header.w, h = (int)dsc->header.h;
                     lv_image_set_src(g_scene_img, dsc);
-                    strncpy(lastType, typeName, sizeof(lastType) - 1);
-                    lastType[sizeof(lastType) - 1] = '\0';
+                    lv_obj_set_pos(g_scene_img, 120 - w / 2, footY - h);
+                    strncpy(lastKey, key, sizeof(lastKey) - 1);
+                    lastKey[sizeof(lastKey) - 1] = '\0';
                 }
             }
-            lv_obj_clear_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
+            if (lv_obj_has_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN))
+                lv_obj_clear_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
-            lastType[0] = '\0';
+            if (!lv_obj_has_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN))
+                lv_obj_add_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
+            lastKey[0] = '\0';
         }
     }
 

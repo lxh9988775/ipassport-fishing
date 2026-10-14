@@ -17,11 +17,12 @@
 #include <stdio.h>
 #include <stdint.h>
 
-/* 中文子集字库（与 mage.c 共用 assets/fonts/mage_cjk_16.c） */
+/* 中文子集字库（与 mage.c 共用 assets/fonts/mage_cjk_16.c / mage_cjk_12.c）
+ * 字号层级对照 HTML：12px = HUD/行内小字（HTML 8-10px 的等价物），
+ * 16px = 标题/正文。26px 顶部面板里两行小字必须用 12px 才放得下（16px 必重叠）。 */
 LV_FONT_DECLARE(mage_cjk_16);
-static void use_cjk(lv_obj_t *o) {
-    lv_obj_set_style_text_font(o, &mage_cjk_16, LV_PART_MAIN | LV_STATE_DEFAULT);
-}
+LV_FONT_DECLARE(mage_cjk_12);
+LV_FONT_DECLARE(lv_font_montserrat_12);
 
 #define SCR_W 240
 #define SCR_H 320
@@ -82,17 +83,16 @@ static lv_obj_t *mk_bar(lv_obj_t *p, int x, int y, int w, int h, uint32_t col)
     return o;
 }
 
-static lv_obj_t *mk_tx(lv_obj_t *p, const char *t, int x, int y, int w, uint32_t col, int fontSize)
+static lv_obj_t *mk_tx(lv_obj_t *p, const char *t, int x, int y, int w, uint32_t col, const lv_font_t *font)
 {
     lv_obj_t *o = lv_label_create(p);
-    use_cjk(o);
+    lv_obj_set_style_text_font(o, font, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_text_color(o, lv_color_hex(col), 0);
     lv_obj_set_width(o, w);
     lv_obj_set_style_text_align(o, LV_TEXT_ALIGN_LEFT, 0);
     lv_label_set_text(o, t);
     lv_obj_set_pos(o, x, y);
     lv_obj_remove_flag(o, LV_OBJ_FLAG_SCROLLABLE);
-    (void)fontSize;
     return o;
 }
 
@@ -126,18 +126,21 @@ void mage_hud_build(void)
     /* HP 条：HTML bar(20,4,58,7)，槽色 #3a1a1a，填充 PAL.red */
     lv_obj_t *hpSlot = mk_panel(H.panel, 20, 4, 58, 7, 0x3a1a1a, LV_OPA_COVER);
     H.hpBar = mk_panel(hpSlot, 0, 0, 58, 7, 0xe05555, LV_OPA_COVER);
-    H.hpTx = mk_tx(H.panel, "80/80", 82, 2, 60, 0xffffff, 8);
-    mk_tx(H.panel, "HP", 7, 2, 13, 0xff8888, 7);
+    H.hpTx = mk_tx(H.panel, "80/80", 82, 2, 52, 0xffffff, &lv_font_montserrat_12);
+    mk_tx(H.panel, "HP", 7, 3, 14, 0xff8888, &lv_font_montserrat_12);
 
     /* MP 条：HTML bar(20,15,58,5) */
     lv_obj_t *mpSlot = mk_panel(H.panel, 20, 15, 58, 5, 0x1a2a3a, LV_OPA_COVER);
     H.mpBar = mk_panel(mpSlot, 0, 0, 58, 5, 0x5ec8f2, LV_OPA_COVER);
-    H.mpTx = mk_tx(H.panel, "50/50", 82, 13, 60, 0x5ec8f2, 8);
-    mk_tx(H.panel, "MP", 7, 13, 13, 0x7cb8ff, 7);
+    H.mpTx = mk_tx(H.panel, "50/50", 82, 13, 52, 0x5ec8f2, &lv_font_montserrat_12);
+    mk_tx(H.panel, "MP", 7, 14, 14, 0x7cb8ff, &lv_font_montserrat_12);
 
-    H.waveTx = mk_tx(H.panel, "1/10", SCR_W - 108, 1, 108, 0xffd93d, 10);
+    /* 右上两行：HTML txt(wlabel,W-6,11,...,'right') / txt(状态,W-6,22,...,'right')
+     * 右缘统一 = W-6 = 234。宽度 108 -> x = 234-108 = 126。
+     * 字号 12px：26px 面板两行（y=1 / y=14）才互不重叠（16px 必压线）。 */
+    H.waveTx = mk_tx(H.panel, "1/10", SCR_W - 114, 1, 108, 0xffd93d, &mage_cjk_12);
     lv_obj_set_style_text_align(H.waveTx, LV_TEXT_ALIGN_RIGHT, 0);
-    H.statTx = mk_tx(H.panel, "AUTO·2·1·1", SCR_W - 84, 13, 84, 0x7fdc8a, 8);
+    H.statTx = mk_tx(H.panel, "AUTO·2·1·1", SCR_W - 114, 14, 108, 0x7fdc8a, &mage_cjk_12);
     lv_obj_set_style_text_align(H.statTx, LV_TEXT_ALIGN_RIGHT, 0);
 
     /* ---- 底部三张动作卡：HTML y=H-44=276, x=8+i*78, 72x40 ---- */
@@ -160,10 +163,10 @@ void mage_hud_build(void)
             lv_obj_set_style_radius(H.cardBadge[i], 8, 0);
             lv_obj_set_style_border_width(H.cardBadge[i], 1, 0);
             lv_obj_set_style_border_color(H.cardBadge[i], lv_color_hex(0xc9a44a), 0);
-            H.cardTx[i] = mk_tx(H.cardBadge[i], bd[i], 0, 1, 15, 0xffd93d, 9);
+            H.cardTx[i] = mk_tx(H.cardBadge[i], bd[i], 0, 1, 15, 0xffd93d, &lv_font_montserrat_12);
             lv_obj_set_style_text_align(H.cardTx[i], LV_TEXT_ALIGN_CENTER, 0);
             /* 卡片名：HTML txt(cards[i][0],x+38,y+30) */
-            lv_obj_t *nmLbl = mk_tx(H.card[i], nm[i], 12, 18, 58, 0xffffff, 12);
+            lv_obj_t *nmLbl = mk_tx(H.card[i], nm[i], 12, 18, 58, 0xffffff, &mage_cjk_12);
             lv_obj_set_style_text_align(nmLbl, LV_TEXT_ALIGN_CENTER, 0);
         }
     }
@@ -172,7 +175,7 @@ void mage_hud_build(void)
     H.turnBox = mk_panel(H.root, SCR_W / 2 - 30, CARD_Y - 7, 60, 14, 0x0d0a1a, LV_OPA_COVER);
     lv_obj_set_style_border_width(H.turnBox, 1, 0);
     lv_obj_set_style_border_color(H.turnBox, lv_color_hex(0xc9a44a), 0);
-    H.turnTx = mk_tx(H.turnBox, "回合 1", 0, 2, 60, 0xffd93d, 8);
+    H.turnTx = mk_tx(H.turnBox, "回合 1", 0, 1, 60, 0xffd93d, &mage_cjk_12);
     lv_obj_set_style_text_align(H.turnTx, LV_TEXT_ALIGN_CENTER, 0);
 
     H.built = true;

@@ -28,3 +28,7 @@ assets/fonts/*.ttf
 /.agents/skills/passport-build
 /.agents/skills/passport-device-test
 /.agents/skills/passport-debug
+
+# 八方旅人AI生图源图（52MB，只留本地供重新生成，成品已入库）
+mage-game/assets/octa/
+mage-game/assets/backup_drawmob/

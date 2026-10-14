@@ -65,6 +65,9 @@ typedef struct {
     lv_obj_t *foeLv[FOE_MAX];
     lv_obj_t *foeElite[FOE_MAX];
     lv_obj_t *hero, *heroShadow, *cat, *catShadow;
+    lv_obj_t *catImg;        /* 伙伴立绘实体（F.cat 容器里的 image 子对象） */
+    int16_t   catW, catH;    /* 当前伙伴立绘尺寸（脚底中心锚点定位用） */
+    int16_t   partnerSig;    /* 伙伴物种签名：0=默认猫灵，>0=typeIdx+1（只在变化时切图） */
     lv_obj_t *grassFg;         /* 前景草丛 */
     lv_obj_t *dim;             /* 活动带压暗层 */
     lv_obj_t *fx[16];          /* 粒子 */
@@ -227,13 +230,14 @@ static void fx_build(void)
         }
     }
 
-    /* 伙伴猫 + 主角 */
+    /* 伙伴猫 + 主角（伙伴立绘按出战物种动态切换，见 render 里的签名逻辑） */
     F.catShadow = mk_dot(g_fx_parent, 12, 0x000000, 6);
     lv_obj_set_style_bg_opa(F.catShadow, LV_OPA_50, 0);
     F.cat = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.cat);
     lv_obj_set_size(F.cat, 29, 32);
-    mage_draw_bg(F.cat, "cat_partner", 0, 0, 29, 32);
+    mage_draw_bg_ret(F.cat, "cat_partner", 0, 0, 29, 32, &F.catImg);
+    F.catW = 29; F.catH = 32; F.partnerSig = 0;   /* 默认猫灵，与上面的初始图一致 */
 
     F.heroShadow = mk_dot(g_fx_parent, 14, 0x000000, 7);
     lv_obj_set_style_bg_opa(F.heroShadow, LV_OPA_50, 0);
@@ -670,7 +674,34 @@ void mage_fx_render(void)
         float cp = fclampf(1.0f - bt.catLungeT / bt.catLungeDur, 0.0f, 1.0f);
         psx += sinf(cp * 3.14159f) * 70.0f;
     }
-    lv_obj_set_pos(F.cat, (int)psx - 14, 250 - 32);
+    /* ---- 伙伴立绘 = 出战伙伴的物种（用户要求：出战什么就用什么形象）。
+     * 只在物种签名变化时才切 src / 改容器尺寸；无出战伙伴保持默认猫灵。
+     * 每帧调 mage_img 会刷日志 + 走查表，绝不能放进周期路径。 ---- */
+    {
+        int16_t want = 0;   /* 0 = 默认猫灵 */
+        if (g.npartners > 0 && g.activePartner >= 0 && g.activePartner < g.npartners) {
+            want = (int16_t)(g.partners[g.activePartner].typeIdx + 1);
+            if (want < 0) want = 0;
+        }
+        if (F.partnerSig != want) {
+            const lv_image_dsc_t *pd = NULL;
+            if (want > 0) {
+                char pn[40];
+                snprintf(pn, sizeof(pn), "sp_%s",
+                         ENEMY[g.partners[g.activePartner].typeIdx].type);
+                pd = mage_img(pn);
+            }
+            if (!pd) { pd = mage_img("cat_partner"); want = 0; }
+            if (pd) {
+                lv_image_set_src(F.catImg, pd);
+                F.catW = (int16_t)pd->header.w;
+                F.catH = (int16_t)pd->header.h;
+                lv_obj_set_size(F.cat, F.catW, F.catH);
+                F.partnerSig = want;
+            }
+        }
+    }
+    lv_obj_set_pos(F.cat, (int)psx - F.catW / 2, 250 - F.catH);
     lv_obj_set_pos(F.catShadow, (int)psx - 6, 250 - 2);
 
     /* ---- 主角（HTML: hBob/lunge/hTilt + 受击闪红） ---- */
