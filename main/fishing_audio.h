@@ -9,6 +9,7 @@
 #define FISHING_AUDIO_H
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,12 @@ void fishing_audio_init(void);
 
 /* 播放一个音效（PCM 在内部生成并送入音频接口）*/
 void fishing_audio_play(sfx_t sfx);
+
+/* 静音开关：关掉后 fishing_audio_play 直接返回 —— 连 PCM 都不生成，也就不占
+ * 音频管道的带宽。状态自身的持久化不在这里做（那是应用层的事，见 fishing.c 的
+ * NVS "snd" key），这一层只回答"响不响"。默认不静音：新装用户要能听见反馈音。 */
+void fishing_audio_set_muted(bool on);
+bool fishing_audio_is_muted(void);
 
 #ifdef __cplusplus
 }

@@ -41,7 +41,19 @@ void fishing_audio_init(void) {
     bsp_audio_set_volume(70);
 }
 
+/* 静音状态。默认 false = 有声音；切换只改这一个标志，持久化由应用层 NVS 负责。 */
+static bool g_muted = false;
+
+void fishing_audio_set_muted(bool on) {
+    g_muted = on;
+}
+
+bool fishing_audio_is_muted(void) {
+    return g_muted;
+}
+
 void fishing_audio_play(sfx_t sfx) {
+    if (g_muted) return;   /* 静音：直接返回，连 PCM 都不生成 */
     static int16_t buf[AUDIO_MAX_SAMPLES];
     size_t n = 0;
     switch (sfx) {

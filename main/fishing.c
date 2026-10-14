@@ -88,6 +88,8 @@ static uint32_t now_ms(void) {
 
 #define NVS_NS   "fishing"
 #define NVS_KEY  "save"     /* 版本化存档 blob，见 fishing_logic.c 的说明 */
+#define NVS_KEY_SND "snd"   /* 声音开关（u8：1=开 0=关）。刻意和游戏进度分开存，
+                             * 这样加"设置"不用动存档结构，老存档照旧能读。 */
 
 /* 读存档：失败就当新号，不崩 */
 static void nvs_load_save(void) {
@@ -113,6 +115,26 @@ static void nvs_save_now(void) {
     nvs_handle_t h;
     if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
     nvs_set_blob(h, NVS_KEY, buf, (size_t)n);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+/* 声音开关的读写。用 READWRITE 打开（命名空间不存在时会自动建），
+ * 读不到 key 就保持默认"开"——不能因为没存过就把用户的声音关掉。 */
+static void nvs_load_sound(void) {
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    uint8_t v = 1;
+    if (nvs_get_u8(h, NVS_KEY_SND, &v) == ESP_OK) {
+        fishing_audio_set_muted(v == 0);
+    }
+    nvs_close(h);
+}
+
+static void nvs_save_sound(void) {
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u8(h, NVS_KEY_SND, fishing_audio_is_muted() ? 0 : 1);
     nvs_commit(h);
     nvs_close(h);
 }
@@ -181,9 +203,9 @@ static lv_obj_t *g_res_img     = NULL;
 static lv_obj_t *g_res_name    = NULL;
 static lv_obj_t *g_res_info    = NULL;
 
-/* 菜单 */
+/* 菜单：5 项玩法设置 + 1 项声音开关（声音只有开/关两态，单击直接切，不进编辑态） */
 static lv_obj_t *g_menu        = NULL;
-static lv_obj_t *g_menu_rows[5];
+static lv_obj_t *g_menu_rows[6];
 static lv_obj_t *g_menu_selbar = NULL;
 static int g_menu_idx = 0;
 static int g_menu_edit = 0;   /* 是否进入编辑某项 */
@@ -192,7 +214,8 @@ static int g_menu_edit = 0;   /* 是否进入编辑某项 */
 static lv_obj_t *g_codex       = NULL;
 static lv_obj_t *g_cdx_img     = NULL;
 static lv_obj_t *g_cdx_name    = NULL;
-static lv_obj_t *g_cdx_meta    = NULL;
+static lv_obj_t *g_cdx_meta    = NULL;   /* 已收录：最大纪录 + 钓获数；未收录：稀有度 + 栖息地 */
+static lv_obj_t *g_cdx_size    = NULL;   /* 体长范围 + 偏好饵料（收录与否都显示，是"怎么钓"的提示） */
 static lv_obj_t *g_cdx_desc    = NULL;
 static lv_obj_t *g_cdx_prog    = NULL;
 
@@ -455,7 +478,7 @@ static void build_ui(void) {
     lv_obj_set_style_radius(g_menu_selbar, 4, 0);
     lv_obj_clear_flag(g_menu_selbar, LV_OBJ_FLAG_SCROLLABLE);
 
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         g_menu_rows[i] = make_label(g_menu, "", 12, 74 + i * 30, lv_color_white());
     }
 
@@ -475,14 +498,19 @@ static void build_ui(void) {
     /* 稀有度/完美标记上移到名称行，meta 只留体长+钓数：
      * 原来「传说 · 最大 888.8 厘米 · 已钓 8888 条 · 完美✓」要 345px，屏只有 240px。
      * DOT 模式兜底 —— 万一以后文案又变长，末尾显示省略号，绝不出屏、绝不折行。 */
-    g_cdx_meta = make_label(g_codex, "", 8, 78, lv_color_make(190, 210, 240));
+    g_cdx_meta = make_label(g_codex, "", 8, 80, lv_color_make(255, 208, 90));  /* 金色：突出"最大纪录" */
     lv_obj_set_width(g_cdx_meta, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_meta, LV_LABEL_LONG_DOT);
-    g_cdx_desc = make_label(g_codex, "", 8, 104, lv_color_white());
+    /* 体型范围 + 偏好饵料：这是"这条鱼能长多大、爱吃什么"的攻略信息，
+     * 收录与否都显示 —— 没钓到之前它正好告诉玩家该去哪、用什么饵。 */
+    g_cdx_size = make_label(g_codex, "", 8, 106, lv_color_make(150, 215, 255));
+    lv_obj_set_width(g_cdx_size, SCR_W - 16);
+    lv_label_set_long_mode(g_cdx_size, LV_LABEL_LONG_DOT);
+    g_cdx_desc = make_label(g_codex, "", 8, 134, lv_color_white());
     lv_obj_set_width(g_cdx_desc, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_desc, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(g_cdx_desc, 4, 0);
-    g_cdx_prog = make_label(g_codex, "", 8, 250, lv_color_make(190, 210, 240));
+    g_cdx_prog = make_label(g_codex, "", 8, 248, lv_color_make(190, 210, 240));
 }
 
 /* 面板互斥显示。
@@ -684,7 +712,7 @@ static void refresh_result(const fishing_status_t *st) {
 
 static void refresh_menu(const fishing_status_t *st) {
     char buf[96];
-    for (int i = 0; i < 5; ++i) {
+    for (int i = 0; i < 6; ++i) {
         const char *txt = "";
         switch (i) {
             case 0: txt = "开始钓鱼"; break;
@@ -692,6 +720,7 @@ static void refresh_menu(const fishing_status_t *st) {
             case 2: snprintf(buf, sizeof(buf), "饵料   %s", fishing_bait_name(st->bait)); txt = buf; break;
             case 3: snprintf(buf, sizeof(buf), "钓点   %s", fishing_spot_name(st->spot)); txt = buf; break;
             case 4: snprintf(buf, sizeof(buf), "图鉴   %d/%d", st->codex_total, FISH_SPECIES_COUNT); txt = buf; break;
+            case 5: snprintf(buf, sizeof(buf), "声音   %s", fishing_audio_is_muted() ? "关" : "开"); txt = buf; break;
             default: break;
         }
         set_text_cached(g_menu_rows[i], txt);
@@ -720,6 +749,15 @@ static void refresh_menu(const fishing_status_t *st) {
 /* key：>=0 = 已收录（用鱼种序号），否则 = -(idx+1) 表示未收录剪影 */
 static int s_cdx_img = -9999;
 
+/* 取偏好的第一种饵料名，mask 位低位优先；mask 为 0（不挑饵）返回 NULL。
+ * 只列一种：三个饵全列成"蚯蚓/面团/亮片"会把这一行撑出 240px 屏。 */
+static const char *first_bait_name(uint8_t mask) {
+    if (mask & 0x01u) return fishing_bait_name(BAIT_WORM);
+    if (mask & 0x02u) return fishing_bait_name(BAIT_DOUGH);
+    if (mask & 0x04u) return fishing_bait_name(BAIT_LURE);
+    return NULL;
+}
+
 static void refresh_codex(const fishing_status_t *st) {
     (void)st;
     int idx = fishing_codex_cursor();
@@ -734,7 +772,9 @@ static void refresh_codex(const fishing_status_t *st) {
                  fishing_rarity_name((rarity_t)f->rarity),
                  fishing_codex_is_perfect(idx) ? " ✓" : "");
         set_text_cached(g_cdx_name, buf);
-        snprintf(buf, sizeof(buf), "最长 %d.%d 厘米 · 钓 %d 条",
+        /* 最大纪录放在图鉴第二行最显眼处（原来是"最长 …"，措辞改成"最大"，
+         * 和玩家说的"同类最大鱼的尺寸"直接对上），并带上累计钓获条数。 */
+        snprintf(buf, sizeof(buf), "最大 %d.%d 厘米 · 已钓 %d 条",
                  fishing_codex_best_len(idx) / 10, fishing_codex_best_len(idx) % 10,
                  fishing_codex_count(idx));
         set_text_cached(g_cdx_meta, buf);
@@ -746,6 +786,15 @@ static void refresh_codex(const fishing_status_t *st) {
                  fishing_spot_name((spot_t)f->spot));
         set_text_cached(g_cdx_meta, buf);
         set_text_cached(g_cdx_desc, "还没有见过它，钓上来就能解锁");
+    }
+    /* 体型范围 + 偏好饵料：收录与否都显示 —— 没钓到时它正好是"去哪钓、用什么饵"的提示。 */
+    {
+        const int lo = f->len_min_mm / 10;
+        const int hi = f->len_max_mm / 10;
+        const char *bait = first_bait_name(f->bait_mask);
+        if (bait) snprintf(buf, sizeof(buf), "体型 %d-%d 厘米 · 爱%s", lo, hi, bait);
+        else      snprintf(buf, sizeof(buf), "体型 %d-%d 厘米", lo, hi);
+        set_text_cached(g_cdx_size, buf);
     }
     fishing_status_t s2;
     fishing_get_status(&s2);
@@ -883,14 +932,21 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
     /* ---- 菜单 ---- */
     if (st.state == STATE_MENU) {
         if (ev != BSP_BTN_CLICK) return;
-        if (btn == BSP_BTN_UP)   { if (g_menu_edit) menu_change_value(-1); else g_menu_idx = (g_menu_idx + 4) % 5; }
-        else if (btn == BSP_BTN_DOWN) { if (g_menu_edit) menu_change_value(1); else g_menu_idx = (g_menu_idx + 1) % 5; }
+        if (btn == BSP_BTN_UP)   { if (g_menu_edit) menu_change_value(-1); else g_menu_idx = (g_menu_idx + 5) % 6; }
+        else if (btn == BSP_BTN_DOWN) { if (g_menu_edit) menu_change_value(1); else g_menu_idx = (g_menu_idx + 1) % 6; }
         else if (btn == BSP_BTN_OK) {
             if (g_menu_idx == 0) {
                 fishing_exit_menu();
                 fishing_cast();
             } else if (g_menu_idx == 4) {
                 fishing_codex_open();
+            } else if (g_menu_idx == 5) {
+                /* 声音：只有开/关两态，单击直接切、立刻存 —— 不进"编辑态"，
+                 * 也就没有"进编辑再按上下"这一层多余操作。切换后紧跟的那声
+                 * CLICK 就是反馈：刚打开会响、刚关掉自然没声。 */
+                fishing_audio_set_muted(!fishing_audio_is_muted());
+                nvs_save_sound();
+                g_menu_edit = 0;
             } else {
                 g_menu_edit = !g_menu_edit;
             }
@@ -1034,6 +1090,7 @@ void fishing_app_start(void) {
     fishing_init(now_ms());
     nvs_load_save();                 /* 内含版本校验/迁移，失败就当新号 */
     fishing_audio_init();
+    nvs_load_sound();                /* 声音开关（独立 NVS key，默认开） */
 
     if (bsp_lvgl_lock(1000)) {
         build_ui();
