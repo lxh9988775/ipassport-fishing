@@ -355,12 +355,18 @@ static void build_ui(void) {
     lv_obj_t *init_hidden[] = { g_title_grp, g_name_grp, g_hud, g_toast };
     for (size_t k = 0; k < sizeof(init_hidden)/sizeof(init_hidden[0]); k++) {
         if (s_hidden_cnt >= HIDDEN_TRACK_MAX) { break; }
+        /* 【必须先真的设 flag 再登记】这些对象创建时并没有加 HIDDEN
+         * （lv_obj 默认可见），若只登记 hidden=1 而不设 flag，
+         * 首次 set_hidden(o,true) 会因「表里已记为隐藏」早退，
+         * 对象永远藏不掉 —— 起名界面的文字就这样叠在了战斗画面上。 */
+        lv_obj_add_flag(init_hidden[k], LV_OBJ_FLAG_HIDDEN);
         s_hidden_track[s_hidden_cnt].o = init_hidden[k];
         s_hidden_track[s_hidden_cnt].hidden = 1;
         s_hidden_cnt++;
     }
     for (int k = 0; k < 14; k++) {
         if (s_hidden_cnt >= HIDDEN_TRACK_MAX) { break; }
+        lv_obj_add_flag(g_stars[k], LV_OBJ_FLAG_HIDDEN);
         s_hidden_track[s_hidden_cnt].o = g_stars[k];
         s_hidden_track[s_hidden_cnt].hidden = 1;
         s_hidden_cnt++;

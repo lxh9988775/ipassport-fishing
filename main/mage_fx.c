@@ -283,40 +283,30 @@ static void fx_build(void)
 /* ===================== 伤害飘字（1:1 复刻 HTML bt.nums） ===================== */
 void mage_fx_num(int worldX, int worldY, int value, uint32_t color)
 {
-    if (!F.built) return;
+    /* 【线程安全铁律】同 mage_fx_spawn：从无锁的战斗逻辑侧调用，
+     * 只写数据，绘制由持锁侧的 mage_fx_render 完成。 */
     int i = bt.numHead % 8;
     bt.numHead++;
     snprintf(bt.nums[i].v, sizeof(bt.nums[i].v), "%d", value);
-    /* HTML：伤害数字直接写 v:'+dmg' / '-'+d，故负数自带负号 */
-    if (value < 0) { /* 已在调用方拼好，这里不处理 */ }
     bt.nums[i].x = (float)worldX;
     bt.nums[i].y = (float)worldY;
     bt.nums[i].c = color;
     bt.nums[i].t = 0.8f;
-    lv_obj_t *o = F.num[i];
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_text_color(o, lv_color_hex(color), 0);
-    lv_label_set_text(o, bt.nums[i].v);
-    lv_obj_set_pos(o, worldX - (int)bt.cam - 30, worldY);
 }
 
 /* ===================== 粒子 ===================== */
 void mage_fx_spawn(int kind, float x, float y, int color, float r, float life)
 {
-    if (!F.built) return;
+    /* 【线程安全铁律】本函数从 battle_tick/battle_handle（game_task，无 LVGL 锁）
+     * 调用，**绝不能在这里碰任何 lv_obj API** —— 与 LVGL 渲染定时器并发访问
+     * 会踩坏内部链表，直接硬死机（USB 掉线、串口消失）。
+     * 只写数据，绘制统一由持锁侧的 mage_fx_render 完成。 */
     int i = bt.fxHead % 16;
     bt.fxHead++;
     bt.fx[i].kind  = kind;
     bt.fx[i].x = x; bt.fx[i].y = y;
     bt.fx[i].r = r; bt.fx[i].t = 0.0f; bt.fx[i].t0 = life;
     bt.fx[i].c = color;
-    /* 先摆到起点并显示 */
-    lv_obj_t *o = F.fx[i];
-    lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_style_bg_color(o, lv_color_hex((uint32_t)color), 0);
-    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
-    lv_obj_set_pos(o, (int)x - 2, (int)y - 2);
-    lv_obj_set_size(o, 5, 5);
 }
 
 /* ===================== 每帧推进 ===================== */
@@ -598,9 +588,24 @@ void mage_fx_render(void)
 
     /* ---- 粒子绘制 ---- */
     for (int i = 0; i < 16; i++) {
-        if (bt.fx[i].t0 <= 0.0f) continue;
-        float pr = fclampf(1.0f - bt.fx[i].t / bt.fx[i].t0, 0.0f, 1.0f);
         lv_obj_t *o = F.fx[i];
+        /* 过期/未激活：确保隐藏（战斗重开 memset(&bt,0) 后 tick 会跳过它们，
+         * 不在这里补隐藏的话，上一场的残影会永远留在下一场画面上） */
+        if (bt.fx[i].t0 <= 0.0f) {
+            if (!lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN))
+                lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        /* 新激活：点亮 + 上色。spawn/num 已改为纯数据写入（线程安全），
+         * 显示与上色统一在持锁的 render 侧应用。颜色用 user_data 记忆，
+         * 相同则不碰样式。 */
+        if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN))
+            lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+        if ((intptr_t)lv_obj_get_user_data(o) != (intptr_t)bt.fx[i].c) {
+            lv_obj_set_style_bg_color(o, lv_color_hex((uint32_t)bt.fx[i].c), 0);
+            lv_obj_set_user_data(o, (void *)(intptr_t)bt.fx[i].c);
+        }
+        float pr = fclampf(1.0f - bt.fx[i].t / bt.fx[i].t0, 0.0f, 1.0f);
         int k = bt.fx[i].kind;
         int px2 = (int)(bt.fx[i].x - (int)bt.cam);
         int py2 = (int)bt.fx[i].y;
@@ -631,8 +636,20 @@ void mage_fx_render(void)
     /* ---- 伤害飘字绘制：HTML txt(n.v, n.x-cam, n.y, n.c, 10, 'center')
      * alpha = clamp(n.t*1.5, 0, 1) */
     for (int i = 0; i < 8; i++) {
-        if (bt.nums[i].t <= 0.0f) continue;
         lv_obj_t *o = F.num[i];
+        /* 过期/未激活：确保隐藏（同粒子：memset 后 tick 跳过，须在此补隐藏） */
+        if (bt.nums[i].t <= 0.0f) {
+            if (!lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN))
+                lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        if (lv_obj_has_flag(o, LV_OBJ_FLAG_HIDDEN))
+            lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN);
+        /* 文本与颜色只在变化时设置（set_text 会重排文本） */
+        if (strcmp(lv_label_get_text(o), bt.nums[i].v) != 0) {
+            lv_label_set_text(o, bt.nums[i].v);
+            lv_obj_set_style_text_color(o, lv_color_hex(bt.nums[i].c), 0);
+        }
         lv_obj_set_pos(o, (int)(bt.nums[i].x - bt.cam) - 30, (int)bt.nums[i].y);
         lv_obj_set_style_text_opa(o,
             (lv_opa_t)(fclampf(bt.nums[i].t * 1.5f, 0.0f, 1.0f) * 255.0f), 0);
@@ -666,6 +683,12 @@ void mage_fx_attach(lv_obj_t *parent)
 void mage_fx_show(bool on)
 {
     if (!g_fx_parent) return;
+    /* 状态记忆：本函数在 refresh_ui 里每 60ms 被调一次，
+     * 无条件 add/remove_flag 会持续触发 invalidate —— 与主界面卡死同源。
+     * 相同就完全不碰 LVGL。（-1 = 未初始化，首次必执行） */
+    static int8_t s_fx_shown = -1;
+    if (s_fx_shown == (int8_t)on) return;
+    s_fx_shown = (int8_t)on;
     fx_build();
     if (on) {
         lv_obj_remove_flag(g_fx_parent, LV_OBJ_FLAG_HIDDEN);
