@@ -306,7 +306,7 @@ static void fx_build(void)
     lv_obj_set_size(F.evtBox, SCR_W - 40, 110);
     lv_obj_set_pos(F.evtBox, 20, 120);
     lv_obj_set_style_bg_color(F.evtBox, lv_color_hex(0x0c091a), 0);
-    lv_obj_set_style_bg_opa(F.evtBox, LV_OPA_95, 0);
+    lv_obj_set_style_bg_opa(F.evtBox, LV_OPA_90, 0);
     lv_obj_set_style_border_width(F.evtBox, 1, 0);
     lv_obj_set_style_border_color(F.evtBox, lv_color_hex(0xffd93d), 0);
     lv_obj_remove_flag(F.evtBox, LV_OBJ_FLAG_SCROLLABLE);
@@ -571,10 +571,10 @@ void mage_fx_render(void)
         }
 
         /* 影子 */
-        lv_obj_t *sh = F.foeShadow[drawn];
-        if (sh) {
-            lv_obj_remove_flag(sh, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_pos(sh, (int)sx + shakeX - 11, GROUND_Y - 2);
+        lv_obj_t *shobj = F.foeShadow[drawn];
+        if (shobj) {
+            lv_obj_remove_flag(shobj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_set_pos(shobj, (int)sx + shakeX - 11, GROUND_Y - 2);
         }
 
         /* ---- 敌人血条 / Lv / 精英标记（HTML 1940-1946，1:1） ---- */
