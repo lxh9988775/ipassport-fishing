@@ -126,18 +126,18 @@ void mage_hud_build(void)
     /* HP 条：HTML bar(20,4,58,7)，槽色 #3a1a1a，填充 PAL.red */
     lv_obj_t *hpSlot = mk_panel(H.panel, 20, 4, 58, 7, 0x3a1a1a, LV_OPA_COVER);
     H.hpBar = mk_panel(hpSlot, 0, 0, 58, 7, 0xe05555, LV_OPA_COVER);
-    H.hpTx = mk_tx(H.panel, "80/80", 82, 2, 46, 0xffffff, 8);
+    H.hpTx = mk_tx(H.panel, "80/80", 82, 2, 60, 0xffffff, 8);
     mk_tx(H.panel, "HP", 7, 2, 13, 0xff8888, 7);
 
     /* MP 条：HTML bar(20,15,58,5) */
     lv_obj_t *mpSlot = mk_panel(H.panel, 20, 15, 58, 5, 0x1a2a3a, LV_OPA_COVER);
     H.mpBar = mk_panel(mpSlot, 0, 0, 58, 5, 0x5ec8f2, LV_OPA_COVER);
-    H.mpTx = mk_tx(H.panel, "50/50", 82, 13, 46, 0x5ec8f2, 8);
+    H.mpTx = mk_tx(H.panel, "50/50", 82, 13, 60, 0x5ec8f2, 8);
     mk_tx(H.panel, "MP", 7, 13, 13, 0x7cb8ff, 7);
 
-    H.waveTx = mk_tx(H.panel, "1/10", SCR_W - 70, 1, 68, 0xffd93d, 10);
+    H.waveTx = mk_tx(H.panel, "1/10", SCR_W - 108, 1, 108, 0xffd93d, 10);
     lv_obj_set_style_text_align(H.waveTx, LV_TEXT_ALIGN_RIGHT, 0);
-    H.statTx = mk_tx(H.panel, "AUTO 3 球 卡 药", SCR_W - 104, 13, 102, 0x7fdc8a, 8);
+    H.statTx = mk_tx(H.panel, "AUTO·2·1·1", SCR_W - 84, 13, 84, 0x7fdc8a, 8);
     lv_obj_set_style_text_align(H.statTx, LV_TEXT_ALIGN_RIGHT, 0);
 
     /* ---- 底部三张动作卡：HTML y=H-44=276, x=8+i*78, 72x40 ---- */
@@ -274,9 +274,10 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
 
     /* 状态行：HTML txt((auto?'AUTO':'手动')+...+' 编'+n+' 球'+..)
      * 放在顶部面板第二行右侧（y=13），字号小一点避免与波次行撞在一起 */
-    snprintf(want, sizeof(want), "%s 编%d 球%d 卡%d 药%d",
-             autoMode ? "AUTO" : "手动", loadout, orbs, seals, potions);
+    snprintf(want, sizeof(want), "%s·%d·%d·%d",
+             autoMode ? "AUTO" : "手动", orbs, seals, potions);
     (void)autoCap;
+    (void)loadout;
     if (strcmp(H.statTxt, want) != 0) {
         hud_keep(H.statTxt, sizeof(H.statTxt), want);
         lv_label_set_text(H.statTx, want);

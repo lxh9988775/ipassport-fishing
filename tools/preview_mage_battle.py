@@ -134,7 +134,7 @@ def battle_base():
 
 
 # ============ 顶部 HUD（与 mage_hud.c 1:1）============
-def draw_hud(d, wave="1/10", stat="AUTO 编1 球3 卡1 药2", turn="回合 1",
+def draw_hud(d, wave="1/10", stat="AUTO·3·1·2", turn="回合 1",
              hp="80/80", mp="50/50"):
     d.rectangle([0, 0, W, HUD_H], fill=(0x10, 0x0c, 0x1a), outline=(0x6a, 0x5a, 0x3a))
     txt_l(d, "HP", 7, 3, F8, (0xff, 0x88, 0x88))
@@ -189,7 +189,7 @@ def scene_boss():
     # 伤害飘字（白字打 BOSS，红字主角受击）
     txt_c(d, "42", 120, 250 - 60, F10, (0xff, 0xff, 0xff))
     txt_c(d, "-5", 70, 200, F10, (0xff, 0x6b, 0x6b))
-    draw_hud(d, wave="10/10 BOSS", stat="手动 编2 球1 卡0 药1", turn="回合 3")
+    draw_hud(d, wave="10/10 BOSS", stat="手动·1·0·1", turn="回合 3")
     draw_cards(d, turn="回合 3")
     return im
 
@@ -222,9 +222,9 @@ def scene_event(kind="chest"):
     if ic:
         box.paste(ic, (bw // 2 - 28, 6), ic)
     idr = ImageDraw.Draw(box)
-    txt_c(idr, name, bw / 2, 64, F12, (0xff, 0xff, 0xff))
-    txt_c(idr, desc, bw / 2, 82, F10, (0xff, 0xd9, 0x3d))
-    txt_c(idr, "C 绕开", bw / 2, 98, F9, (0x9a, 0x93, 0xb5))
+    txt_c(idr, name, bw / 2, 56, F12, (0xff, 0xff, 0xff))
+    txt_c(idr, desc, bw / 2, 72, F10, (0xff, 0xd9, 0x3d))
+    txt_c(idr, "C 绕开", bw / 2, 86, F9, (0x9a, 0x93, 0xb5))
     im.paste(box, (bx, by), box)
     return im
 
@@ -273,7 +273,7 @@ def scene_hud():
     txt_c(d, "18", 148, 250 - 34, F10, (0xff, 0xff, 0xff))
     txt_c(d, "-3", 70, 200, F10, (0xff, 0x6b, 0x6b))
     # HUD：AUTO/手动 + 编 球 卡 药 + 回合金色徽标
-    draw_hud(d, wave="5/10 精英", stat="手动 编1 球3 卡1 药2", turn="回合 1")
+    draw_hud(d, wave="5/10 精英", stat="手动·3·1·2", turn="回合 1")
     draw_cards(d)
     return im
 
@@ -298,15 +298,15 @@ def scene_result():
     im, d = battle_base()
     draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
     draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
-    draw_hud(d, wave="3/10", stat="AUTO 编1 球3 卡1 药2")
-    bw, bh = 200, 150
+    draw_hud(d, wave="3/10", stat="AUTO·3·1·2")
+    bw, bh = 200, 170
     box, bd = _panel_base(bw, bh)
     txt_c(bd, "第 3 波 清场（累计收益）", bw / 2, 8, F16, (0xff, 0xd9, 0x3d))
-    y = 36
+    y = 28
     for ln in ["金币 +120", "经验 +80", "月光草 +2", "兽骨 +1", "药水 +1"]:
         txt_c(bd, ln, bw / 2, y, F16, (0xcc, 0xff, 0xcc))
         y += 16
-    txt_c(bd, "A 继续前进 · B 回城", bw / 2, 126, F16, (0xc9, 0xa2, 0x27))
+    txt_c(bd, "A 继续前进 · B 回城", bw / 2, 150, F16, (0xc9, 0xa2, 0x27))
     im.paste(box, (20, 150), box)
     return im
 
@@ -318,7 +318,7 @@ def scene_expo():
     im, d = battle_base()
     draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
     draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
-    draw_hud(d, wave="10/10 BOSS", stat="AUTO 编1 球3 卡1 药2")
+    draw_hud(d, wave="10/10 BOSS", stat="AUTO·3·1·2")
     bw, bh = 212, 250
     box, bd = _panel_base(bw, bh, border=2, sides="tb")
     txt_c(bd, "★ 远征胜利 ★", bw / 2, 8, F16, (0xff, 0xd9, 0x3d))
@@ -345,7 +345,7 @@ def scene_loot(kind="chest"):
     im, d = battle_base()
     draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
     draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
-    draw_hud(d, wave="3/10", stat="手动 编1 球3 卡1 药2")
+    draw_hud(d, wave="3/10", stat="手动·3·1·2")
     if kind == "chest":
         title = "★ 宝箱战利品 ★"
         lines = ["金币 +50", "药品·经验药水", "素材·月光草", "中级魔石 ×2", "捕捉球 ×2"]
@@ -353,13 +353,13 @@ def scene_loot(kind="chest"):
         title = "★ 采集收获 ★"
         lines = ["月光草 ×5", "魔晶 ×1", "素材·银矿石"]
     n = len(lines)
-    bw, bh = W - 56, 26 + n * 16 + 8
+    bw, bh = W - 56, 26 + n * 20 + 8
     box, bd = _panel_base(bw, bh, bg=(0x0e, 0x0a, 0x1e))
     txt_c(bd, title, bw / 2, 6, F16, (0xff, 0xe9, 0xb0))
     y = 26
     for ln in lines:
         txt_c(bd, ln, bw / 2, y, F16, (0xff, 0xff, 0xff))
-        y += 16
+        y += 20
     im.paste(box, (28, 54), box)
     return im
 
@@ -445,13 +445,73 @@ def scene_battle_intro():
     draw_sprite(im, "sp_slime.png", 150, 250)
     draw_sprite(im, "sp_goblin.png", 170, 250)
     draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
-    draw_hud(d, wave="1/10", stat="手动 编1 球3 卡1 药2", turn="回合 1")
+    draw_hud(d, wave="1/10", stat="手动·3·1·2", turn="回合 1")
     # 遭遇横幅：固件 g_toast 战斗位 (8,232,W-16,18)
     bar = Image.new("RGBA", (W - 16, 18), (10, 8, 20, 235))
     d2 = ImageDraw.Draw(bar)
     d2.rectangle([0, 0, W - 17, 17], outline=(0x3a, 0x2d, 0x5e), width=1)
     txt_c(d2, "★ 遭遇战开始！", (W - 16) / 2, 2, F12, (0xff, 0xe9, 0xb0))
     im.paste(bar, (8, 232), bar)
+    return im
+
+
+# ============ 图鉴/伙伴页·怪物立绘（新反馈③：每页都应显示对应怪物立绘）============
+def scene_dex(idx=0):
+    """魔物图鉴：按 sp_<type> 原生尺寸展示选中怪物立绘（与固件 g_scene_img 一致
+    置于 (150,52)），文本压其上。修复前所有条目都显示同一只，现在按 type 取图。"""
+    im = _town_dim_base(153)
+    d = ImageDraw.Draw(im)
+    txt_c(d, "魔物图鉴", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
+    # 立绘（脚下锚点对齐 g_scene_img 左上 (150,52) + 原生尺寸；史莱姆 18x19）
+    draw_sprite(im, "sp_slime.png", 150 + 9, 52 + 19)
+    body = ["已收录 12/50 · 收服 3", "史莱姆",
+            "可捕捉 · 用捕捉球", "出没：试炼森林",
+            "天赋：? ?  特性：? ?", "进化：无",
+            "试炼森林的凝胶生物", "软乎乎却很黏人。", "(3 / 50)"]
+    y = 38
+    for ln in body:
+        col = (0xff, 0xd9, 0x3d) if ln == "史莱姆" else (0xff, 0xff, 0xff)
+        txt_l(d, ln, 10, y, F13, col)
+        y += 24
+    txt_c(d, "OK 捕捉条件 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    return im
+
+
+def scene_partners(idx=0):
+    """伙伴页：显示当前伙伴的真实立绘（猫灵 sp_cat 自然尺寸 14x16），不再是统一占位。"""
+    im = _town_dim_base(153)
+    d = ImageDraw.Draw(im)
+    txt_c(d, "我的伙伴", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
+    draw_sprite(im, "sp_cat.png", 150 + 8, 52 + 16)     # 猫灵 14x16 自然尺寸
+    body = ["绒绒 ★", "猫灵 Lv3 资质B(30/45)", "技能 迅捷", "特性 lucky",
+            "攻7 防8 速9", "", "通体如月华的灵猫，", "处处可遇的幸运伙伴。"]
+    y = 38
+    for ln in body:
+        col = (0xff, 0xd9, 0x3d) if "★" in ln else (0xff, 0xff, 0xff)
+        txt_l(d, ln, 10, y, F13, col)
+        y += 24
+    txt_c(d, "OK 出战 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    return im
+
+
+# ============ 战斗击杀演出窗口（新反馈②：出手后直接跳结算）============
+def scene_battle_kill():
+    """BP_KILL 演出：清空敌群后停留 ~0.9s，伤害飘字/受击特效仍可见，再进结算。
+    预览用横幅标注该窗口，证明不再"一击就结算"。"""
+    im, d = battle_base()
+    draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
+    draw_sprite(im, SRC_HERO, 70, 250, HERO_H)   # 主角突进收尾
+    # 最后一击伤害飘字（仍停留可见）
+    txt_c(d, "42", 150, 196, F10, (0xff, 0xff, 0xff))
+    txt_c(d, "-3", 70, 200, F10, (0xff, 0x6b, 0x6b))
+    # 击破横幅
+    bar = Image.new("RGBA", (W - 16, 18), (10, 8, 20, 235))
+    d2 = ImageDraw.Draw(bar)
+    d2.rectangle([0, 0, W - 17, 17], outline=(0x3a, 0x2d, 0x5e), width=1)
+    txt_c(d2, "✦ 击破！演出中（约 0.9s 后结算）", (W - 16) / 2, 2, F12, (0xff, 0xe9, 0xb0))
+    im.paste(bar, (8, 232), bar)
+    draw_hud(d, wave="3/10", stat="手动·3·1·2", turn="回合 3")
+    draw_cards(d, turn="回合 3")
     return im
 
 
@@ -490,6 +550,9 @@ def main():
     func_status = scene_func_status()
     func_bag = scene_func_bag()
     battle_intro = scene_battle_intro()
+    dex = scene_dex()
+    partners = scene_partners()
+    battle_kill = scene_battle_kill()
 
     paths = {
         "mage_battle_boss_240x320.png": boss,
@@ -506,6 +569,9 @@ def main():
         "mage_func_status_240x320.png": func_status,
         "mage_func_bag_240x320.png": func_bag,
         "mage_battle_intro_240x320.png": battle_intro,
+        "mage_dex_240x320.png": dex,
+        "mage_partners_240x320.png": partners,
+        "mage_battle_kill_240x320.png": battle_kill,
     }
     for name, im in paths.items():
         p = os.path.join(OUT, name)
@@ -529,6 +595,9 @@ def main():
         (func_status, "⑧ 功能面板·角色·有背景（新③）"),
         (func_bag, "⑧ 功能面板·背包·有背景（新③）"),
         (battle_intro, "⑨ 遭遇演出·敌群+横幅（新②）"),
+        (dex, "⑩ 图鉴页·怪物立绘（新③）"),
+        (partners, "⑩ 伙伴页·真实立绘（新③）"),
+        (battle_kill, "⑪ 击杀演出窗口·不再秒结算（新②）"),
     ])
     op = os.path.join(OUT, "mage_fixes_overview_480x640.png")
     ov.save(op)

@@ -314,7 +314,7 @@ static void fx_build(void)
     lv_obj_remove_flag(F.evtBox, LV_OBJ_FLAG_SCROLLABLE);
 
     F.evtIcon = lv_image_create(F.evtBox);
-    lv_obj_set_pos(F.evtIcon, (SCR_W - 40) / 2 - 28, 6);   /* 56x56 图标，水平居中 */
+    lv_obj_set_pos(F.evtIcon, (SCR_W - 40) / 2 - 28, 2);   /* 56x56 图标，水平居中，上移避免压标题 */
 
     F.evtName = lv_label_create(F.evtBox);
     use_cjk(F.evtName);
@@ -322,7 +322,7 @@ static void fx_build(void)
     lv_obj_set_style_text_align(F.evtName, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(F.evtName, SCR_W - 40);
     lv_label_set_text(F.evtName, "");
-    lv_obj_set_pos(F.evtName, 0, 64);
+    lv_obj_set_pos(F.evtName, 0, 56);
 
     F.evtDesc = lv_label_create(F.evtBox);
     use_cjk(F.evtDesc);
@@ -330,7 +330,7 @@ static void fx_build(void)
     lv_obj_set_style_text_align(F.evtDesc, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(F.evtDesc, SCR_W - 40);
     lv_label_set_text(F.evtDesc, "");
-    lv_obj_set_pos(F.evtDesc, 0, 82);
+    lv_obj_set_pos(F.evtDesc, 0, 72);
 
     F.evtHint = lv_label_create(F.evtBox);
     use_cjk(F.evtHint);
@@ -338,7 +338,7 @@ static void fx_build(void)
     lv_obj_set_style_text_align(F.evtHint, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(F.evtHint, SCR_W - 40);
     lv_label_set_text(F.evtHint, "C 绕开");
-    lv_obj_set_pos(F.evtHint, 0, 98);
+    lv_obj_set_pos(F.evtHint, 0, 86);
 
     /* 远征汇总附加标签（HTML drawExpoSummary）：副标题 + 左右对齐的收益行。
      * 仅 expo 面板使用，默认隐藏；左行 x=16（HTML 名目 x=30 - box.x14），
@@ -894,13 +894,13 @@ void mage_fx_event(int show_kind)
         lv_obj_remove_flag(F.evtIcon, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_width(F.evtName, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffffff), 0);
-        lv_obj_set_pos(F.evtName, 0, 64);
+        lv_obj_set_pos(F.evtName, 0, 56);
         lv_obj_set_width(F.evtDesc, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xffd93d), 0);
-        lv_obj_set_pos(F.evtDesc, 0, 82);
+        lv_obj_set_pos(F.evtDesc, 0, 72);
         lv_obj_set_width(F.evtHint, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0x9a93b5), 0);
-        lv_obj_set_pos(F.evtHint, 0, 98);
+        lv_obj_set_pos(F.evtHint, 0, 86);
         F.evtShown = -1;                /* 强制刷新图标与文字（可能被结算面板覆盖过） */
     }
     if (F.evtShown != (int8_t)k) {
@@ -922,16 +922,16 @@ void mage_fx_result(int show, const char *title, const char *footer, const char 
     if (show <= 0 || n <= 0 || !lines) { panel_hide(); return; }
     if (s_pmode != FX_PM_RESULT) {
         s_pmode = FX_PM_RESULT;
-        panel_geo(1, 20, 150, SCR_W - 40, 150, 0x0a0818);
+        panel_geo(1, 20, 150, SCR_W - 40, 170, 0x0a0818);
         lv_obj_set_width(F.evtName, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffd93d), 0);
         lv_obj_set_pos(F.evtName, 0, 8);
         lv_obj_set_width(F.evtDesc, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xccffcc), 0);
-        lv_obj_set_pos(F.evtDesc, 0, 36);
+        lv_obj_set_pos(F.evtDesc, 0, 28);
         lv_obj_set_width(F.evtHint, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0xc9a227), 0);
-        lv_obj_set_pos(F.evtHint, 0, 126);
+        lv_obj_set_pos(F.evtHint, 0, 150);
     }
     static char lbuf[384], lprev[384], ltitle[28];
     static uint8_t mygen = 0;
@@ -1020,7 +1020,7 @@ void mage_fx_loot(int show, const char *title, const char *footer, const char **
     if (show <= 0 || n <= 0 || !lines) { panel_hide(); return; }
     if (s_pmode != FX_PM_LOOT || s_pgeo != (int16_t)(300 + n)) {
         s_pmode = FX_PM_LOOT;
-        panel_geo(300 + n, 28, 54, SCR_W - 56, 26 + n * 16 + 8, 0x0e0a1e);
+        panel_geo(300 + n, 28, 54, SCR_W - 56, 26 + n * 20 + 8, 0x0e0a1e);
         lv_obj_set_width(F.evtName, SCR_W - 56);
         lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffe9b0), 0);
         lv_obj_set_pos(F.evtName, 0, 6);

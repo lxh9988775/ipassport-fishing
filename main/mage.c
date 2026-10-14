@@ -43,6 +43,7 @@ static const char *TAG = "mage";
 #define BP_FAINT 6
 #define BP_LOOT 7
 #define BP_INTRO 8   /* 遭遇演出：1:1 复刻 HTML walk+meet，进战斗先亮出敌群再开打 */
+#define BP_KILL 9   /* 击杀演出延迟：清场后停留 ~0.9s 让伤害飘字/受击特效可见，再进结算 */
 #define BTPX 70
 
 /* ===================== 字体 ===================== */
@@ -113,7 +114,7 @@ static bool g_city_art_shown = false;
 static lv_obj_t *g_title_main = NULL, *g_title_sub = NULL, *g_title_tag = NULL;
 static lv_obj_t *g_menu0 = NULL, *g_menu1 = NULL, *g_title_foot = NULL, *g_title_hint = NULL;
 static lv_obj_t *g_name_prompt = NULL, *g_name_val = NULL, *g_name_hint = NULL;
-static lv_obj_t *g_scene_title = NULL, *g_scene_body = NULL, *g_scene_hint = NULL;
+static lv_obj_t *g_scene_title = NULL, *g_scene_body = NULL, *g_scene_hint = NULL, *g_scene_img = NULL;
 static lv_obj_t *g_toast = NULL;
 static lv_obj_t *g_stars[14];
 
@@ -298,6 +299,13 @@ static void build_ui(void) {
     lv_obj_set_style_bg_opa(g_scene_art, LV_OPA_TRANSP, 0);
     lv_obj_set_scrollbar_mode(g_scene_art, LV_SCROLLBAR_MODE_OFF);
     lv_obj_move_to_index(g_scene_art, 0);
+
+    /* 图鉴/伙伴立绘层：按 sp_<type> 原生尺寸展示，置于美术层之上、文字之下，
+     * 周期刷新用状态记忆（lastType 比对）防每帧重设 src 触发重绘。 */
+    g_scene_img = lv_image_create(g_scene_grp);
+    lv_obj_remove_style_all(g_scene_img);
+    lv_obj_set_pos(g_scene_img, 150, 52);
+    lv_obj_add_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
 
     g_scene_title = lv_label_create(g_scene_grp);
     use_cjk(g_scene_title);
@@ -901,6 +909,34 @@ static void refresh_ui(void) {
     else lv_label_set_text(g_scene_title, SCENE_NAME[g_scene]);
     lv_label_set_text(g_scene_body, s_b);
 
+    /* 图鉴/伙伴立绘：按 sp_<type> 原生尺寸展示。状态记忆（lastType 比对）防每帧重设 src。 */
+    {
+        static char lastType[24] = "";
+        const char *typeName = NULL;
+        if (g_scene == SC_DEX) {
+            int t = enemyIndex(DEXORDER[clampi(dexIdx, 0, DEXORDER_COUNT - 1)]);
+            if (t >= 0) typeName = ENEMY[t].type;
+        } else if (g_scene == SC_PARTNERS && g.npartners > 0) {
+            int t = g.partners[clampi(partIdx, 0, g.npartners - 1)].typeIdx;
+            if (t >= 0) typeName = ENEMY[t].type;
+        }
+        if (typeName && typeName[0]) {
+            if (strcmp(lastType, typeName) != 0) {
+                char nm[32]; snprintf(nm, sizeof(nm), "sp_%s", typeName);
+                const lv_image_dsc_t *dsc = mage_img(nm);
+                if (dsc) {
+                    lv_image_set_src(g_scene_img, dsc);
+                    strncpy(lastType, typeName, sizeof(lastType) - 1);
+                    lastType[sizeof(lastType) - 1] = '\0';
+                }
+            }
+            lv_obj_clear_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
+            lastType[0] = '\0';
+        }
+    }
+
     /* 战斗页：隐藏通用 HUD/正文/提示，改用 1:1 原版 HUD；其余页面反过来隐藏原版 HUD。
      * 防卡死：set_hidden 内部调 lv_obj_add_flag/remove_flag，每 60ms 调一次
      * 会持续触发样式重算 -> mage 任务占满 CPU -> IDLE 饿死 -> 看门狗重启。
@@ -1454,6 +1490,7 @@ static void kill_award(BattleEnemy *e);
 static void reap_dead(void);
 static void after_player_action(void);
 static void win_battle(void);
+static void kill_clear(void);
 static void spawn_boss(void);
 static void finish_crawl(void);
 static void finish_expedition(void);
@@ -1471,7 +1508,7 @@ static void deal_to(BattleEnemy *e, int dmg) {
                    250.0f - (float)e->typeIdx * 20.0f, 0xff9ad5, 5.0f, 0.45f);
     /* 1:1 复刻 HTML：bt.nums.push({x:e.x, y:enemyFeetY()-34, v:''+dmg, c:'#fff', t:0.8}) */
     mage_fx_num(e->x, 250 - 34, dmg, 0xffffff);
-    if (dmg > 0) bt.shake = 0.35f;   /* 伤害震屏 */
+    if (e->hp <= 0) bt.shake = 0.30f;   /* 仅击杀瞬间震屏，普通命中靠受击后仰/闪红反馈，避免每击狂震 */
     if (e->boss && !e->enraged && e->hp > 0 && e->hp <= (int)(e->maxHp * 0.65f)) {
         e->enraged = 1; e->atk = (int)(e->atk * 1.6f + 0.5f);
         e->bossCD = e->bossCD < 2 ? e->bossCD : 2;
@@ -1544,11 +1581,12 @@ static void hero_strike(void) {
     BattleEnemy *e = nearest_enemy(175);
     if (!e) {
         if (bt.enemyCount > 0) toast("敌人还没走近…");
-        else win_battle();
+        else kill_clear();
         return;
     }
     int dmg = (int)((9 + g.level * 3 + g.rank * 3 + g.atkBonus + eqAtk()) * mage_rf(0.9f, 1.1f) + 0.5f);
     if (dmg < 1) dmg = 1;
+    bt.lungeT = 0.22f;   /* 演出：主角突进 */
     deal_to(e, dmg);
     reap_dead();
     after_player_action();
@@ -1691,7 +1729,7 @@ static void throw_orb(int seal) {   /* seal: 1=封印卡 0=球 -1=auto */
         g.dexCaught[e->typeIdx]++;
         toast("%s 收服成功！(%d%%)", nm, p);
         mage_persist();
-        if (bt.enemyCount == 0) win_battle();
+        if (bt.enemyCount == 0) { kill_clear(); return; }
     } else {
         int heal = (int)(e->maxHp * 0.08f + 0.5f);
         e->hp += heal; if (e->hp > e->maxHp) e->hp = e->maxHp;
@@ -1736,7 +1774,7 @@ static void enemy_phase(void) {
         i++;
     }
     reap_dead();
-    if (bt.enemyCount == 0) { win_battle(); return; }
+    if (bt.enemyCount == 0) { kill_clear(); return; }
     /* 逐个攻击 */
     for (int k = 0; k < bt.enemyCount; k++) {
         BattleEnemy *e = &bt.enemies[k];
@@ -1773,7 +1811,7 @@ static void enemy_phase(void) {
             }
         }
     }
-    if (bt.enemyCount == 0) { win_battle(); return; }
+    if (bt.enemyCount == 0) { kill_clear(); return; }
     bt.turn++;
     set_bphase(BP_MENU);
 }
@@ -1781,7 +1819,7 @@ static void after_player_action(void) {
     /* BOSS 蓄力警告只在出招那一回合闪（HTML e.lunge.big 的瞬时标记） */
     for (int i = 0; i < bt.enemyCount; i++) bt.enemies[i].lungeBig = 0;
     partner_strike();
-    if (bt.enemyCount == 0) { win_battle(); return; }
+    if (bt.enemyCount == 0) { kill_clear(); return; }
     enemy_phase();
 }
 
@@ -1874,7 +1912,7 @@ static void spawn_and_menu(void) {
 
 /* ---------- 自动战斗 ---------- */
 static void auto_act(void) {
-    if (bt.enemyCount == 0) { win_battle(); return; }
+    if (bt.enemyCount == 0) { kill_clear(); return; }
     BattleEnemy *cap = capture_target();
     if (cap && bt.autoCapture) {
         throw_orb(-1);
@@ -1893,7 +1931,7 @@ static void auto_act(void) {
                 toast("虚弱的魔物逃走了…");
             }
         }
-        if (bt.enemyCount == 0) { win_battle(); return; }
+        if (bt.enemyCount == 0) { kill_clear(); return; }
     }
     if (g.hp * 1.0f / g.maxHp < 0.35f && g.potions > 0) { bt.itemIdx = 0; use_item(); return; }
     int lo[16]; int nl = activeLoadoutKeys(lo, 16);
@@ -1907,6 +1945,12 @@ static void auto_act(void) {
 }
 
 /* ---------- 胜负/事件 ---------- */
+static void kill_clear(void) {
+    /* 清场后不直接进结算：停留 ~0.9s 让伤害飘字/受击特效/伙伴演出可见，
+     * 解决"出手后直接跳结算、看不到攻击过程"的问题。 */
+    if (bt.phase == BP_RESULT || bt.phase == BP_KILL) return;
+    set_bphase(BP_KILL);
+}
 static void win_battle(void) {
     if (bt.phase == BP_RESULT) return;
     bt.phase = BP_RESULT; bt.tickMs = now_ms();
@@ -2263,6 +2307,9 @@ void battle_tick(void) {
         if (now - bt.tickMs > 3000 || (bt.autoBattle && now - bt.tickMs > 1500)) {
             bt.tickMs = now; spawn_and_menu();
         }
+    } else if (bt.phase == BP_KILL) {
+        /* 击杀演出窗口：清场后停留 ~0.9s 再进结算，让伤害飘字/受击特效可见 */
+        if (now - bt.tickMs > 900) { bt.tickMs = now; win_battle(); }
     }
 }
 
