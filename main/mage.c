@@ -42,6 +42,7 @@ static const char *TAG = "mage";
 #define BP_EVENT 5
 #define BP_FAINT 6
 #define BP_LOOT 7
+#define BP_INTRO 8   /* 遭遇演出：1:1 复刻 HTML walk+meet，进战斗先亮出敌群再开打 */
 #define BTPX 70
 
 /* ===================== 字体 ===================== */
@@ -71,6 +72,21 @@ static const char *SCENE_NAME[SC_COUNT] = {
     "魔法研究", "研究魔法"
 };
 
+/* 城镇簇场景：魔法小镇(CITY)及其所有子面板都铺 town_art 背景（HTML 用 drawTownBg），
+ * 仅标题/命名/战斗 用各自背景。这样进入任意板块/功能面板都不会"没背景图"。 */
+static bool is_town_scene(int s) {
+    switch (s) {
+    case SC_CITY: case SC_STATUS: case SC_PARTNERS: case SC_BOOK:
+    case SC_ALCHEMY: case SC_BAG: case SC_EQUIP: case SC_ACAD:
+    case SC_WILD: case SC_GUILD: case SC_HOME: case SC_FORGE:
+    case SC_MARKET: case SC_DEX: case SC_MUPGRADE: case SC_MENU:
+    case SC_PROMOTE: case SC_RESEARCH: case SC_CRAFT:
+        return true;
+    default:
+        return false;
+    }
+}
+
 /* ===================== 动作枚举 ===================== */
 enum { ACT_OK = 0, ACT_NEXT, ACT_PREV, ACT_BACK };
 
@@ -92,7 +108,7 @@ typedef struct { bsp_btn_t btn; bsp_btn_ev_t ev; } btn_ev_t;
 static lv_obj_t *g_root = NULL;
 static lv_obj_t *g_title_grp = NULL, *g_name_grp = NULL, *g_scene_grp = NULL, *g_hud = NULL;
 /* 美术层容器：城镇主视觉（周期刷新时需防重复叠加，故单独持有并在切页时清理） */
-static lv_obj_t *g_scene_art = NULL, *g_city_art = NULL;
+static lv_obj_t *g_scene_art = NULL, *g_city_art = NULL, *g_city_dim = NULL;
 static bool g_city_art_shown = false;
 static lv_obj_t *g_title_main = NULL, *g_title_sub = NULL, *g_title_tag = NULL;
 static lv_obj_t *g_menu0 = NULL, *g_menu1 = NULL, *g_title_foot = NULL, *g_title_hint = NULL;
@@ -415,12 +431,13 @@ static void refresh_ui(void) {
      * 不置 NULL 会让下一行 g_scene_grp 上残留一个游离容器，后续往里塞的
      * 城镇贴图会变成不受控的游离对象，永久盖在战斗画面上 —— 这就是
      * 「进战斗显示的却是城镇背景」的根因）。 */
-    if (g_scene != SC_CITY && g_city_art_shown) {
+    if (!is_town_scene(g_scene) && g_city_art_shown) {
         if (g_scene_art) {
             lv_obj_delete(g_scene_art);
             g_scene_art = NULL;
         }
         g_city_art = NULL;
+        g_city_dim = NULL;
         g_city_art_shown = false;
     }
 
@@ -455,12 +472,10 @@ static void refresh_ui(void) {
     s_init();
     s_ttl[0] = '\0';
 
-    switch (g_scene) {
-    case SC_CITY: {
-        s_ttl[0] = '\0';
-        /* 城镇主视觉：与 HTML 一致用 town_art 铺底，菜单文字压在其上。
-         * refresh_ui 是周期调用的，故只在切到本页时建一次，避免贴图叠加。 */
-        if (g_last_scene != SC_CITY || !g_city_art) {
+    /* 城镇簇：小镇背景常驻（HTML 所有子面板都 drawTownBg）。
+     * 只在离开城镇簇（进战斗/标题）时才销毁；切到任意子面板都保留并只更新暗度。 */
+    if (is_town_scene(g_scene)) {
+        if (!g_city_art) {
             /* g_scene_art 可能已在离开城镇时被删除（可能是 NULL）。
              * 直接对它 lv_obj_clean 会空指针崩溃 -> 必须先判空并重建容器。 */
             if (!g_scene_art) {
@@ -485,9 +500,26 @@ static void refresh_ui(void) {
             lv_obj_set_style_border_width(g_city_art, 0, 0);
             lv_obj_remove_flag(g_city_art, LV_OBJ_FLAG_SCROLLABLE);
             mage_draw_bg(g_city_art, "town", 0, 0, SCR_W, SCR_H);
+            /* 压暗层：图标/文字压在其上，保证可读性（HTML rgba(8,6,16,.6~.72)）。
+             * 放在图片之上、文字标签之下（同属 g_scene_art 容器，文字在父容器 g_scene_grp）。 */
+            g_city_dim = lv_obj_create(g_scene_art);
+            lv_obj_remove_style_all(g_city_dim);
+            lv_obj_set_size(g_city_dim, SCR_W, SCR_H);
+            lv_obj_set_pos(g_city_dim, 0, 0);
+            lv_obj_set_style_bg_color(g_city_dim, C_BG, 0);
+            lv_obj_set_style_border_width(g_city_dim, 0, 0);
+            lv_obj_remove_flag(g_city_dim, LV_OBJ_FLAG_SCROLLABLE);
             g_city_art_shown = true;
         }
-        (void)g_city_art_shown;
+        /* 暗度按场景记忆：CITY 地图/功能栏稍亮(.60)，子面板更暗(.70) */
+        static lv_opa_t s_dim = 0;
+        lv_opa_t want = (g_scene == SC_CITY) ? LV_OPA_60 : LV_OPA_70;
+        if (s_dim != want) { s_dim = want; lv_obj_set_style_bg_opa(g_city_dim, want, 0); }
+    }
+
+    switch (g_scene) {
+    case SC_CITY: {
+        s_ttl[0] = '\0';
         if (g.cityMode == 0) {
             s_add("· 魔法小镇 ·\n");
             for (int i = 0; i < 7; i++)
@@ -876,7 +908,7 @@ static void refresh_ui(void) {
     {
         const bool in_bt = (g_scene == SC_BATTLE) && bt.active;
         /* 结算/战利品面板（BP_RESULT / BP_LOOT）需完整露出，故隐藏底部动作卡 */
-        mage_hud_show(in_bt && bt.phase != BP_RESULT && bt.phase != BP_LOOT);
+        mage_hud_show(in_bt && bt.phase != BP_RESULT && bt.phase != BP_LOOT && bt.phase != BP_INTRO);
         /* 战斗演出层（含 battle_bg 背景图）必须随战斗状态显隐：
          * 否则战斗结束后 battle_art_update 不再被调用，mage_fx_show(false)
          * 永远不触发，battle_bg 会残留在透明背景的场景（如状态/背包页）之后
@@ -901,8 +933,10 @@ static void refresh_ui(void) {
         lv_obj_set_style_pad_all(g_scene_body, 0, 0);
     }
 
-    /* toast 显隐（显隐已由 set_hidden 做状态记忆，这里只处理文本） */
-    if (now_ms() < g_toast_until) {
+    /* toast 显隐（显隐已由 set_hidden 做状态记忆，这里只处理文本）。
+     * 战斗页的 toast 由 battle_render 自行掌管（BP_INTRO 横幅 / BP_FAINT 提示），
+     * 这里必须跳过，否则会把刚亮出的"遭遇战"横幅立刻藏掉。 */
+    if (g_scene != SC_BATTLE && now_ms() < g_toast_until) {
         set_hidden(g_toast, false);
         /* lv_label_set_text 每次都会重排文本并 invalidate。
          * refresh_ui 每 60ms 跑一次，必须先比对内容，相同则跳过。 */
@@ -1982,7 +2016,7 @@ void battle_start_wild(int chapter) {
     bt.autoBattle = g.autoMode; bt.autoCapture = g.autoCapture;
     bt.lastSpell = -1; bt.eventKind = -1; bt.itemIdx = 0; bt.magicIdx = 0;
     bt.tickMs = now_ms();
-    spawn_and_menu();
+    spawn_group(); set_bphase(BP_INTRO);
     mage_set_scene(SC_BATTLE); g_need_refresh = 1;
 }
 void battle_start_dungeon(int dungeonId) {
@@ -1998,7 +2032,7 @@ void battle_start_dungeon(int dungeonId) {
     bt.wave = 1; bt.autoBattle = g.autoMode; bt.autoCapture = g.autoCapture;
     bt.lastSpell = -1; bt.eventKind = -1; bt.itemIdx = 0; bt.magicIdx = 0;
     bt.tickMs = now_ms();
-    spawn_and_menu();
+    spawn_group(); set_bphase(BP_INTRO);
     mage_set_scene(SC_BATTLE); g_need_refresh = 1;
 }
 void battle_start_boss(int chapter) {
@@ -2008,7 +2042,7 @@ void battle_start_boss(int chapter) {
     bt.autoBattle = g.autoMode; bt.autoCapture = g.autoCapture;
     bt.lastSpell = -1; bt.eventKind = -1; bt.itemIdx = 0; bt.magicIdx = 0;
     bt.tickMs = now_ms();
-    spawn_group(); set_bphase(BP_MENU);
+    spawn_group(); set_bphase(BP_INTRO);
     mage_set_scene(SC_BATTLE); g_need_refresh = 1;
 }
 
@@ -2127,9 +2161,15 @@ static void battle_render(void) {
     }
 
     /* 战利品/结算面板（BP_RESULT / BP_LOOT）与事件面板（BP_EVENT）各自显示，
-     * 其余阶段用 g_toast 提示（仅 BP_FAINT 走顶部提示，避免遮挡战斗画面）。 */
-    if (bt.phase == BP_FAINT) {
-        lv_label_set_text(g_toast, s_b);
+     * 其余阶段用 g_toast 提示（BP_INTRO 显示"遭遇战"横幅、BP_FAINT 走顶部提示，
+     * 避免遮挡战斗画面）。 */
+    if (bt.phase == BP_INTRO || bt.phase == BP_FAINT) {
+        const char *msg = (bt.phase == BP_FAINT) ? s_b : "★ 遭遇战开始！";
+        if (strcmp(g_toast_t, msg) != 0) {
+            size_t n = strlen(msg); if (n >= sizeof(g_toast_t)) n = sizeof(g_toast_t) - 1;
+            memcpy(g_toast_t, msg, n); g_toast_t[n] = '\0';
+            lv_label_set_text(g_toast, msg);
+        }
         set_hidden(g_toast, false);
         g_toast_until = 0;
     } else {
@@ -2151,6 +2191,10 @@ static void battle_render(void) {
 
 static void battle_handle(int act) {
     switch (bt.phase) {
+    case BP_INTRO:
+        /* 遭遇演出中：OK/BACK 跳过直接进入选招，不重刷敌群（组已就位） */
+        if (act == ACT_OK || act == ACT_BACK) { set_bphase(BP_MENU); bt.tickMs = now_ms(); }
+        break;
     case BP_MENU:
         if (bt.autoBattle) { bt.autoBattle = 0; toast("手动接管"); break; }
         if (act == ACT_OK) hero_strike();
@@ -2201,12 +2245,18 @@ static void battle_handle(int act) {
 void battle_tick(void) {
     if (!bt.active) return;
     uint32_t now = now_ms();
-    if (bt.phase == BP_MENU) {
-        if (bt.autoBattle && now - bt.tickMs > 600) { bt.tickMs = now; auto_act(); }
+    if (bt.phase == BP_INTRO) {
+        /* 1:1 复刻 HTML walk+meet：进战斗先亮出敌群约 2.5s（固件无行走动画的折中），
+         * 让"战斗开始"清晰可见，而不是一进战斗就直接结算。 */
+        if (now - bt.tickMs > 2500) { bt.tickMs = now; set_bphase(BP_MENU); }
+    } else if (bt.phase == BP_MENU) {
+        /* HTML autoT=1.4：每 1.4s 出手一次，刷新时能看到招式/飘字，而非一闪而过 */
+        if (bt.autoBattle && now - bt.tickMs > 1400) { bt.tickMs = now; auto_act(); }
     } else if (bt.phase == BP_RESULT) {
-        if (bt.autoBattle && now - bt.tickMs > 1400) { bt.tickMs = now; next_wave(); }
+        /* HTML autoT2=2.0：每波结算停留 2s，避免"每波只闪 1 帧" */
+        if (bt.autoBattle && now - bt.tickMs > 2000) { bt.tickMs = now; next_wave(); }
     } else if (bt.phase == BP_EVENT) {
-        if (bt.autoBattle && now - bt.tickMs > 1000) { bt.tickMs = now; apply_event(); }
+        if (bt.autoBattle && now - bt.tickMs > 1200) { bt.tickMs = now; apply_event(); }
     } else if (bt.phase == BP_LOOT) {
         /* HTML lootShow.t=3 秒后自动消失继续前进；C 端同口径 3 秒自动继续，
          * 按键（OK/BACK）可随时跳过；自动战斗更快（1.5s）。 */

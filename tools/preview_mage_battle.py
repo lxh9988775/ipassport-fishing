@@ -364,6 +364,97 @@ def scene_loot(kind="chest"):
     return im
 
 
+# ============ 城镇子面板/功能面板背景（新反馈①③：进入板块后没背景图）============
+def _town_dim_base(dim_opa=179):
+    """固件城镇簇底图：town_art 直接 resize + C_BG(0x0d0b1a) 压暗层。
+    dim_opa: LVGL opa 值（179=LV_OPA_70 子面板 / 153=LV_OPA_60 城镇主页）。"""
+    im = Image.new("RGB", (W, H), (0x12, 0x0e, 0x22))
+    bg = os.path.join(ASSETS, SRC_TOWN)
+    if os.path.exists(bg):
+        im.paste(Image.open(bg).convert("RGB").resize((W, H), Image.LANCZOS), (0, 0))
+    dim = Image.new("RGBA", (W, H), (0x0d, 0x0b, 0x1a, dim_opa))
+    return Image.alpha_composite(im.convert("RGBA"), dim).convert("RGB")
+
+
+def scene_town_sub(sel=0):
+    """魔法学院（城镇子面板）：固件新增 town_art 背景 + 0.70 压暗。
+    文字布局与固件 g_scene_title/body/hint 一致。"""
+    im = _town_dim_base(179)
+    d = ImageDraw.Draw(im)
+    txt_c(d, "魔法学院", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
+    rows = ["魔力修行 · 20金（上限+5）", "学属性魔法 · 45金（已学0/135）", "职业晋升考核"]
+    y = 56
+    for i, r in enumerate(rows):
+        prefix = "▶ " if i == sel else "  "
+        txt_l(d, prefix + r, 14, y, F13, (0xff, 0xff, 0xff))
+        y += 30
+    txt_c(d, "OK 确定 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    return im
+
+
+def scene_town_wild(sel=0):
+    """野外试炼（城镇子面板）：同款背景 + 关卡列表。"""
+    im = _town_dim_base(179)
+    d = ImageDraw.Draw(im)
+    txt_c(d, "野外试炼", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
+    rows = ["远征森林", "迷雾沼泽", "熔岩洞窟", "寒霜雪原", "遗迹秘境"]
+    y = 56
+    for i, r in enumerate(rows):
+        prefix = "▶ " if i == sel else "  "
+        txt_l(d, prefix + r, 14, y, F13, (0xff, 0xff, 0xff))
+        y += 30
+    txt_c(d, "OK 出发/进入 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    return im
+
+
+def scene_func_status():
+    """功能面板·角色（func 栏进入）：固件新增 town_art 背景 + 0.70 压暗。"""
+    im = _town_dim_base(179)
+    d = ImageDraw.Draw(im)
+    txt_c(d, "角色", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
+    rows = ["见习魔法师", "魔法学徒 · Lv1", "经验 0/27", "生命 80/80", "魔力 50/50",
+            "攻击 7（装+0）", "护甲减伤 0", "金币 0 · 击杀 0", "伙伴 0 只"]
+    y = 56
+    for r in rows:
+        txt_l(d, r, 14, y, F13, (0xff, 0xff, 0xff))
+        y += 26
+    txt_c(d, "OK/长按 回城 · ↓ 管理装备", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    return im
+
+
+def scene_func_bag():
+    """功能面板·背包：同款背景。"""
+    im = _town_dim_base(179)
+    d = ImageDraw.Draw(im)
+    txt_c(d, "背包", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
+    rows = ["分类：药品", "[ 小恢复药水 ]", "数量 ×3", "已收集 药1/20 材0/40", "(1 / 1)"]
+    y = 56
+    for r in rows:
+        txt_l(d, r, 14, y, F13, (0xff, 0xff, 0xff))
+        y += 30
+    txt_c(d, "OK/↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    return im
+
+
+# ============ 战斗遭遇演出（新反馈②：战斗太快只见结算）============
+def scene_battle_intro():
+    """BP_INTRO：进战斗先亮出敌群 2.5s + 底部遭遇战横幅（HTML walk+meet 对应）。
+    动作卡隐藏，仅 HUD + 敌我立绘 + 横幅。"""
+    im, d = battle_base()
+    draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
+    draw_sprite(im, "sp_slime.png", 150, 250)
+    draw_sprite(im, "sp_goblin.png", 170, 250)
+    draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
+    draw_hud(d, wave="1/10", stat="手动 编1 球3 卡1 药2", turn="回合 1")
+    # 遭遇横幅：固件 g_toast 战斗位 (8,232,W-16,18)
+    bar = Image.new("RGBA", (W - 16, 18), (10, 8, 20, 235))
+    d2 = ImageDraw.Draw(bar)
+    d2.rectangle([0, 0, W - 17, 17], outline=(0x3a, 0x2d, 0x5e), width=1)
+    txt_c(d2, "★ 遭遇战开始！", (W - 16) / 2, 2, F12, (0xff, 0xe9, 0xb0))
+    im.paste(bar, (8, 232), bar)
+    return im
+
+
 # ============ 汇总对照（2 列网格，逐格标注对应问题）============
 def overview(scenes_labels):
     pad = 6
@@ -394,6 +485,11 @@ def main():
     expo = scene_expo()
     loot_chest = scene_loot("chest")
     loot_herb = scene_loot("herb")
+    town_acad = scene_town_sub()
+    town_wild = scene_town_wild()
+    func_status = scene_func_status()
+    func_bag = scene_func_bag()
+    battle_intro = scene_battle_intro()
 
     paths = {
         "mage_battle_boss_240x320.png": boss,
@@ -405,6 +501,11 @@ def main():
         "mage_expo_240x320.png": expo,
         "mage_loot_chest_240x320.png": loot_chest,
         "mage_loot_herb_240x320.png": loot_herb,
+        "mage_town_acad_240x320.png": town_acad,
+        "mage_town_wild_240x320.png": town_wild,
+        "mage_func_status_240x320.png": func_status,
+        "mage_func_bag_240x320.png": func_bag,
+        "mage_battle_intro_240x320.png": battle_intro,
     }
     for name, im in paths.items():
         p = os.path.join(OUT, name)
@@ -423,6 +524,11 @@ def main():
         (expo,  "⑥ 远征汇总·BOSS 装备（bug⑥）"),
         (loot_chest, "⑥ 宝箱战利品·具体物品（bug⑥）"),
         (loot_herb, "⑥ 采集收获（bug⑥）"),
+        (town_acad, "⑦ 魔法学院·有背景（新①）"),
+        (town_wild, "⑦ 野外试炼·有背景（新①）"),
+        (func_status, "⑧ 功能面板·角色·有背景（新③）"),
+        (func_bag, "⑧ 功能面板·背包·有背景（新③）"),
+        (battle_intro, "⑨ 遭遇演出·敌群+横幅（新②）"),
     ])
     op = os.path.join(OUT, "mage_fixes_overview_480x640.png")
     ov.save(op)

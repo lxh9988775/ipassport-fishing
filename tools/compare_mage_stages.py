@@ -31,6 +31,11 @@ STAGES = [
     ("result",     "html_result_240x320.png",      "mage_result_240x320.png",   "每波结算·显示素材（bug⑥）"),
     ("expo",       "html_expo_240x320.png",        "mage_expo_240x320.png",     "远征汇总·BOSS 装备（bug⑥）"),
     ("town",       "html_town_240x320.png",        "mage_town_240x320.png",     "城镇界面·文字可见（问题④）"),
+    ("town_acad",  "html_town_acad_240x320.png",   "mage_town_acad_240x320.png", "城镇子面板·魔法学院有背景（新①）"),
+    ("town_wild",  "html_town_wild_240x320.png",   "mage_town_wild_240x320.png", "城镇子面板·野外试炼有背景（新①）"),
+    ("func_status","html_func_status_240x320.png", "mage_func_status_240x320.png", "功能面板·角色有背景（新③·HTML此处无背景，固件按需求补齐）"),
+    ("func_bag",   "html_func_bag_240x320.png",    "mage_func_bag_240x320.png", "功能面板·背包有背景（新③）"),
+    ("battle_intro","html_battle_intro_240x320.png","mage_battle_intro_240x320.png", "遭遇演出·敌群先亮出再开打（新②）"),
 ]
 
 

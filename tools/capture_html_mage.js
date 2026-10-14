@@ -64,6 +64,29 @@ const path = require('path');
     event_chest: {
       scene: 'BATTLE',
       bt: { phase: 'event', event: { k: 'chest' }, cam: 0, px: 70, t: 0, wave: 3, enemies: [], fx: [], nums: [] }
+    },
+    town_acad: {
+      scene: 'ACAD'
+    },
+    town_wild: {
+      scene: 'WILD'
+    },
+    town_guild: {
+      scene: 'GUILD'
+    },
+    func_status: {
+      scene: 'STATUS'
+    },
+    func_bag: {
+      scene: 'BAG'
+    },
+    battle_intro: {
+      scene: 'BATTLE',
+      bt: { phase: 'walk', px: 70, cam: 0, t: 0, wave: 1, turn: 1, shake: 0,
+            enemies: [
+              { type: 'slime', x: 150, hp: 10, maxHp: 10, lvl: 2, boss: false, elite: false, hurtT: 0, bob: 0, shieldMax: 0, shield: 0, rarity: 0 },
+              { type: 'goblin', x: 170, hp: 12, maxHp: 12, lvl: 3, boss: false, elite: false, hurtT: 0, bob: 1, shieldMax: 0, shield: 0, rarity: 0 }
+            ], fx: [], nums: [], catLunge: null, lungeT: 0, walkF: 0, hurtT: 0 }
     }
   };
 
