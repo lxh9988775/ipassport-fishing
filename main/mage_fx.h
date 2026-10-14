@@ -27,6 +27,21 @@ void mage_fx_show(bool on);
  * 1:1 复刻 HTML drawEventPanel（金边面板 + 图形 + 名称 + "C 绕开"） */
 void mage_fx_event(int show_kind);
 
+/* 每波结算面板：1:1 复刻 HTML drawResult —— box(20,150,W-40,150)，
+ * 金标题 + #cfc 明细多行 + 底部金字操作提示。show<=0 隐藏。 */
+void mage_fx_result(int show, const char *title, const char *footer, const char **lines, int n);
+
+/* 远征/BOSS 汇总面板：1:1 复刻 HTML drawExpoSummary —— box(14,40,W-28,250)
+ * 上下 2px 金条、✦ 标题、「XX 已肃清」副题、名目左对齐/数值右对齐收益行、
+ * ★ BOSS 战利品块（extra 多行）、底部提示。rowsL/rowsR 为 '\n' 分隔的等行数文本。 */
+void mage_fx_expo(int show, const char *title, const char *sub,
+                  const char *rowsL, const char *rowsR, int nrows,
+                  const char **extra, int nextra, const char *footer);
+
+/* 宝箱/采集战利品面板：1:1 复刻 HTML drawOverlay 的 lootShow —— 顶部小面板
+ * box(28,54,W-56)，无底部提示（HTML 3 秒自动消失，C 端 battle_tick 同步 3 秒自动继续）。 */
+void mage_fx_loot(int show, const char *title, const char *footer, const char **lines, int n);
+
 /* 每帧推进时间轴（背景滚动、跳跃、粒子、突进、受击），dt 单位秒 */
 void mage_fx_tick(float dt);
 

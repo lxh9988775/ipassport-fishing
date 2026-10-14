@@ -91,6 +91,10 @@ typedef struct {
     int bossEquipRar;
     char bossEquip[16];
     int bossCrystal, bossOrb, bossSeal;
+    /* 战利品/结算面板（宝箱/采集/每波结算/远征汇总），复用事件面板对象显示 */
+    int  lootN;
+    char lootTitle[28];
+    char lootLines[8][32];
     float guardBlock;  /* 守护护盾（0..0.6） */
     uint32_t tickMs;   /* 自动推进计时 */
     /* ---- 演出计时（HTML 的 bt.t，单位秒） ---- */

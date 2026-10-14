@@ -76,6 +76,8 @@ typedef struct {
     lv_obj_t *evtBox;         /* 金边面板底 */
     lv_obj_t *evtIcon;        /* 事件图形 */
     lv_obj_t *evtName, *evtDesc, *evtHint;
+    lv_obj_t *evtSub;         /* 远征汇总副标题「远征森林 已肃清」（HTML y=84） */
+    lv_obj_t *evtRowL, *evtRowR; /* 远征汇总行：名目左对齐 / 数值右对齐（HTML row()） */
     int8_t evtShown;          /* -1=隐藏；0..3=当前事件种类（防每帧重复设文字） */
     bool built;
 } FxLayer;
@@ -338,6 +340,36 @@ static void fx_build(void)
     lv_label_set_text(F.evtHint, "C 绕开");
     lv_obj_set_pos(F.evtHint, 0, 98);
 
+    /* 远征汇总附加标签（HTML drawExpoSummary）：副标题 + 左右对齐的收益行。
+     * 仅 expo 面板使用，默认隐藏；左行 x=16（HTML 名目 x=30 - box.x14），
+     * 右行同 x 同宽右对齐（HTML 数值右缘 W-30=210 - box.x14=196）。 */
+    F.evtSub = lv_label_create(F.evtBox);
+    use_cjk(F.evtSub);
+    lv_obj_set_style_text_color(F.evtSub, lv_color_hex(0xc9a227), 0);
+    lv_obj_set_style_text_align(F.evtSub, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(F.evtSub, SCR_W - 28);
+    lv_label_set_text(F.evtSub, "");
+    lv_obj_set_pos(F.evtSub, 0, 34);
+    lv_obj_add_flag(F.evtSub, LV_OBJ_FLAG_HIDDEN);
+
+    F.evtRowL = lv_label_create(F.evtBox);
+    use_cjk(F.evtRowL);
+    lv_obj_set_style_text_color(F.evtRowL, lv_color_hex(0xbbbbbb), 0);
+    lv_obj_set_style_text_align(F.evtRowL, LV_TEXT_ALIGN_LEFT, 0);
+    lv_obj_set_width(F.evtRowL, 180);
+    lv_label_set_text(F.evtRowL, "");
+    lv_obj_set_pos(F.evtRowL, 16, 54);
+    lv_obj_add_flag(F.evtRowL, LV_OBJ_FLAG_HIDDEN);
+
+    F.evtRowR = lv_label_create(F.evtBox);
+    use_cjk(F.evtRowR);
+    lv_obj_set_style_text_color(F.evtRowR, lv_color_hex(0xccffcc), 0);
+    lv_obj_set_style_text_align(F.evtRowR, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_width(F.evtRowR, 180);
+    lv_label_set_text(F.evtRowR, "");
+    lv_obj_set_pos(F.evtRowR, 16, 54);
+    lv_obj_add_flag(F.evtRowR, LV_OBJ_FLAG_HIDDEN);
+
     F.built = true;
     ESP_LOGI(TAG, "战斗演出层就绪");
 }
@@ -539,7 +571,10 @@ void mage_fx_render(void)
         const bool isSlime = (strcmp(tname, "slime") == 0);
 
         /* 冲锋位移：sx -= sin(lp*PI)*dash */
-        float sx = (float)(e->x - 70);      /* BTPX=70，减 cam 得屏幕位置 */
+        /* HTML 原版：敌人屏幕 x = e.x - cam（与主角 bt.px-cam 共用同一 cam）。
+         * 旧代码多减了 70（写成 e.x-70-cam），把敌人整体左移 70px 贴到主角脸上
+         * —— 这就是「怪物离主角太近 / BOSS 压脸」的根因。这里严格 1:1 还原 HTML。 */
+        float sx = (float)(e->x);           /* 减 cam 得屏幕位置（与主角 70-cam 同公式） */
         sx -= (float)(int)bt.cam;
         if (e->lungeT > 0.0f && e->lungeDur > 0.0f) {
             float lp = fclampf(1.0f - e->lungeT / e->lungeDur, 0.0f, 1.0f);
@@ -778,12 +813,66 @@ void mage_fx_show(bool on)
 
 /* 探索事件面板：show_kind = 0 宝箱 / 1 陷阱 / 2 泉水 / 3 药草；-1 隐藏。
  * 1:1 复刻 HTML drawEventPanel（金边面板 + 事件图形 + 名称 + "C 绕开"）。 */
+/* ---- 结算/战利品面板（1:1 复刻 HTML drawResult / drawExpoSummary / lootShow）----
+ * 三种版式共用事件面板对象（evtRoot），用 s_pmode 记忆当前版式：
+ * 几何/颜色/显隐只在「版式切换那一刻」设置一次，文字只在内容变化时更新，
+ * 满足「周期刷新里绝不无条件碰 LVGL」的防卡死铁律。
+ * HTML 坐标按 textBaseline 换算为 LVGL 的标签顶坐标（top ≈ baseline - 字号）。 */
+#define FX_PM_EVENT  0
+#define FX_PM_RESULT 1
+#define FX_PM_EXPO   2
+#define FX_PM_LOOT   3
+
+static int8_t s_pmode = -1;   /* 当前面板版式（-1=隐藏） */
+static int16_t s_pgeo = -1;   /* 版式+行数组合的几何记忆 */
+static uint8_t s_pgen = 0;    /* 全局面板文字写入代次（任何面板写过文字即自增，
+                               * 用于强制其它面板下次刷新文字，防止串字） */
+
+static void panel_hide(void)
+{
+    if (!F.built) return;
+    if (s_pmode == FX_PM_EVENT) return; /* 事件面板与结算共用 evtRoot，不能误隐藏 */
+    if (!lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_add_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+    s_pmode = -1;
+    s_pgeo = -1;
+}
+
+/* 面板容器几何 + 公共开关；key 区分版式与行数，变化才真正 set */
+static void panel_geo(int key, int x, int y, int w, int h, uint32_t bg)
+{
+    if (s_pgeo == key) return;
+    s_pgeo = (int16_t)key;
+    lv_obj_set_size(F.evtBox, w, h);
+    lv_obj_set_pos(F.evtBox, x, y);
+    lv_obj_set_style_bg_color(F.evtBox, lv_color_hex(bg), 0);
+    lv_obj_set_style_bg_opa(F.evtBox, LV_OPA_90, 0);
+    lv_obj_add_flag(F.evtIcon, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(F.evtSub, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(F.evtRowL, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(F.evtRowR, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_border_width(F.evtBox, 1, 0);
+    lv_obj_set_style_border_side(F.evtBox, LV_BORDER_SIDE_FULL, 0);
+}
+
+static void panel_join(char *dst, size_t cap, const char **lines, int n)
+{
+    dst[0] = '\0';
+    for (int i = 0; i < n; i++) {
+        if (i) strncat(dst, "\n", cap - strlen(dst) - 1);
+        strncat(dst, lines[i], cap - strlen(dst) - 1);
+    }
+}
+
 void mage_fx_event(int show_kind)
 {
     if (!F.built || !g_fx_parent) return;
     if (show_kind < 0) {
+        /* 事件面板自己的隐藏路径：强制隐藏（不受 panel_hide 的事件保护影响） */
         if (!lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
             lv_obj_add_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+        s_pmode = -1;
+        s_pgeo = -1;
         F.evtShown = -1;
         return;
     }
@@ -797,12 +886,161 @@ void mage_fx_event(int show_kind)
         "A 打开宝箱", "A 小心通过", "A 饮水休息", "A 采集"
     };
     int k = show_kind % 4;
+    if (s_pmode != FX_PM_EVENT) {
+        s_pmode = FX_PM_EVENT;
+        s_pgen++;                       /* 版式切换后强制本面板下次刷新文字 */
+        /* 复位为事件版式：box(20,120,W-40,110) + 图标 + 白名 + 金描述 + 灰提示 */
+        panel_geo(0, 20, 120, SCR_W - 40, 110, 0x0c091a);
+        lv_obj_remove_flag(F.evtIcon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(F.evtName, SCR_W - 40);
+        lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffffff), 0);
+        lv_obj_set_pos(F.evtName, 0, 64);
+        lv_obj_set_width(F.evtDesc, SCR_W - 40);
+        lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xffd93d), 0);
+        lv_obj_set_pos(F.evtDesc, 0, 82);
+        lv_obj_set_width(F.evtHint, SCR_W - 40);
+        lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0x9a93b5), 0);
+        lv_obj_set_pos(F.evtHint, 0, 98);
+        F.evtShown = -1;                /* 强制刷新图标与文字（可能被结算面板覆盖过） */
+    }
     if (F.evtShown != (int8_t)k) {
         const lv_image_dsc_t *d = mage_img(icon[k]);
         if (d) lv_image_set_src(F.evtIcon, d);
         lv_label_set_text(F.evtName, nm[k]);
         lv_label_set_text(F.evtDesc, ds[k]);
         F.evtShown = (int8_t)k;
+    }
+    if (lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 每波结算（HTML drawResult）：box(20,150,W-40,150)，标题金 y≈159，
+ * 明细 #cfc 自 y≈186 每 16px 一行，底部金字「A 继续前进 · B 回城」。 */
+void mage_fx_result(int show, const char *title, const char *footer, const char **lines, int n)
+{
+    if (!F.built || !g_fx_parent) return;
+    if (show <= 0 || n <= 0 || !lines) { panel_hide(); return; }
+    if (s_pmode != FX_PM_RESULT) {
+        s_pmode = FX_PM_RESULT;
+        panel_geo(1, 20, 150, SCR_W - 40, 150, 0x0a0818);
+        lv_obj_set_width(F.evtName, SCR_W - 40);
+        lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffd93d), 0);
+        lv_obj_set_pos(F.evtName, 0, 8);
+        lv_obj_set_width(F.evtDesc, SCR_W - 40);
+        lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xccffcc), 0);
+        lv_obj_set_pos(F.evtDesc, 0, 36);
+        lv_obj_set_width(F.evtHint, SCR_W - 40);
+        lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0xc9a227), 0);
+        lv_obj_set_pos(F.evtHint, 0, 126);
+    }
+    static char lbuf[384], lprev[384], ltitle[28];
+    static uint8_t mygen = 0;
+    bool force = (mygen != s_pgen);
+    panel_join(lbuf, sizeof(lbuf), lines, n);
+    if (force || strcmp(lbuf, lprev) != 0 || strcmp(title ? title : "", ltitle) != 0) {
+        strncpy(ltitle, title ? title : "", sizeof(ltitle) - 1); ltitle[sizeof(ltitle) - 1] = '\0';
+        strncpy(lprev, lbuf, sizeof(lprev) - 1); lprev[sizeof(lprev) - 1] = '\0';
+        lv_label_set_text(F.evtName, title ? title : "");
+        lv_label_set_text(F.evtDesc, lbuf);
+        lv_label_set_text(F.evtHint, footer ? footer : "");
+        s_pgen++; mygen = s_pgen;
+    }
+    if (lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 远征/BOSS 汇总（HTML drawExpoSummary）：box(14,40,W-28,250) 上下 2px 金条，
+ * 标题「✦ 远征胜利 ✦」 y≈50，副题「XX 已肃清」 y≈74，收益行名目左对齐 x=30 /
+ * 数值右对齐右缘 210 自 y≈94 每 17px（C 取 16）一行，随后 ★ BOSS 战利品块，
+ * 底部「A 继续 · B 回城」。rowsL/rowsR 均为 '\n' 分隔的整块多行文本，行数相同。 */
+void mage_fx_expo(int show, const char *title, const char *sub,
+                  const char *rowsL, const char *rowsR, int nrows,
+                  const char **extra, int nextra, const char *footer)
+{
+    if (!F.built || !g_fx_parent) return;
+    if (show <= 0 || nrows <= 0 || !rowsL || !rowsR) { panel_hide(); return; }
+    if (s_pmode != FX_PM_EXPO) {
+        s_pmode = FX_PM_EXPO;
+        panel_geo(2, 14, 40, SCR_W - 28, 250, 0x0a0818);
+        lv_obj_set_style_border_width(F.evtBox, 2, 0);
+        lv_obj_set_style_border_side(F.evtBox, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, 0);
+        lv_obj_set_width(F.evtName, SCR_W - 28);
+        lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffd93d), 0);
+        lv_obj_set_pos(F.evtName, 0, 8);
+        lv_obj_remove_flag(F.evtSub, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(F.evtSub, SCR_W - 28);
+        lv_obj_set_style_text_color(F.evtSub, lv_color_hex(0xc9a227), 0);
+        lv_obj_set_pos(F.evtSub, 0, 34);
+        lv_obj_remove_flag(F.evtRowL, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_text_color(F.evtRowL, lv_color_hex(0xbbbbbb), 0);
+        lv_obj_set_pos(F.evtRowL, 16, 54);
+        lv_obj_remove_flag(F.evtRowR, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_style_text_color(F.evtRowR, lv_color_hex(0xccffcc), 0);
+        lv_obj_set_pos(F.evtRowR, 16, 54);
+        lv_obj_set_width(F.evtDesc, SCR_W - 28);
+        lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xffd93d), 0);
+        lv_obj_set_pos(F.evtDesc, 0, 54 + nrows * 16 + 4);
+        lv_obj_set_width(F.evtHint, SCR_W - 28);
+        lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0xc9a227), 0);
+        lv_obj_set_pos(F.evtHint, 0, 228);
+    }
+    static char lprevL[96], lprevR[96], lprevX[256], ltitle[28], lsub[28], lfoot[28];
+    static uint8_t mygen = 0;
+    bool force = (mygen != s_pgen);
+    char xbuf[256];
+    panel_join(xbuf, sizeof(xbuf), extra, nextra);
+    if (force || strcmp(title ? title : "", ltitle) != 0 || strcmp(sub ? sub : "", lsub) != 0 ||
+        strcmp(rowsL, lprevL) != 0 || strcmp(rowsR, lprevR) != 0 ||
+        strcmp(xbuf, lprevX) != 0 || strcmp(footer ? footer : "", lfoot) != 0) {
+        strncpy(ltitle, title ? title : "", sizeof(ltitle) - 1); ltitle[sizeof(ltitle) - 1] = '\0';
+        strncpy(lsub, sub ? sub : "", sizeof(lsub) - 1); lsub[sizeof(lsub) - 1] = '\0';
+        strncpy(lprevL, rowsL, sizeof(lprevL) - 1); lprevL[sizeof(lprevL) - 1] = '\0';
+        strncpy(lprevR, rowsR, sizeof(lprevR) - 1); lprevR[sizeof(lprevR) - 1] = '\0';
+        strncpy(lprevX, xbuf, sizeof(lprevX) - 1); lprevX[sizeof(lprevX) - 1] = '\0';
+        strncpy(lfoot, footer ? footer : "", sizeof(lfoot) - 1); lfoot[sizeof(lfoot) - 1] = '\0';
+        lv_label_set_text(F.evtName, title ? title : "");
+        lv_label_set_text(F.evtSub, sub ? sub : "");
+        lv_label_set_text(F.evtRowL, rowsL);
+        lv_label_set_text(F.evtRowR, rowsR);
+        lv_label_set_text(F.evtDesc, xbuf);
+        lv_label_set_text(F.evtHint, footer ? footer : "");
+        s_pgen++; mygen = s_pgen;
+    }
+    if (lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 宝箱/采集战利品（HTML drawOverlay 的 lootShow）：顶部小面板 box(28,54,W-56)，
+ * 高 26+行数*行高+8，标题金 #ffe9b0、明细白，**无底部提示**（HTML 靠 3 秒计时
+ * 自动消失，C 端 battle_tick 同样 3 秒自动继续，按键可跳过）。 */
+void mage_fx_loot(int show, const char *title, const char *footer, const char **lines, int n)
+{
+    if (!F.built || !g_fx_parent) return;
+    (void)footer;
+    if (show <= 0 || n <= 0 || !lines) { panel_hide(); return; }
+    if (s_pmode != FX_PM_LOOT || s_pgeo != (int16_t)(300 + n)) {
+        s_pmode = FX_PM_LOOT;
+        panel_geo(300 + n, 28, 54, SCR_W - 56, 26 + n * 16 + 8, 0x0e0a1e);
+        lv_obj_set_width(F.evtName, SCR_W - 56);
+        lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffe9b0), 0);
+        lv_obj_set_pos(F.evtName, 0, 6);
+        lv_obj_set_width(F.evtDesc, SCR_W - 56);
+        lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xffffff), 0);
+        lv_obj_set_pos(F.evtDesc, 0, 26);
+        lv_obj_set_width(F.evtHint, SCR_W - 56);
+        lv_label_set_text(F.evtHint, "");
+        s_pgen++;
+    }
+    static char lbuf[384], lprev[384], ltitle[28];
+    static uint8_t mygen = 0;
+    bool force = (mygen != s_pgen);
+    panel_join(lbuf, sizeof(lbuf), lines, n);
+    if (force || strcmp(lbuf, lprev) != 0 || strcmp(title ? title : "", ltitle) != 0) {
+        strncpy(ltitle, title ? title : "", sizeof(ltitle) - 1); ltitle[sizeof(ltitle) - 1] = '\0';
+        strncpy(lprev, lbuf, sizeof(lprev) - 1); lprev[sizeof(lprev) - 1] = '\0';
+        lv_label_set_text(F.evtName, title ? title : "");
+        lv_label_set_text(F.evtDesc, lbuf);
+        s_pgen++; mygen = s_pgen;
     }
     if (lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
         lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);

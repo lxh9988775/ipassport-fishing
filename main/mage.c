@@ -863,12 +863,23 @@ static void refresh_ui(void) {
      * 会持续触发样式重算 -> mage 任务占满 CPU -> IDLE 饿死 -> 看门狗重启。
      * 只有状态真正翻转时才动手。 */
     {
-        const bool in_bt = (g_scene == SC_BATTLE);
-        mage_hud_show(in_bt);
+        const bool in_bt = (g_scene == SC_BATTLE) && bt.active;
+        /* 结算/战利品面板（BP_RESULT / BP_LOOT）需完整露出，故隐藏底部动作卡 */
+        mage_hud_show(in_bt && bt.phase != BP_RESULT && bt.phase != BP_LOOT);
+        /* 战斗演出层（含 battle_bg 背景图）必须随战斗状态显隐：
+         * 否则战斗结束后 battle_art_update 不再被调用，mage_fx_show(false)
+         * 永远不触发，battle_bg 会残留在透明背景的场景（如状态/背包页）之后
+         * 持续显示 —— 这就是「其他界面直接用了 BOSS 战背景」的根因。 */
+        mage_fx_show(in_bt);
         set_hidden(g_hud, in_bt);
         set_hidden(g_scene_body, in_bt);
         set_hidden(g_scene_hint, in_bt);
         set_hidden(g_scene_title, in_bt);
+        /* 战斗时把底部 toast 抬到卡片之上（y=232），避免压住动作卡与回合徽标
+         * （卡片从 276 起、徽标 269~283）；非战斗回落原位 264。记忆上次值防每帧重排。 */
+        static int8_t s_toastY = -1;
+        int ty = in_bt ? 232 : 264;
+        if (s_toastY != (int8_t)ty) { s_toastY = (int8_t)ty; lv_obj_set_pos(g_toast, 8, ty); }
     }
 
 
@@ -1343,6 +1354,7 @@ void mage_on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
 #define BP_RESULT 4
 #define BP_EVENT 5
 #define BP_FAINT 6
+#define BP_LOOT 7
 #define BTPX 70
 
 static float fclamp(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
@@ -1419,7 +1431,7 @@ static void deal_to(BattleEnemy *e, int dmg) {
     /* 演出：受击后仰 + 闪红 + 粒子迸溅（HTML e.hurtT / fx） */
     e->hurtT  = 0.22f;
     e->flashT = 0.15f;
-    mage_fx_spawn(FX_K_PARTICLE, (float)(e->x - 70) - (float)(int)bt.cam,
+    mage_fx_spawn(FX_K_PARTICLE, (float)(e->x) - (float)(int)bt.cam,
                    250.0f - (float)e->typeIdx * 20.0f, 0xff9ad5, 5.0f, 0.45f);
     /* 1:1 复刻 HTML：bt.nums.push({x:e.x, y:enemyFeetY()-34, v:''+dmg, c:'#fff', t:0.8}) */
     mage_fx_num(e->x, 250 - 34, dmg, 0xffffff);
@@ -1554,7 +1566,7 @@ static void magic_cast(void) {
     if (take == 0) { toast("空放了…"); after_player_action(); return; }
     /* 演出：英雄突进（HTML bt.lungeT/0.22）+ 施法聚能光球（HTML fx charge） */
     bt.lungeT = 0.22f;
-    mage_fx_spawn(FX_K_CHARGE, (float)(hits[0]->x - 70) - (float)(int)bt.cam,
+    mage_fx_spawn(FX_K_CHARGE, (float)(hits[0]->x) - (float)(int)bt.cam,
                    205.0f, 0xb98cff, 12.0f, 0.35f);
     for (int i = 0; i < take; i++) {
         BattleEnemy *en = hits[i];
@@ -1566,9 +1578,9 @@ static void magic_cast(void) {
             dmg = (int)(dmg * 1.5f + 0.5f);
             bt.weakKnown = 1;   /* 弱点揭示（HTML e.weakKnown 命中后才显示图标） */
             /* 演出：地面魔法阵 + 扩散环 */
-            mage_fx_spawn(FX_K_CIRCLE, (float)(en->x - 70) - (float)(int)bt.cam,
+            mage_fx_spawn(FX_K_CIRCLE, (float)(en->x) - (float)(int)bt.cam,
                            252.0f, 0x7fd4ff, 20.0f, 0.5f);
-            mage_fx_spawn(FX_K_RING, (float)(en->x - 70) - (float)(int)bt.cam,
+            mage_fx_spawn(FX_K_RING, (float)(en->x) - (float)(int)bt.cam,
                           210.0f, 0xffd93d, 16.0f, 0.4f);
             bt.shake = 0.8f;   /* 弱点暴击强震屏 */
             if (en->shield > 0 && en->brokenTurns <= 0) {
@@ -1908,15 +1920,27 @@ static void apply_event(void) {
     int k = bt.eventKind, ch = g.mapChapter;
     if (k == 0) {                                   /* 宝箱 */
         int gd = mage_ri(30, 60) + 40 * ch; g.gold += gd; bt.goldGain += gd;
+        int pid[6], mid[6], pc = 0, mc = 0;
         int n = mage_ri(1, 3);
         for (int i = 0; i < n; i++) {
-            if (mage_rf(0, 1) < 0.45f) { int id = mage_ri(0, 19); g.pbag[id]++; }
-            else { int id = mage_ri(0, 39); g.mbag[id]++; }
+            if (mage_rf(0, 1) < 0.45f) { int id = mage_ri(0, 19); g.pbag[id]++; if (pc < 6) pid[pc++] = id; }
+            else { int id = mage_ri(0, 39); g.mbag[id]++; if (mc < 6) mid[mc++] = id; }
         }
-        if (mage_rf(0, 1) < 0.30f) { int st = 1 + mage_ri(0, 3); if (st > 4) st = 4; g.stones[st] += mage_ri(1, 2); }
-        if (mage_rf(0, 1) < 0.20f) g.orbs += 2;
-        if (mage_rf(0, 1) < 0.12f) g.crystals++;
+        int stN = 0, stId = 0, gotStone = 0, gotOrb = 0, gotCry = 0;
+        if (mage_rf(0, 1) < 0.30f) { stId = 1 + mage_ri(0, 3); if (stId > 4) stId = 4; stN = mage_ri(1, 2); g.stones[stId] += stN; gotStone = 1; }
+        if (mage_rf(0, 1) < 0.20f) { g.orbs += 2; gotOrb = 1; }
+        if (mage_rf(0, 1) < 0.12f) { g.crystals++; gotCry = 1; }
+        /* 战利品面板（1:1 复刻 HTML lootShow「宝箱战利品」：金币 + 具体物品） */
+        bt.lootN = 0;
+        snprintf(bt.lootTitle, sizeof(bt.lootTitle), "★ 宝箱战利品 ★");
+        if (bt.lootN < 8) snprintf(bt.lootLines[bt.lootN++], 32, "金币 +%d", gd);
+        for (int i = 0; i < pc && bt.lootN < 8; i++) snprintf(bt.lootLines[bt.lootN++], 32, "药品·%s", POTIONS[pid[i]].n);
+        for (int i = 0; i < mc && bt.lootN < 8; i++) snprintf(bt.lootLines[bt.lootN++], 32, "素材·%s", MATERIALS[mid[i]].n);
+        if (gotStone && bt.lootN < 8) snprintf(bt.lootLines[bt.lootN++], 32, "%s ×%d", STONE_NAMES[stId], stN);
+        if (gotOrb && bt.lootN < 8) snprintf(bt.lootLines[bt.lootN++], 32, "捕捉球 ×2");
+        if (gotCry && bt.lootN < 8) snprintf(bt.lootLines[bt.lootN++], 32, "魔晶 ×1");
         toast("宝箱开启！+%d金", gd);
+        mage_persist(); bt.eventKind = -1; set_bphase(BP_LOOT); g_need_refresh = 1; return;
     } else if (k == 1) {                            /* 陷阱 */
         int d = (int)(g.maxHp * mage_rf(0.10f, 0.18f) + 0.5f); g.hp -= d; if (g.hp < 1) g.hp = 1;
         if (mage_rf(0, 1) < 0.5f) { int lost = mage_ri(15, 35); if (lost > g.gold) lost = g.gold; g.gold -= lost; }
@@ -1927,9 +1951,15 @@ static void apply_event(void) {
         toast("泉水恢复了一半 HP/MP");
     } else {                                        /* 药草 */
         int h = mage_ri(3, 6); g.herbs += h;
-        if (mage_rf(0, 1) < 0.35f) g.crystals++;
+        int gotCry = 0; if (mage_rf(0, 1) < 0.35f) { g.crystals++; gotCry = 1; }
         int mid = mage_ri(0, 39); g.mbag[mid]++;
+        bt.lootN = 0;
+        snprintf(bt.lootTitle, sizeof(bt.lootTitle), "★ 采集收获 ★");
+        if (bt.lootN < 8) snprintf(bt.lootLines[bt.lootN++], 32, "月光草 ×%d", h);
+        if (gotCry && bt.lootN < 8) snprintf(bt.lootLines[bt.lootN++], 32, "魔晶 ×1");
+        if (bt.lootN < 8) snprintf(bt.lootLines[bt.lootN++], 32, "素材·%s", MATERIALS[mid].n);
         toast("采集到月光草 x%d", h);
+        mage_persist(); bt.eventKind = -1; set_bphase(BP_LOOT); g_need_refresh = 1; return;
     }
     mage_persist();
     bt.eventKind = -1;
@@ -2046,8 +2076,40 @@ static void battle_render(void) {
         break;
     }
     case BP_RESULT: {
-        s_add("金币+%d 经验+%d", bt.goldGain, bt.expGain);
-        if (bt.done) s_add("\n远征完成！");
+        /* 1:1 复刻 HTML drawResult / drawExpoSummary：金币/经验 + 月光草/兽骨/药水 + BOSS 装备 */
+        char b0[48], b1[40], b2[40], b3[40], b4[40], b5[40], b7[40], b8[64];
+        char rowsR[96], sub[28];
+        const char *lp[12]; int nl = 0;
+        if (bt.done) {
+            /* HTML drawExpoSummary：固定 6 行「名目左对齐 / 数值右对齐」 */
+            const char *rowsL = "总击杀\n金币\n经验\n月光草\n兽骨\n药水";
+            snprintf(rowsR, sizeof(rowsR), "%d 只\n+%d\n+%d\n+%d\n+%d\n+%d",
+                     bt.killCnt, bt.goldGain, bt.expGain, bt.herbGain, bt.matGain, bt.potGain);
+            const char *xp[4]; int nx = 0;
+            xp[nx++] = "★ BOSS 战利品";
+            if (bt.bossEquip[0]) { snprintf(b7, sizeof(b7), "%s", bt.bossEquip); xp[nx++] = b7; }
+            snprintf(b8, sizeof(b8), "魔晶+%d 捕捉球+%d 封印卡+%d", bt.bossCrystal, bt.bossOrb, bt.bossSeal);
+            xp[nx++] = b8;
+            if (promoteReady()) xp[nx++] = "★ 已达晋升标准！";
+            snprintf(sub, sizeof(sub), "%s 已肃清", CHAPTERS[clampi(g.mapChapter, 0, 4)]);
+            mage_fx_expo(1, "★ 远征胜利 ★", sub, rowsL, rowsR, 6, xp, nx, "A 继续 · B 回城");
+        } else {
+            snprintf(b0, sizeof(b0), "第 %d 波 清场（累计收益）", bt.wave);
+            snprintf(b1, sizeof(b1), "金币 +%d", bt.goldGain); lp[nl++] = b1;
+            snprintf(b2, sizeof(b2), "经验 +%d", bt.expGain); lp[nl++] = b2;
+            if (bt.herbGain) { snprintf(b3, sizeof(b3), "月光草 +%d", bt.herbGain); lp[nl++] = b3; }
+            if (bt.matGain)  { snprintf(b4, sizeof(b4), "兽骨 +%d", bt.matGain); lp[nl++] = b4; }
+            if (bt.potGain)  { snprintf(b5, sizeof(b5), "药水 +%d", bt.potGain); lp[nl++] = b5; }
+            if (promoteReady()) lp[nl++] = "★ 已达晋升标准！";
+            mage_fx_result(1, b0, "A 继续前进 · B 回城", lp, nl);
+        }
+        break;
+    }
+    case BP_LOOT: {
+        /* 宝箱/采集战利品面板（1:1 复刻 HTML lootShow：顶部小面板、无底部提示） */
+        const char *lp[8]; int nl = 0;
+        for (int i = 0; i < bt.lootN && i < 8; i++) lp[nl++] = bt.lootLines[i];
+        mage_fx_loot(1, bt.lootTitle, NULL, lp, nl);
         break;
     }
     case BP_EVENT: {
@@ -2062,8 +2124,9 @@ static void battle_render(void) {
         break;
     }
 
-    /* 非菜单态才把少量信息贴到画面上方的 toast 位置（y=34，不遮角色） */
-    if (bt.phase != BP_MENU && bt.phase != BP_MAGIC && bt.phase != BP_ITEM) {
+    /* 战利品/结算面板（BP_RESULT / BP_LOOT）与事件面板（BP_EVENT）各自显示，
+     * 其余阶段用 g_toast 提示（仅 BP_FAINT 走顶部提示，避免遮挡战斗画面）。 */
+    if (bt.phase == BP_FAINT) {
         lv_label_set_text(g_toast, s_b);
         set_hidden(g_toast, false);
         g_toast_until = 0;
@@ -2072,9 +2135,16 @@ static void battle_render(void) {
     }
     lv_label_set_text(g_scene_hint, "");
 
-    /* 探索事件面板（宝箱/陷阱/泉水/药草）：仅 BP_EVENT 阶段显示，其余隐藏。
-     * 1:1 复刻 HTML drawEventPanel（修「陷阱/宝箱环节未展示」问题①）。 */
-    mage_fx_event(bt.phase == BP_EVENT ? bt.eventKind : -1);
+    /* 事件面板（宝箱/陷阱/泉水/药草）与结算/战利品面板共用 evtRoot：
+     * BP_EVENT 只归事件面板管；BP_RESULT/BP_LOOT 由上面 switch 里的
+     * mage_fx_result/expo/loot 接管（绝不能再调 mage_fx_event(-1) 把共用根隐藏）；
+     * 其余阶段把两者都收掉。 */
+    if (bt.phase == BP_EVENT) {
+        mage_fx_event(bt.eventKind);
+    } else if (bt.phase != BP_RESULT && bt.phase != BP_LOOT) {
+        mage_fx_event(-1);
+        mage_fx_loot(0, NULL, NULL, NULL, 0);
+    }
 }
 
 static void battle_handle(int act) {
@@ -2108,6 +2178,9 @@ static void battle_handle(int act) {
         if (act == ACT_OK) apply_event();
         else if (act == ACT_BACK) { bt.eventKind = -1; spawn_and_menu(); }
         break;
+    case BP_LOOT:
+        if (act == ACT_OK || act == ACT_BACK) spawn_and_menu();
+        break;
     case BP_FAINT:
         if (act == ACT_OK || act == ACT_BACK) {
             g.hp = (int)(g.maxHp * 0.5f + 0.5f); if (g.hp < 1) g.hp = 1;
@@ -2132,6 +2205,12 @@ void battle_tick(void) {
         if (bt.autoBattle && now - bt.tickMs > 1400) { bt.tickMs = now; next_wave(); }
     } else if (bt.phase == BP_EVENT) {
         if (bt.autoBattle && now - bt.tickMs > 1000) { bt.tickMs = now; apply_event(); }
+    } else if (bt.phase == BP_LOOT) {
+        /* HTML lootShow.t=3 秒后自动消失继续前进；C 端同口径 3 秒自动继续，
+         * 按键（OK/BACK）可随时跳过；自动战斗更快（1.5s）。 */
+        if (now - bt.tickMs > 3000 || (bt.autoBattle && now - bt.tickMs > 1500)) {
+            bt.tickMs = now; spawn_and_menu();
+        }
     }
 }
 

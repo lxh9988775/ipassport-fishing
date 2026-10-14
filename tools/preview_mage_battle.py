@@ -278,6 +278,92 @@ def scene_hud():
     return im
 
 
+# ============ 结算/战利品面板（bug⑥：1:1 复刻 HTML 三个版式 + mage_fx.c 坐标）============
+def _panel_base(w, h, bg=(0x0a, 0x08, 0x18), border=1, sides="full"):
+    """金边面板底：sides='full' 四边 border px；'tb' 上下各 border px 金条（expo）。"""
+    box = Image.new("RGBA", (w, h), bg + (242,))
+    bd = ImageDraw.Draw(box)
+    c = (0xff, 0xd9, 0x3d)
+    if sides == "full":
+        bd.rectangle([0, 0, w - 1, h - 1], outline=c, width=border)
+    else:
+        bd.rectangle([0, 0, w, border], fill=c)
+        bd.rectangle([0, h - border, w, h], fill=c)
+    return box, bd
+
+
+def scene_result():
+    """每波清场结算（HTML drawResult / mage_fx_result）：
+    box(20,150,200,150)，标题金 rel y=8，明细 #ccffcc rel y=36 步进16，提示金 rel y=126。"""
+    im, d = battle_base()
+    draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
+    draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
+    draw_hud(d, wave="3/10", stat="AUTO 编1 球3 卡1 药2")
+    bw, bh = 200, 150
+    box, bd = _panel_base(bw, bh)
+    txt_c(bd, "第 3 波 清场（累计收益）", bw / 2, 8, F16, (0xff, 0xd9, 0x3d))
+    y = 36
+    for ln in ["金币 +120", "经验 +80", "月光草 +2", "兽骨 +1", "药水 +1"]:
+        txt_c(bd, ln, bw / 2, y, F16, (0xcc, 0xff, 0xcc))
+        y += 16
+    txt_c(bd, "A 继续前进 · B 回城", bw / 2, 126, F16, (0xc9, 0xa2, 0x27))
+    im.paste(box, (20, 150), box)
+    return im
+
+
+def scene_expo():
+    """远征/BOSS 汇总（HTML drawExpoSummary / mage_fx_expo）：
+    box(14,40,212,250) 上下2px金条，✦标题 y=8、副题 y=34、名目左/数值右 y=54 步进16、
+    ★ BOSS 战利品块 y=154、提示 y=228。"""
+    im, d = battle_base()
+    draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
+    draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
+    draw_hud(d, wave="10/10 BOSS", stat="AUTO 编1 球3 卡1 药2")
+    bw, bh = 212, 250
+    box, bd = _panel_base(bw, bh, border=2, sides="tb")
+    txt_c(bd, "★ 远征胜利 ★", bw / 2, 8, F16, (0xff, 0xd9, 0x3d))
+    txt_c(bd, "远征森林 已肃清", bw / 2, 34, F16, (0xc9, 0xa2, 0x27))
+    rowsL = ["总击杀", "金币", "经验", "月光草", "兽骨", "药水"]
+    rowsR = ["8 只", "+640", "+420", "+3", "+2", "+1"]
+    y = 54
+    for l, r in zip(rowsL, rowsR):
+        txt_l(bd, l, 16, y, F16, (0xbb, 0xbb, 0xbb))
+        txt_r(bd, r, 196, y, F16, (0xcc, 0xff, 0xcc))
+        y += 16
+    y += 4
+    for ln in ["★ BOSS 战利品", "炎之心片", "魔晶+2 捕捉球+2 封印卡+1"]:
+        txt_c(bd, ln, bw / 2, y, F16, (0xff, 0xd9, 0x3d))
+        y += 16
+    txt_c(bd, "A 继续 · B 回城", bw / 2, 228, F16, (0xc9, 0xa2, 0x27))
+    im.paste(box, (14, 40), box)
+    return im
+
+
+def scene_loot(kind="chest"):
+    """宝箱/采集战利品（HTML lootShow / mage_fx_loot）：顶部小面板 box(28,54,W-56)，
+    高 26+n*16+8，标题 #ffe9b0、明细白、无底部提示。"""
+    im, d = battle_base()
+    draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
+    draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
+    draw_hud(d, wave="3/10", stat="手动 编1 球3 卡1 药2")
+    if kind == "chest":
+        title = "★ 宝箱战利品 ★"
+        lines = ["金币 +50", "药品·经验药水", "素材·月光草", "中级魔石 ×2", "捕捉球 ×2"]
+    else:
+        title = "★ 采集收获 ★"
+        lines = ["月光草 ×5", "魔晶 ×1", "素材·银矿石"]
+    n = len(lines)
+    bw, bh = W - 56, 26 + n * 16 + 8
+    box, bd = _panel_base(bw, bh, bg=(0x0e, 0x0a, 0x1e))
+    txt_c(bd, title, bw / 2, 6, F16, (0xff, 0xe9, 0xb0))
+    y = 26
+    for ln in lines:
+        txt_c(bd, ln, bw / 2, y, F16, (0xff, 0xff, 0xff))
+        y += 16
+    im.paste(box, (28, 54), box)
+    return im
+
+
 # ============ 汇总对照（2 列网格，逐格标注对应问题）============
 def overview(scenes_labels):
     pad = 6
@@ -304,6 +390,10 @@ def main():
     trap = scene_event("trap")
     town = scene_town(0)
     hud = scene_hud()
+    result = scene_result()
+    expo = scene_expo()
+    loot_chest = scene_loot("chest")
+    loot_herb = scene_loot("herb")
 
     paths = {
         "mage_battle_boss_240x320.png": boss,
@@ -311,6 +401,10 @@ def main():
         "mage_event_trap_240x320.png": trap,
         "mage_town_240x320.png": town,
         "mage_hud_240x320.png": hud,
+        "mage_result_240x320.png": result,
+        "mage_expo_240x320.png": expo,
+        "mage_loot_chest_240x320.png": loot_chest,
+        "mage_loot_herb_240x320.png": loot_herb,
     }
     for name, im in paths.items():
         p = os.path.join(OUT, name)
@@ -325,6 +419,10 @@ def main():
         (trap, "③ 事件面板·陷阱（问题①）"),
         (town, "④ 城镇界面·文字可见（问题④）"),
         (hud,  "⑤ 战斗·HUD 中文（问题⑤）"),
+        (result, "⑥ 每波结算·显示素材（bug⑥）"),
+        (expo,  "⑥ 远征汇总·BOSS 装备（bug⑥）"),
+        (loot_chest, "⑥ 宝箱战利品·具体物品（bug⑥）"),
+        (loot_herb, "⑥ 采集收获（bug⑥）"),
     ])
     op = os.path.join(OUT, "mage_fixes_overview_480x640.png")
     ov.save(op)
