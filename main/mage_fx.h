@@ -23,6 +23,10 @@ bool mage_fx_ready(void);
 /* 进入/离开战斗时显示或隐藏（离开必须隐藏，否则会盖在后续页面上持续重绘） */
 void mage_fx_show(bool on);
 
+/* 探索事件面板：show_kind = 0 宝箱 / 1 陷阱 / 2 泉水 / 3 药草；-1 隐藏
+ * 1:1 复刻 HTML drawEventPanel（金边面板 + 图形 + 名称 + "C 绕开"） */
+void mage_fx_event(int show_kind);
+
 /* 每帧推进时间轴（背景滚动、跳跃、粒子、突进、受击），dt 单位秒 */
 void mage_fx_tick(float dt);
 

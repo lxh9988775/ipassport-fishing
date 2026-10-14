@@ -1,14 +1,26 @@
 #!/usr/bin/env python3
-"""把 mage-game/assets/*.png 转成 ESP32-C3 可编译的 RGB565 + alpha C 数组。
+"""把 mage-game/assets/*.png 转成 ESP32-C3 可编译的 C 数组（LVGL v9 图片源）。
+
+【2026-10-14 修复用户问题②「人物怪物有黑色的底图」】
+旧版把透明像素按背景色 0x0d0b1a 预乘烘焙进 RGB565 —— 这是错误结论：
+LVGL v9.5 原生支持 LV_COLOR_FORMAT_RGB565A8（RGB565 色平面 + 独立 A8 透明度平面，
+16bit 色深下的标准真透明格式）。本版改用 RGB565A8 真透明，黑底从根上消除。
+
+数据布局（LVGL v9.5 lv_image_buf_get_alpha 的实现口径）：
+  RGB565 色平面：w*h*2 字节（小端，行主序，stride = w*2）
+  A8 透明度平面：紧跟其后 w*h 字节（行主序，无 stride）
+  header.cf = LV_COLOR_FORMAT_RGB565A8, header.stride = w*2, data_size = w*h*3
 
 策略（8MB Flash / 240x320 屏的现实约束）：
-  - 只转固件真正用到的贴图。
-  - 按「屏幕上实际显示尺寸的 2 倍」超采样降分辨率，再转 RGB565(2B) + alpha(1B)。
-  - PNG 原图 39MB -> 转换后约 0.5~0.9MB，能塞进 factory 分区。
+  - 全屏背景（title/town/battle_bg）不透明 → 纯 RGB565（省 1/3 内存）。
+  - 怪物/主角/伙伴立绘需要透明 → RGB565A8，尺寸 1:1（禁缩放铁律）。
+  - 怪物立绘由 tools/gen_mage_monsters.py 从 HTML 原版绘制函数 1:1 生成，
+    自动发现 mage-game/assets/sp_*.png（排除 *_k.png 旧素材与 sp_hero.png 旧头图）。
 
 输出：assets/mage_sprites.c + assets/mage_sprites.h
 """
 import os
+import glob
 import sys
 
 from PIL import Image
@@ -18,86 +30,56 @@ SRC = os.path.join(ROOT, "mage-game", "assets")
 OUT_C = os.path.join(ROOT, "assets", "mage_sprites.c")
 OUT_H = os.path.join(ROOT, "assets", "mage_sprites.h")
 
-# key -> (源文件, 显示宽度, 显示高度)  显示尺寸按 HTML 里 drawImage/drawSprite 的实际取值。
-# 8MB Flash 要同时装代码 + 1161 字中文子集字库 + 贴图，所以全屏大图按 1.0~1.25 倍、
-# 小立绘按 ~2 倍超采样即可（屏本身只有 240x320，再高纯浪费 Flash）。
-SPRITES = {
-    # 全屏背景：尺寸必须与屏幕 1:1（240x320），否则 LVGL 会走缩放变换、
-    # 需要额外的全屏 draw buffer，而 LV_MEM 只有几十 KB，必然分配失败 → Load access fault。
-    "title": ("title_art.png", 240, 320),
-    "town":  ("town_art.png", 240, 320),
-    "battle_bg": ("battle_bg_k.png", 240, 320),  # HTML: 整屏铺满 WxH（cover 裁切，非拉伸）
-    # 战斗立绘：严格按 HTML 原版 drawSprite 的实际显示高度 1:1 生成
-    # （HTML: drawSprite('spHero',...,46,...) / spCat=26 / bd.h: goblin=40, slime=24, cat=32）
-    # 这不是缩放降级，而是原版就该这么小 —— 之前误用原图全高导致主角 oversized 一倍。
-    "sp_hero":   ("sp_hero_k.png",  36, 46),   # 原图 84x108 -> 原版 h=46
-    "sp_goblin": ("sp_goblin_k.png", 30, 40),  # 原图 60x80  -> ENEMY.goblin.h=40
-    "sp_slime":  ("sp_slime_k.png",  48, 24),  # 原图 84x54  -> ENEMY.slime.h=24
-    "sp_cat":    ("sp_cat_k.png",   29, 32),   # 原图 84x76  -> ENEMY.cat.h=32
-    # 图标/头像（HTML: 32~76px），一律取偶数宽高
-    "hero_icon": ("hero.png", 80, 80),
-    "cat_icon":  ("catspirit.png", 56, 56),
+# ---- 不透明全屏背景：纯 RGB565，尺寸必须与屏幕 1:1 ----
+OPAQUE = {
+    "title":     ("title_art.png", 240, 320),
+    "town":      ("town_art.png", 240, 320),
+    "battle_bg": ("battle_bg_k.png", 240, 320),
+}
+
+# ---- 固定透明立绘（主角 / 伙伴猫），显示尺寸与旧版一致（用户已认可） ----
+FIXED_ALPHA = {
+    "sp_hero": ("sp_hero_k.png", 36, 46),
+    "cat_partner": ("sp_cat_k.png", 29, 32),
+}
+
+# ---- 图标（面板头像，不透明） ----
+ICONS = {
+    "hero_icon":   ("hero.png", 80, 80),
+    "cat_icon":    ("catspirit.png", 56, 56),
     "goblin_icon": ("goblin.png", 56, 56),
 }
 
-# 背景色：与 main/mage.c 的 C_BG (0x0d0b1a) 严格一致。
-# 素材按 HTML 的 canvas 底色 #15102a 抠图，两者同为深紫黑，预乘后视觉一致。
-BG_R, BG_G, BG_B = 0x0d, 0x0b, 0x1a
+# 自动发现怪物立绘：sp_*.png，排除 *_k.png（旧预乘素材）、sp_hero.png（旧头图）、接触表
+def discover_monsters():
+    out = []
+    for p in sorted(glob.glob(os.path.join(SRC, "sp_*.png"))):
+        base = os.path.basename(p)
+        if base.endswith("_k.png") or base == "sp_hero.png":
+            continue
+        key = base[:-4]  # 去掉 .png
+        out.append((key, base))
+    return out
 
-# 低于这个 alpha 视为全透明，写背景色即可（省字节 + 省绘制时间）
-ALPHA_CUT = 12
 
-
-def to_rgb565(img: Image.Image) -> Image.Image:
-    return img.convert("RGB")
-
-
-def emit(name: str, src_name: str, tw: int, th: int) -> dict:
-    path = os.path.join(SRC, src_name)
-    if not os.path.exists(path):
-        print(f"  !! 缺少素材 {src_name}，跳过 {name}")
-        return None
-
+def load_rgba(path, tw, th, cover_crop=False):
+    """读 PNG -> (rgb像素列表, alpha列表)，缩放到 tw x th。"""
     im = Image.open(path)
-    has_alpha = im.mode in ("RGBA", "LA") or "transparency" in im.info
-    if has_alpha:
-        im = im.convert("RGBA")
-        alpha = im.getchannel("A")
-        rgb = im.convert("RGB")
-    else:
-        rgb = im.convert("RGB")
-        alpha = Image.new("L", rgb.size, 255)
-
-    # 按显示尺寸降采样（LANCZOS 保持边缘干净）
-    # 全屏背景走 cover 裁切（复刻 HTML drawImage 的「源裁剪窗口 + 目标铺满」），
-    # 而不是直接拉伸变形 —— 这也是 drawBattle 背景只取中间竖窗的原因。
-    if name == "battle_bg":
-        # HTML drawBattle: sw_ = round(bg.height*(W/H)); range = bg.width-sw_;
-        #                sx = (cam*0.14 + t*3) % range;  drawImage(bg,sx,0,sw_,bg.height,0,0,W,H)
-        # 即：源图取一个「高宽比 = 屏幕高宽比」的竖窗，整高压到屏幕全高。
-        # 这里固定取 range 中点（视差起点），运行时 1:1 直接铺满，不做缩放。
-        sw_, sh_ = rgb.size
+    if im.mode not in ("RGBA", "LA") and "transparency" not in im.info:
+        im = im.convert("RGB").convert("RGBA")
+    im = im.convert("RGBA")
+    if cover_crop:
+        sw_, sh_ = im.size
         win = int(round(sh_ * (tw / th)))
         if win > sw_:
             win = sw_
         left = (sw_ - win) // 2
-        rgb = rgb.crop((left, 0, left + win, sh_)).resize((tw, th), Image.LANCZOS)
-        if alpha.size != rgb.size:
-            alpha = alpha.resize((sw_, sh_), Image.LANCZOS).crop((left, 0, left + win, sh_)).resize((tw, th), Image.LANCZOS)
+        im = im.crop((left, 0, left + win, sh_)).resize((tw, th), Image.LANCZOS)
     else:
-        rgb = rgb.resize((tw, th), Image.LANCZOS)
-        alpha = alpha.resize((tw, th), Image.LANCZOS)
-
-    px = list(rgb.getdata())
-    al = list(alpha.getdata())
-
-    return {
-        "name": name,
-        "w": tw,
-        "h": th,
-        "rgb": px,
-        "alpha": al,
-    }
+        if im.size != (tw, th):
+            im = im.resize((tw, th), Image.LANCZOS)
+    px = list(im.getdata())  # (r,g,b,a) 元组
+    return px
 
 
 def c_array_of(vals, per_line=16):
@@ -108,61 +90,89 @@ def c_array_of(vals, per_line=16):
     return "\n".join(out)
 
 
+def emit(parts, index, name, pixels, tw, th, fmt):
+    """fmt: 'rgb565' 不透明 / 'rgb565a8' 真透明"""
+    total_bytes = 0
+    if fmt == "rgb565":
+        byte_vals = []
+        for (r, g, b, a) in pixels:
+            v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+            byte_vals.append(v & 0xFF)
+            byte_vals.append((v >> 8) & 0xFF)
+        cf = "LV_COLOR_FORMAT_RGB565"
+        data_size = tw * th * 2
+    else:
+        # RGB565 色平面（不预乘！保留原始色）+ A8 平面
+        byte_vals = []
+        alpha_vals = []
+        for (r, g, b, a) in pixels:
+            v = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
+            byte_vals.append(v & 0xFF)
+            byte_vals.append((v >> 8) & 0xFF)
+            alpha_vals.append(a & 0xFF)
+        byte_vals.extend(alpha_vals)
+        cf = "LV_COLOR_FORMAT_RGB565A8"
+        data_size = tw * th * 3
+
+    sym = name
+    parts.append(f"/* ---- {sym}  {tw}x{th}  {fmt} ---- */")
+    parts.append(f"static const uint8_t {sym}_map[{data_size}] = {{")
+    parts.append(c_array_of(byte_vals, per_line=16))
+    parts.append("};")
+    parts.append("")
+    parts.append(f"const lv_image_dsc_t {sym}_dsc = {{")
+    parts.append("    .header.magic = LV_IMAGE_HEADER_MAGIC,")
+    parts.append(f"    .header.cf = {cf},")
+    parts.append(f"    .header.w = {tw},")
+    parts.append(f"    .header.h = {th},")
+    parts.append(f"    .header.stride = {tw * 2},")
+    parts.append(f"    .data_size = sizeof({sym}_map),")
+    parts.append(f"    .data = {sym}_map,")
+    parts.append("};")
+    parts.append("")
+    index.append((sym, tw, th))
+    total_bytes = data_size
+    return total_bytes
+
+
 def main():
     parts = []
     parts.append("/* 本文件由 tools/gen_mage_sprites.py 自动生成，请勿手改。")
-    parts.append(" * 源素材：mage-game/assets 目录下的 PNG（与 HTML 原版 1:1 同一批图，不新增不重绘）")
-    parts.append(" * 格式：LV_COLOR_FORMAT_RGB565 小端色。")
-    parts.append(" * 透明处理：alpha 已按背景色 0x0d0b1a 预乘烘焙进 RGB —— 本工程 LVGL 为 16 色深，")
-    parts.append(" *   逐像素 alpha 不可用，预乘是视觉无损的稳妥做法。")
+    parts.append(" * 源素材：mage-game/assets（怪物立绘由 gen_mage_monsters.py 从 HTML 原版")
+    parts.append(" *   绘制函数 1:1 生成，其余与 HTML 原版同批图，不新增不重绘）。")
+    parts.append(" * 格式：不透明 = LV_COLOR_FORMAT_RGB565；需透明 = LV_COLOR_FORMAT_RGB565A8")
+    parts.append(" *   （RGB565 色平面 + 独立 A8 透明度平面，LVGL v9.5 原生支持，真透明无黑底）。")
     parts.append(" */")
     parts.append('#include "mage_sprites.h"')
     parts.append("")
 
     index = []
     total = 0
-    for name, (src_name, tw, th) in SPRITES.items():
-        print(f"处理 {name} <- {src_name} ({tw}x{th})")
-        s = emit(name, src_name, tw, th)
-        if s is None:
-            continue
 
-        # 预乘：out = src*a + bg*(1-a)，再用 RGB565 量化
-        out = []
-        for (r, g, b), a in zip(s["rgb"], s["alpha"]):
-            if a < ALPHA_CUT:
-                r2, g2, b2 = BG_R, BG_G, BG_B
-            else:
-                r2 = (r * a + BG_R * (255 - a)) // 255
-                g2 = (g * a + BG_G * (255 - a)) // 255
-                b2 = (b * a + BG_B * (255 - a)) // 255
-            out.append(((r2 & 0xF8) << 8) | ((g2 & 0xFC) << 3) | (b2 >> 3))
+    for name, (src_name, tw, th) in OPAQUE.items():
+        print(f"背景 {name} <- {src_name} ({tw}x{th}) rgb565")
+        px = load_rgba(os.path.join(SRC, src_name), tw, th, cover_crop=(name == "battle_bg"))
+        total += emit(parts, index, name, px, tw, th, "rgb565")
 
-        sym = s["name"]
-        parts.append(f"/* ---- {sym}  {tw}x{th} ---- */")
-        # 按字节数组输出：与 assets/sprites/bg_sprites.c 里已验证可用的写法完全一致
-        parts.append(f"static const uint8_t {sym}_map[{tw * th * 2}] = {{")
-        byte_vals = []
-        for v in out:
-            byte_vals.append(v & 0xFF)
-            byte_vals.append((v >> 8) & 0xFF)
-        parts.append(c_array_of(byte_vals, per_line=16))
-        parts.append("};")
-        parts.append("")
-        parts.append(f"const lv_image_dsc_t {sym}_dsc = {{")
-        parts.append("    .header.magic = LV_IMAGE_HEADER_MAGIC,")
-        parts.append("    .header.cf = LV_COLOR_FORMAT_RGB565,")
-        parts.append(f"    .header.w = {tw},")
-        parts.append(f"    .header.h = {th},")
-        parts.append(f"    .header.stride = {tw * 2},")
-        parts.append(f"    .data_size = sizeof({sym}_map),")
-        parts.append(f"    .data = {sym}_map,")
-        parts.append("};")
-        parts.append("")
+    for name, (src_name, tw, th) in FIXED_ALPHA.items():
+        print(f"立绘 {name} <- {src_name} ({tw}x{th}) rgb565a8")
+        px = load_rgba(os.path.join(SRC, src_name), tw, th)
+        total += emit(parts, index, name, px, tw, th, "rgb565a8")
 
-        index.append((sym, tw, th))
-        total += tw * th * 2
-        print(f"  -> {tw}x{th}, 约 {tw * th * 2 / 1024:.0f}KB")
+    for name, (src_name, tw, th) in ICONS.items():
+        print(f"图标 {name} <- {src_name} ({tw}x{th}) rgb565")
+        px = load_rgba(os.path.join(SRC, src_name), tw, th)
+        total += emit(parts, index, name, px, tw, th, "rgb565")
+
+    n_mon = 0
+    for key, base in discover_monsters():
+        path = os.path.join(SRC, base)
+        im = Image.open(path)
+        tw, th = im.size
+        print(f"怪物 {key} <- {base} ({tw}x{th}) rgb565a8")
+        px = load_rgba(path, tw, th)
+        total += emit(parts, index, key, px, tw, th, "rgb565a8")
+        n_mon += 1
 
     parts.append("const mage_sprite_t mage_sprites[] = {")
     for sym, w, h in index:
@@ -204,9 +214,11 @@ extern const int mage_sprite_count;
 #endif
 """)
 
-    print(f"\n共 {len(index)} 张贴图，原始像素数据约 {total / 1024:.0f}KB")
+    print(f"\n共 {len(index)} 张贴图（其中怪物+BOSS {n_mon} 张），"
+          f"像素数据约 {total / 1024:.0f}KB")
     print(f"输出：{OUT_C}")
     print(f"输出：{OUT_H}")
+    return 0
 
 
 if __name__ == "__main__":

@@ -28,6 +28,8 @@ SRC_FILES = [
     os.path.join(ROOT, "main", "mage_state.c"),
     os.path.join(ROOT, "main", "mage_data.c"),
     os.path.join(ROOT, "main", "mage_draw.c"),
+    os.path.join(ROOT, "main", "mage_hud.c"),
+    os.path.join(ROOT, "main", "mage_fx.c"),
 ]
 CONV = r"C:/Users/8605464/.workbuddy/binaries/node/workspace/node_modules/lv_font_conv/lv_font_conv.js"
 

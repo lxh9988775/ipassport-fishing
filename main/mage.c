@@ -462,6 +462,10 @@ static void refresh_ui(void) {
             } else {
                 lv_obj_clean(g_scene_art);
             }
+            /* 重建后必须沉到最底：g_scene_art 是新创建的子对象，会浮到
+             * g_scene_grp 最上层，盖住 g_scene_title/body/hint 文字 ->
+             * 「回城文字消失」（问题④）。沉底后文字压在城镇主视觉之上。 */
+            lv_obj_move_to_index(g_scene_art, 0);
             g_city_art = lv_obj_create(g_scene_art);
             lv_obj_remove_style_all(g_city_art);
             lv_obj_set_size(g_city_art, SCR_W, SCR_H);
@@ -2067,6 +2071,10 @@ static void battle_render(void) {
         set_hidden(g_toast, true);
     }
     lv_label_set_text(g_scene_hint, "");
+
+    /* 探索事件面板（宝箱/陷阱/泉水/药草）：仅 BP_EVENT 阶段显示，其余隐藏。
+     * 1:1 复刻 HTML drawEventPanel（修「陷阱/宝箱环节未展示」问题①）。 */
+    mage_fx_event(bt.phase == BP_EVENT ? bt.eventKind : -1);
 }
 
 static void battle_handle(int act) {

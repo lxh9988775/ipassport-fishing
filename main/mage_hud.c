@@ -17,6 +17,12 @@
 #include <stdio.h>
 #include <stdint.h>
 
+/* 中文子集字库（与 mage.c 共用 assets/fonts/mage_cjk_16.c） */
+LV_FONT_DECLARE(mage_cjk_16);
+static void use_cjk(lv_obj_t *o) {
+    lv_obj_set_style_text_font(o, &mage_cjk_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
 #define SCR_W 240
 #define SCR_H 320
 #define HUD_H 26        /* HTML: box(0,0,W,26) */
@@ -79,6 +85,7 @@ static lv_obj_t *mk_bar(lv_obj_t *p, int x, int y, int w, int h, uint32_t col)
 static lv_obj_t *mk_tx(lv_obj_t *p, const char *t, int x, int y, int w, uint32_t col, int fontSize)
 {
     lv_obj_t *o = lv_label_create(p);
+    use_cjk(o);
     lv_obj_set_style_text_color(o, lv_color_hex(col), 0);
     lv_obj_set_width(o, w);
     lv_obj_set_style_text_align(o, LV_TEXT_ALIGN_LEFT, 0);
@@ -259,7 +266,7 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
     /* 波次：HTML wlabel */
     if (crawl) snprintf(want, sizeof(want), "试炼 %d/%d", wave, waveMax);
     else       snprintf(want, sizeof(want), "%d/%d%s", wave, waveMax,
-                        wave == 10 ? " \xe2\x98\xa0BOSS" : (wave == 5 ? " \xe2\x9a\x94\xe7\xb2\xbe\xe8\x8b\xb1" : ""));
+                        wave == 10 ? " BOSS" : (wave == 5 ? " 精英" : ""));
     if (strcmp(H.waveTxt, want) != 0) {
         hud_keep(H.waveTxt, sizeof(H.waveTxt), want);
         lv_label_set_text(H.waveTx, want);
@@ -267,8 +274,8 @@ void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
 
     /* 状态行：HTML txt((auto?'AUTO':'手动')+...+' 编'+n+' 球'+..)
      * 放在顶部面板第二行右侧（y=13），字号小一点避免与波次行撞在一起 */
-    snprintf(want, sizeof(want), "%s \xe7\xbc\x96%d \xe7\x90\x83%d \xe5\x8d\xa1%d \xe8\x8d\xaf%d",
-             autoMode ? "AUTO" : "\xe6\x89\x8b\xe5\x8a\xa8", loadout, orbs, seals, potions);
+    snprintf(want, sizeof(want), "%s 编%d 球%d 卡%d 药%d",
+             autoMode ? "AUTO" : "手动", loadout, orbs, seals, potions);
     (void)autoCap;
     if (strcmp(H.statTxt, want) != 0) {
         hud_keep(H.statTxt, sizeof(H.statTxt), want);

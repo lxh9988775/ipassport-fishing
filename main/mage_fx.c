@@ -24,6 +24,12 @@
 #include <stdint.h>
 #include <string.h>
 
+/* 中文子集字库（与 mage.c 共用 assets/fonts/mage_cjk_16.c） */
+LV_FONT_DECLARE(mage_cjk_16);
+static void use_cjk(lv_obj_t *o) {
+    lv_obj_set_style_text_font(o, &mage_cjk_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
 #define SCR_W 240
 #define SCR_H 320
 
@@ -65,6 +71,12 @@ typedef struct {
     lv_obj_t *num[8];          /* 伤害飘字（HTML bt.nums） */
     int heroHurt;           /* 主角受击闪白状态翻转标记（防每帧设样式导致卡死） */
     lv_obj_t *warn;            /* BOSS 蓄力警告文字 */
+    /* 探索事件面板（宝箱/陷阱/泉水/药草）：1:1 复刻 HTML drawEventPanel */
+    lv_obj_t *evtRoot;        /* 面板根容器（默认隐藏） */
+    lv_obj_t *evtBox;         /* 金边面板底 */
+    lv_obj_t *evtIcon;        /* 事件图形 */
+    lv_obj_t *evtName, *evtDesc, *evtHint;
+    int8_t evtShown;          /* -1=隐藏；0..3=当前事件种类（防每帧重复设文字） */
     bool built;
 } FxLayer;
 
@@ -198,17 +210,17 @@ static void fx_build(void)
     }
 
     /* 敌方立绘槽位：构建期一次建好 3 个（绝不周期刷新里建对象）。
-     * 每槽默认挂 sp_goblin，进入战斗时按怪种切 src。 */
+     * 签名约定：render 侧 sig = typeIdx*2 + boss + 1（恒 >= 1），
+     * 故占位 user_data 必须为 0 —— 若占位用 i+1 会与真 sig 撞车：
+     * 槽0 占位 1 == 哥布林 sig 1 -> 首次渲染跳过 set_src，
+     * 残留构建期 set_size 的 30x40 拉伸尺寸；槽1 占位 2 == 哥布林BOSS sig 2
+     * -> BOSS 一直显示占位的史莱姆图。 */
     {
-        static const char *spr0[FOE_MAX] = {"sp_goblin", "sp_slime", "sp_cat"};
-        static const int   sw0[FOE_MAX]  = {30, 48, 29};
-        static const int   sh0[FOE_MAX]  = {40, 24, 32};
         for (int i = 0; i < FOE_MAX; i++) {
             lv_obj_t *o = lv_image_create(g_fx_parent);
-            lv_image_set_src(o, mage_img(spr0[i]));
-            lv_obj_set_size(o, sw0[i], sh0[i]);
+            lv_image_set_src(o, mage_img("sp_goblin"));   /* 占位图，首帧按签名切换 */
             lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_set_user_data(o, (void *)(intptr_t)(i + 1));
+            lv_obj_set_user_data(o, (void *)(intptr_t)0);  /* 0 = 未初始化 */
             F.foe[i] = o;
         }
     }
@@ -219,7 +231,7 @@ static void fx_build(void)
     F.cat = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.cat);
     lv_obj_set_size(F.cat, 29, 32);
-    mage_draw_bg(F.cat, "sp_cat", 0, 0, 29, 32);
+    mage_draw_bg(F.cat, "cat_partner", 0, 0, 29, 32);
 
     F.heroShadow = mk_dot(g_fx_parent, 14, 0x000000, 7);
     lv_obj_set_style_bg_opa(F.heroShadow, LV_OPA_50, 0);
@@ -270,11 +282,61 @@ static void fx_build(void)
 
     /* BOSS 蓄力警告 */
     F.warn = lv_label_create(g_fx_parent);
+    use_cjk(F.warn);
     lv_obj_set_style_text_color(F.warn, lv_color_hex(FX_RED), 0);
     lv_obj_set_style_text_align(F.warn, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(F.warn, SCR_W);
     lv_label_set_text(F.warn, "蓄力大招!");
     lv_obj_add_flag(F.warn, LV_OBJ_FLAG_HIDDEN);
+
+    /* ---- 探索事件面板：1:1 复刻 HTML drawEventPanel ----
+     * box(20,120,W-40,110) 金边 + 事件图形 + 名称 + 描述 + "C 绕开"。
+     * 挂在 fx 层之上（后建，z 最上），非事件阶段隐藏。 */
+    F.evtShown = -1;
+    F.evtRoot = lv_obj_create(g_fx_parent);
+    lv_obj_remove_style_all(F.evtRoot);
+    lv_obj_set_size(F.evtRoot, SCR_W, SCR_H);
+    lv_obj_set_pos(F.evtRoot, 0, 0);
+    lv_obj_set_style_bg_opa(F.evtRoot, LV_OPA_TRANSP, 0);
+    lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+
+    F.evtBox = lv_obj_create(F.evtRoot);
+    lv_obj_remove_style_all(F.evtBox);
+    lv_obj_set_size(F.evtBox, SCR_W - 40, 110);
+    lv_obj_set_pos(F.evtBox, 20, 120);
+    lv_obj_set_style_bg_color(F.evtBox, lv_color_hex(0x0c091a), 0);
+    lv_obj_set_style_bg_opa(F.evtBox, LV_OPA_95, 0);
+    lv_obj_set_style_border_width(F.evtBox, 1, 0);
+    lv_obj_set_style_border_color(F.evtBox, lv_color_hex(0xffd93d), 0);
+    lv_obj_remove_flag(F.evtBox, LV_OBJ_FLAG_SCROLLABLE);
+
+    F.evtIcon = lv_image_create(F.evtBox);
+    lv_obj_set_pos(F.evtIcon, (SCR_W - 40) / 2 - 28, 6);   /* 56x56 图标，水平居中 */
+
+    F.evtName = lv_label_create(F.evtBox);
+    use_cjk(F.evtName);
+    lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffffff), 0);
+    lv_obj_set_style_text_align(F.evtName, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(F.evtName, SCR_W - 40);
+    lv_label_set_text(F.evtName, "");
+    lv_obj_set_pos(F.evtName, 0, 64);
+
+    F.evtDesc = lv_label_create(F.evtBox);
+    use_cjk(F.evtDesc);
+    lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xffd93d), 0);
+    lv_obj_set_style_text_align(F.evtDesc, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(F.evtDesc, SCR_W - 40);
+    lv_label_set_text(F.evtDesc, "");
+    lv_obj_set_pos(F.evtDesc, 0, 82);
+
+    F.evtHint = lv_label_create(F.evtBox);
+    use_cjk(F.evtHint);
+    lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0x9a93b5), 0);
+    lv_obj_set_style_text_align(F.evtHint, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_width(F.evtHint, SCR_W - 40);
+    lv_label_set_text(F.evtHint, "C 绕开");
+    lv_obj_set_pos(F.evtHint, 0, 98);
 
     F.built = true;
     ESP_LOGI(TAG, "战斗演出层就绪");
@@ -419,10 +481,10 @@ void mage_fx_render(void)
         lv_obj_set_pos(F.dust[i], bx + (int)(sinf(t + (float)bx) * 6.0f), (int)dy + 60);
     }
 
-    /* ---- 敌方立绘 ---- */
-    const char *spr[FOE_MAX] = {"sp_goblin", "sp_slime", "sp_cat"};
-    const int   sprH[FOE_MAX] = {40, 24, 32};   /* HTML ENEMY.h: goblin40/slime24/cat32 */
-    const int   sprW[FOE_MAX] = {30, 48, 29};
+    /* ---- 敌方立绘：1:1 复刻 HTML —— 每个怪有独立立绘，BOSS 用 2.1x 放大版 ----
+     * 旧代码只认 goblin/slime/cat 三种，其余全回落 goblin -> 「BOSS/多数怪立绘不对」（问题③）。
+     * 现按 ENEMY[e->typeIdx].type 查 sp_<type>（BOSS 用 sp_<type>_boss），全部 50 种 + 5 BOSS
+     * 已用 RGB565A8 真透明烘进 mage_sprites.c（黑底问题②根上消除）。 */
     int drawn = 0;
 
     for (int i = 0; i < bt.enemyCount && drawn < FOE_MAX; i++) {
@@ -435,49 +497,66 @@ void mage_fx_render(void)
                 lv_obj_add_flag(F.foeShadow[drawn], LV_OBJ_FLAG_HIDDEN);
             continue;
         }
-        const int k = (e->typeIdx >= 0 && e->typeIdx <= 2) ? e->typeIdx : 0;
-
         /* 槽位在 fx_build 里已全部建好，这里只在换怪种时切 src（不新建对象） */
         if (!slot) {
+            drawn++;
             continue;   /* 理论上不会发生，槽位已在构建期创建 */
         }
-        if (lv_obj_get_user_data(slot) != (void *)(intptr_t)(k + 1)) {
-            /* 换怪种：只切贴图源，绝不新建对象（防闪屏 + 防内存抖动） */
-            lv_image_set_src(slot, mage_img(spr[k]));
-            lv_obj_set_user_data(slot, (void *)(intptr_t)(k + 1));
+
+        /* 选立绘名：常态 sp_<type>，BOSS sp_<type>_boss */
+        const char *tname = ENEMY[e->typeIdx].type;
+        char sprname[40];
+        if (e->boss) {
+            snprintf(sprname, sizeof(sprname), "sp_%s_boss", tname);
+        } else {
+            snprintf(sprname, sizeof(sprname), "sp_%s", tname);
+        }
+        const lv_image_dsc_t *dsc = mage_img(sprname);
+        if (!dsc) {                       /* 兜底：查不到就用 sp_goblin */
+            dsc = mage_img("sp_goblin");
+            snprintf(sprname, sizeof(sprname), "sp_goblin");
+        }
+        if (!dsc) {                      /* 连 goblin 都没有就跳过本槽 */
+            if (!lv_obj_has_flag(slot, LV_OBJ_FLAG_HIDDEN))
+                lv_obj_add_flag(slot, LV_OBJ_FLAG_HIDDEN);
+            drawn++;
+            continue;
+        }
+        const int sw = (int)dsc->header.w;
+        const int sh = (int)dsc->header.h;
+
+        /* 换怪种：只在签名变化时切 src（REAL 尺寸模式自动按图片自然尺寸，
+         * 无需手动 set_size，且绝不做缩放 -> 符合 ESP32-C3 禁缩放铁律） */
+        intptr_t sig = (intptr_t)(e->typeIdx * 2 + (e->boss ? 1 : 0) + 1);
+        if (lv_obj_get_user_data(slot) != (void *)sig) {
+            lv_image_set_src(slot, dsc);
+            lv_obj_set_user_data(slot, (void *)sig);
         }
         lv_obj_remove_flag(slot, LV_OBJ_FLAG_HIDDEN);
 
         /* --- HTML 参数 1:1 --- */
         const int  fly   = ENEMY[e->typeIdx].fly;
-        const bool isSlime = (strcmp(ENEMY[e->typeIdx].type, "slime") == 0);
+        const bool isSlime = (strcmp(tname, "slime") == 0);
 
         /* 冲锋位移：sx -= sin(lp*PI)*dash */
         float sx = (float)(e->x - 70);      /* BTPX=70，减 cam 得屏幕位置 */
         sx -= (float)(int)bt.cam;
-        float lungeTilt = 0.0f;
         if (e->lungeT > 0.0f && e->lungeDur > 0.0f) {
             float lp = fclampf(1.0f - e->lungeT / e->lungeDur, 0.0f, 1.0f);
             float dash = (float)(e->x - 70 - 16);
             if (dash < 0.0f) dash = 0.0f;
             sx -= sinf(lp * 3.14159f) * dash;
-            lungeTilt = -0.12f * sinf(lp * 3.14159f);
         }
 
-        /* 跳跃 + 落地压扁 */
+        /* 跳跃 + 落地压扁（用 hopY 位移体现弹跳，不缩放） */
         float hopPh = fabsf(sinf(t * (isSlime ? 4.2f : 5.2f) + e->bob));
         float hopY  = fly ? sinf(t * 2.6f + e->bob) * 4.0f
                           : -(isSlime ? 5.0f : 3.5f) * hopPh;
-        /* 1:1 免缩放铁律：压扁用 transform_pivot_y 的 scale，不改 w/h */
-        float sq    = fly ? 1.0f : 1.0f + (isSlime ? 0.14f : 0.06f) * (1.0f - hopPh);
-        (void)sq; (void)isSlime;
-        /* 压扁不用 transform（会打满单核致发烫），改由 hopY 位移体现弹跳 */
-        float eTilt = 0.0f;
-        (void)eTilt; (void)lungeTilt;
 
-        const int hPix = sprH[k];
-        lv_obj_set_pos(slot, (int)sx + shakeX - hPix / 2,
-                       (int)(GROUND_Y + hopY) - hPix);
+        /* 脚底锚点定位：REAL 尺寸模式下对象尺寸 = 图片自然尺寸，
+         * 故用 sh 作脚底到顶部高度、sw/2 作水平半宽。 */
+        lv_obj_set_pos(slot, (int)sx + shakeX - sw / 2,
+                       (int)(GROUND_Y + hopY) - sh);
         /* 压扁改用「不缩放但整体上抬」近似：hopY 越低代表压得越扁，
          * 视觉上保留弹跳感，且零变换开销。 */
         /* 受击闪白：仅在状态翻转的那一帧设置，避免每帧无效重绘 */
@@ -488,7 +567,7 @@ void mage_fx_render(void)
             }
         } else if (lv_obj_get_user_data(slot) == (void *)(intptr_t)0xBEEF) {
             lv_obj_set_style_img_opa(slot, LV_OPA_COVER, 0);
-            lv_obj_set_user_data(slot, (void *)(intptr_t)(k + 1));
+            lv_obj_set_user_data(slot, (void *)sig);
         }
 
         /* 影子 */
@@ -695,6 +774,38 @@ void mage_fx_show(bool on)
     } else {
         lv_obj_add_flag(g_fx_parent, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+/* 探索事件面板：show_kind = 0 宝箱 / 1 陷阱 / 2 泉水 / 3 药草；-1 隐藏。
+ * 1:1 复刻 HTML drawEventPanel（金边面板 + 事件图形 + 名称 + "C 绕开"）。 */
+void mage_fx_event(int show_kind)
+{
+    if (!F.built || !g_fx_parent) return;
+    if (show_kind < 0) {
+        if (!lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+            lv_obj_add_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+        F.evtShown = -1;
+        return;
+    }
+    static const char *icon[4] = {
+        "sp_event_chest", "sp_event_trap", "sp_event_spring", "sp_event_herb"
+    };
+    static const char *nm[4] = {
+        "闪闪发光的宝箱", "草丛下的陷阱！", "清澈的泉水", "一丛稀有药草"
+    };
+    static const char *ds[4] = {
+        "A 打开宝箱", "A 小心通过", "A 饮水休息", "A 采集"
+    };
+    int k = show_kind % 4;
+    if (F.evtShown != (int8_t)k) {
+        const lv_image_dsc_t *d = mage_img(icon[k]);
+        if (d) lv_image_set_src(F.evtIcon, d);
+        lv_label_set_text(F.evtName, nm[k]);
+        lv_label_set_text(F.evtDesc, ds[k]);
+        F.evtShown = (int8_t)k;
+    }
+    if (lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
 }
 
 bool mage_fx_ready(void)
