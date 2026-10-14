@@ -33,6 +33,17 @@
 
 static const char *TAG = "mage";
 
+/* ===================== 战斗相位枚举（供全部场景/演出函数引用，必须置于文件首位） ===================== */
+#define BP_MENU 0
+#define BP_MAGIC 1
+#define BP_ITEM  2
+#define BP_ENEMY 3
+#define BP_RESULT 4
+#define BP_EVENT 5
+#define BP_FAINT 6
+#define BP_LOOT 7
+#define BTPX 70
+
 /* ===================== 字体 ===================== */
 LV_FONT_DECLARE(mage_cjk_16);
 static void use_cjk(lv_obj_t *o) {
@@ -1347,15 +1358,6 @@ void mage_on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
 }
 
 /* ===================== 战斗引擎（M3，1:1 复刻 HTML 战斗逻辑） ===================== */
-#define BP_MENU 0
-#define BP_MAGIC 1
-#define BP_ITEM  2
-#define BP_ENEMY 3
-#define BP_RESULT 4
-#define BP_EVENT 5
-#define BP_FAINT 6
-#define BP_LOOT 7
-#define BTPX 70
 
 static float fclamp(float v, float a, float b) { return v < a ? a : (v > b ? b : v); }
 
