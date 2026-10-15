@@ -150,20 +150,27 @@ def draw_hud(d, wave="1/10", stat="AUTO·3·1·2", turn="回合 1",
 
 
 # ============ 底部三张动作卡 + 回合徽标（与 mage_hud.c 1:1）============
-def draw_cards(d, turn="回合 1"):
-    cards = [("A", "攻击", (0xff, 0xb7, 0x4d), (0xff, 0x8a, 0x3d)),
-             ("B", "魔法", (0x7c, 0xd4, 0xff), (0x5a, 0x8a, 0xff)),
-             ("C", "道具", (0x8f, 0xe8, 0x9a), (0x3d, 0xbd, 0x7a))]
-    for i, (key, name, c0, c1) in enumerate(cards):
+# 用户问题⑨：每个功能配对应图标，取代原 A/B/C 字母徽章。
+CARD_ICON = ["sp_icon_sword.png", "sp_icon_staff.png", "sp_icon_potion.png"]
+CARD_NAME = ["攻击", "魔法", "道具"]
+CARD_C0   = [(0xff, 0xb7, 0x4d), (0x7c, 0xd4, 0xff), (0x8f, 0xe8, 0x9a)]
+CARD_C1   = [(0xff, 0x8a, 0x3d), (0x5a, 0x8a, 0xff), (0x3d, 0xbd, 0x7a)]
+
+
+def draw_cards(im, d, turn="回合 1"):
+    for i in range(3):
         x = 8 + i * 78
         d.rectangle([x, CARD_Y, x + CARD_W, CARD_Y + CARD_H], fill=(0x24, 0x1d, 0x4a),
                     outline=(0x8a, 0x6a, 0x2a))
-        d.rectangle([x + 2, CARD_Y + 3, x + 5, CARD_Y + 37], fill=c1)
-        d.rectangle([x + 2, CARD_Y + 3, x + 5, CARD_Y + 8], fill=c0)
-        d.ellipse([x + 7, CARD_Y + 4, x + 22, CARD_Y + 19], fill=(0x1a, 0x14, 0x30),
-                  outline=(0xc9, 0xa4, 0x4a))
-        txt_c(d, key, x + 14, CARD_Y + 6, F9, (0xff, 0xd9, 0x3d))
-        txt_c(d, name, x + 38, CARD_Y + 18, F12, (0xff, 0xff, 0xff))
+        d.rectangle([x + 2, CARD_Y + 3, x + 5, CARD_Y + 37], fill=CARD_C1[i])
+        d.rectangle([x + 2, CARD_Y + 3, x + 5, CARD_Y + 8], fill=CARD_C0[i])
+        # 功能图标 24x24 居中靠上（对齐 mage_hud.c：align TOP_MID, +2）
+        s = load_png(CARD_ICON[i])
+        if s is not None:
+            s = s.resize((24, 24), Image.LANCZOS)
+            im.paste(s, (x + CARD_W // 2 - 12, CARD_Y + 2), s)
+        # 图标下方功能名（12px 居中）
+        txt_c(d, CARD_NAME[i], x + CARD_W // 2, CARD_Y + 28, F12, (0xff, 0xff, 0xff))
     # 回合徽标
     lb = turn
     lw = len(lb) * 6 + 14
@@ -189,8 +196,15 @@ def scene_boss():
     # 伤害飘字（白字打 BOSS，红字主角受击）
     txt_c(d, "42", 120, 250 - 60, F10, (0xff, 0xff, 0xff))
     txt_c(d, "-5", 70, 200, F10, (0xff, 0x6b, 0x6b))
+    # 命中特效（用户问题⑧）：英雄突进命中敌人，特效在【敌人身上】炸开（RING + PARTICLE）
+    d.ellipse([120 - 16, 212 - 16, 120 + 16, 212 + 16], outline=(0xff, 0xe2, 0x7a), width=3)
+    for ang in range(0, 360, 45):
+        import math
+        px = 120 + int(14 * math.cos(math.radians(ang)))
+        py = 212 + int(14 * math.sin(math.radians(ang)))
+        d.ellipse([px - 3, py - 3, px + 3, py + 3], fill=(0xff, 0xf0, 0xc0))
     draw_hud(d, wave="10/10 BOSS", stat="手动·1·0·1", turn="回合 3")
-    draw_cards(d, turn="回合 3")
+    draw_cards(im, d, turn="回合 3")
     return im
 
 
@@ -209,7 +223,7 @@ def scene_event(kind="chest"):
     draw_sprite(im, "sp_slime.png", 148, 250)   # 自然尺寸（REAL 尺寸模式）
     draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
     draw_hud(d)
-    draw_cards(d)
+    draw_cards(im, d)
     # 事件面板（1:1 复刻 HTML drawEventPanel + mage_fx.c 坐标）
     icon, name, desc = EVENTS[kind]
     bx, by, bw, bh = 20, 120, 200, 110
@@ -274,7 +288,7 @@ def scene_hud():
     txt_c(d, "-3", 70, 200, F10, (0xff, 0x6b, 0x6b))
     # HUD：AUTO/手动 + 编 球 卡 药 + 回合金色徽标
     draw_hud(d, wave="5/10 精英", stat="手动·3·1·2", turn="回合 1")
-    draw_cards(d)
+    draw_cards(im, d)
     return im
 
 
@@ -365,6 +379,12 @@ def scene_loot(kind="chest"):
 
 
 # ============ 城镇子面板/功能面板背景（新反馈①③：进入板块后没背景图）============
+GOLD = (0xff, 0xd9, 0x3d)
+GOLD2 = (0xc9, 0xa2, 0x27)
+DIM = (0xc9, 0xb8, 0xee)
+WHITE = (0xff, 0xff, 0xff)
+
+
 def _town_dim_base(dim_opa=179):
     """固件城镇簇底图：town_art 直接 resize + C_BG(0x0d0b1a) 压暗层。
     dim_opa: LVGL opa 值（179=LV_OPA_70 子面板 / 153=LV_OPA_60 城镇主页）。"""
@@ -376,63 +396,79 @@ def _town_dim_base(dim_opa=179):
     return Image.alpha_composite(im.convert("RGBA"), dim).convert("RGB")
 
 
-def scene_town_sub(sel=0):
-    """魔法学院（城镇子面板）：固件新增 town_art 背景 + 0.70 压暗。
-    文字布局与固件 g_scene_title/body/hint 一致。"""
-    im = _town_dim_base(179)
+def frame_box(im, title):
+    """HTML frameBox(10,10,W-20,H-50,title) 1:1，与固件 build_ui 的金框组一致：
+    #1d1636 底 + c9a227 框 + 上下 2px 金沿(ffd93d) + #2a2348 标题条 + 金色标题字。"""
     d = ImageDraw.Draw(im)
-    txt_c(d, "魔法学院", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
+    d.rectangle([10, 10, 229, 279], fill=(0x1d, 0x16, 0x36), outline=GOLD2)
+    d.rectangle([10, 10, 229, 11], fill=GOLD)          # 顶 2px 金沿
+    d.rectangle([10, 278, 229, 279], fill=GOLD)        # 底 2px 金沿
+    d.rectangle([10, 9, 229, 24], fill=(0x2a, 0x23, 0x48), outline=GOLD2)
+    txt_l(d, title, 18, 12, F12, GOLD)
+
+
+def frame_hint(im, text):
+    txt_c(ImageDraw.Draw(im), text, W / 2, H - 22, F12, DIM)
+
+
+def scene_town_sub(sel=0):
+    """魔法学院（frameBox 列表页）：金框 + 标题条 + 16px 列表（用户问题④：字太小已放大）。"""
+    im = _town_dim_base(179)
+    frame_box(im, "魔法学院")
+    d = ImageDraw.Draw(im)
     rows = ["魔力修行 · 20金（上限+5）", "学属性魔法 · 45金（已学0/135）", "职业晋升考核"]
-    y = 56
+    y = 44
     for i, r in enumerate(rows):
         prefix = "▶ " if i == sel else "  "
-        txt_l(d, prefix + r, 14, y, F13, (0xff, 0xff, 0xff))
+        txt_l(d, prefix + r, 18, y, F16, WHITE)
         y += 30
-    txt_c(d, "OK 确定 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    frame_hint(im, "OK 确定 · ↓ 切换 · 长按 返回")
     return im
 
 
 def scene_town_wild(sel=0):
-    """野外试炼（城镇子面板）：同款背景 + 关卡列表。"""
+    """野外试炼（frameBox 列表页）：金框 + 关卡列表（用户问题④：字太小已放大）。"""
     im = _town_dim_base(179)
+    frame_box(im, "野外试炼")
     d = ImageDraw.Draw(im)
-    txt_c(d, "野外试炼", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
     rows = ["远征森林", "迷雾沼泽", "熔岩洞窟", "寒霜雪原", "遗迹秘境"]
-    y = 56
+    y = 44
     for i, r in enumerate(rows):
         prefix = "▶ " if i == sel else "  "
-        txt_l(d, prefix + r, 14, y, F13, (0xff, 0xff, 0xff))
+        txt_l(d, prefix + r, 18, y, F16, WHITE)
         y += 30
-    txt_c(d, "OK 出发/进入 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    frame_hint(im, "OK 出发/进入 · ↓ 切换 · 长按 返回")
     return im
 
 
 def scene_func_status():
-    """功能面板·角色（func 栏进入）：固件新增 town_art 背景 + 0.70 压暗。"""
+    """功能面板·角色（frameBox 详情页）：金框 + sp_hero 立绘 foot(120,88) +
+    12px 居中正文从 y=98 起（与固件一致）。"""
     im = _town_dim_base(179)
+    frame_box(im, "角色")
+    draw_sprite(im, SRC_HERO, 120, 88, HERO_H)   # 固件注册尺寸 36x46（漏传会按 349x448 原图画出巨脚）
     d = ImageDraw.Draw(im)
-    txt_c(d, "角色", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
     rows = ["见习魔法师", "魔法学徒 · Lv1", "经验 0/27", "生命 80/80", "魔力 50/50",
-            "攻击 7（装+0）", "护甲减伤 0", "金币 0 · 击杀 0", "伙伴 0 只"]
-    y = 56
+            "攻击 7（装+0）", "金币 0 · 击杀 0", "伙伴 0 只"]
+    y = 110
     for r in rows:
-        txt_l(d, r, 14, y, F13, (0xff, 0xff, 0xff))
-        y += 26
-    txt_c(d, "OK/长按 回城 · ↓ 管理装备", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+        txt_c(d, r, W / 2, y, F12, WHITE)
+        y += 17
+    frame_hint(im, "OK/长按 回城 · ↓ 管理装备")
     return im
 
 
 def scene_func_bag():
-    """功能面板·背包：同款背景。"""
+    """功能面板·背包（frameBox 列表页）：金框 + 12px 列表。"""
     im = _town_dim_base(179)
+    frame_box(im, "背包")
     d = ImageDraw.Draw(im)
-    txt_c(d, "背包", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
     rows = ["分类：药品", "[ 小恢复药水 ]", "数量 ×3", "已收集 药1/20 材0/40", "(1 / 1)"]
-    y = 56
+    y = 40
     for r in rows:
-        txt_l(d, r, 14, y, F13, (0xff, 0xff, 0xff))
-        y += 30
-    txt_c(d, "OK/↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+        txt_l(d, r, 18, y, F12, WHITE)
+        y += 24
+    frame_hint(im, "OK/↓ 切换 · 长按 返回")
     return im
 
 
@@ -442,8 +478,9 @@ def scene_battle_intro():
     动作卡隐藏，仅 HUD + 敌我立绘 + 横幅。"""
     im, d = battle_base()
     draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
-    draw_sprite(im, "sp_slime.png", 150, 250)
-    draw_sprite(im, "sp_goblin.png", 170, 250)
+    # 多怪站位修复（用户问题⑦）：沿 [BTPX+72=142, BTPX+146=216] 均匀分布，互不重叠
+    draw_sprite(im, "sp_slime.png", 142, 250)
+    draw_sprite(im, "sp_goblin.png", 216, 250)
     draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
     draw_hud(d, wave="1/10", stat="手动·3·1·2", turn="回合 1")
     # 遭遇横幅：固件 g_toast 战斗位 (8,232,W-16,18)
@@ -455,46 +492,70 @@ def scene_battle_intro():
     return im
 
 
-# ============ 图鉴/伙伴页·怪物立绘（新反馈③：每页都应显示对应怪物立绘）============
+# ============ 图鉴/伙伴页·金框 + 程序化怪物立绘（本轮 1:1 复刻核对）============
 def scene_dex(idx=0):
-    """魔物图鉴：按 sp_<type> 原生尺寸展示选中怪物立绘（与固件 g_scene_img 一致
-    置于 (150,52)），文本压其上。修复前所有条目都显示同一只，现在按 type 取图。"""
+    """魔物图鉴（frameBox 详情页）：金框 + 立绘盒(86,36,68,58) + drawMob 立绘
+    foot(120,90) + 12px 居中正文从 y=98 起（与固件刷新逻辑一致）。"""
     im = _town_dim_base(153)
+    frame_box(im, "魔物图鉴")
     d = ImageDraw.Draw(im)
-    txt_c(d, "魔物图鉴", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
-    # 立绘（脚下锚点对齐 g_scene_img 左上 (150,52) + 原生尺寸；史莱姆 18x19）
-    draw_sprite(im, "sp_slime.png", 150 + 9, 52 + 19)
-    body = ["已收录 12/50 · 收服 3", "史莱姆",
-            "可捕捉 · 用捕捉球", "出没：试炼森林",
-            "天赋：? ?  特性：? ?", "进化：无",
-            "试炼森林的凝胶生物", "软乎乎却很黏人。", "(3 / 50)"]
-    y = 38
-    for ln in body:
-        col = (0xff, 0xd9, 0x3d) if ln == "史莱姆" else (0xff, 0xff, 0xff)
-        txt_l(d, ln, 10, y, F13, col)
-        y += 24
-    txt_c(d, "OK 捕捉条件 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    d.rectangle([86, 36, 153, 93], fill=(0x14, 0x0f, 0x28), outline=GOLD2)
+    draw_sprite(im, "sp_slime.png", 120, 90)
+    body = [("已收录 12/50 · 收服 3", GOLD), ("史莱姆", GOLD),
+            ("可捕捉 · 用捕捉球", WHITE), ("出没：试炼森林", WHITE),
+            ("天赋：撞击  特性：坚韧", WHITE), ("进化：Lv14 → 史莱姆·王", WHITE),
+            ("试炼森林的凝胶生物，", WHITE), ("软乎乎却很黏人。", WHITE),
+            ("(3 / 50)", WHITE)]
+    y = 110
+    for ln, col in body:
+        txt_c(d, ln, W / 2, y, F12, col)
+        y += 15
+    frame_hint(im, "OK 捕捉条件 · ↓ 切换 · 长按 返回")
     return im
 
 
 def scene_partners(idx=0):
-    """伙伴页：显示当前伙伴的真实立绘（猫灵 sp_cat 自然尺寸 14x16），不再是统一占位。"""
+    """伙伴页（frameBox 详情页）：金框 + 104x96 描金双框立绘卡 + 出战物种立绘
+    foot(120,118) + 12px 正文从 y=136 起。用户要求：出战什么显示什么形象。"""
     im = _town_dim_base(153)
+    frame_box(im, "伙伴")
     d = ImageDraw.Draw(im)
-    txt_c(d, "我的伙伴", W / 2, 16, F16, (0xff, 0xd9, 0x3d))
-    draw_sprite(im, "sp_cat.png", 150 + 8, 52 + 16)     # 猫灵 14x16 自然尺寸
-    body = ["绒绒 ★", "猫灵 Lv3 资质B(30/45)", "技能 迅捷", "特性 lucky",
-            "攻7 防8 速9", "", "通体如月华的灵猫，", "处处可遇的幸运伙伴。"]
-    y = 38
-    for ln in body:
-        col = (0xff, 0xd9, 0x3d) if "★" in ln else (0xff, 0xff, 0xff)
-        txt_l(d, ln, 10, y, F13, col)
-        y += 24
-    txt_c(d, "OK 出战 · ↓ 切换 · 长按 返回", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
+    d.rectangle([68, 30, 171, 125], fill=(0x1e, 0x16, 0x3a), outline=GOLD2)
+    d.rectangle([71, 33, 168, 122], fill=(0x10, 0x0b, 0x24))
+    draw_sprite(im, "sp_cat.png", 120, 118)      # 出战物种（示例：猫灵）
+    body = [("绒绒 ★", GOLD), ("猫灵 Lv3 资质B(30/45)", WHITE),
+            ("技能 迅捷：先手一击", (0xff, 0x6b, 0xd6)),
+            ("特性 幸运：宝箱加成", (0x7f, 0xdc, 0x8a)),
+            ("★ Lv16 可进化·月影", GOLD),
+            ("攻7 防8 速9", WHITE), ("(1 / 1)", WHITE)]
+    y = 136
+    for ln, col in body:
+        txt_c(d, ln, W / 2, y, F12, col)
+        y += 15
+    frame_hint(im, "OK 出战 · ↓ 切换 · 长按 返回")
     return im
 
 
-# ============ 战斗击杀演出窗口（新反馈②：出手后直接跳结算）============
+def scene_partners_fox(idx=0):
+    """伙伴页·灵狐出战变体：证明「出战什么就显示什么形象」——
+    灵狐出战时立绘卡里是真正的狐狸（sp_fox 来自 HTML drawMob，非兔子）。"""
+    im = _town_dim_base(153)
+    frame_box(im, "伙伴")
+    d = ImageDraw.Draw(im)
+    d.rectangle([68, 30, 171, 125], fill=(0x1e, 0x16, 0x3a), outline=GOLD2)
+    d.rectangle([71, 33, 168, 122], fill=(0x10, 0x0b, 0x24))
+    draw_sprite(im, "sp_fox.png", 120, 118)      # 灵狐 35x43（HTML drawMob 原样）
+    body = [("小狐 ★", GOLD), ("灵狐 Lv4 资质A(34/45)", WHITE),
+            ("技能 迅捷：先手一击", (0xff, 0x6b, 0xd6)),
+            ("特性 幸运：宝箱加成", (0x7f, 0xdc, 0x8a)),
+            ("★ Lv16 可进化·九尾", GOLD),
+            ("攻9 防8 速11", WHITE), ("(2 / 2)", WHITE)]
+    y = 136
+    for ln, col in body:
+        txt_c(d, ln, W / 2, y, F12, col)
+        y += 15
+    frame_hint(im, "OK 出战 · ↓ 切换 · 长按 返回")
+    return im
 def scene_battle_kill():
     """BP_KILL 演出：清空敌群后停留 ~0.9s，伤害飘字/受击特效仍可见，再进结算。
     预览用横幅标注该窗口，证明不再"一击就结算"。"""
@@ -511,11 +572,20 @@ def scene_battle_kill():
     txt_c(d2, "✦ 击破！演出中（约 0.9s 后结算）", (W - 16) / 2, 2, F12, (0xff, 0xe9, 0xb0))
     im.paste(bar, (8, 232), bar)
     draw_hud(d, wave="3/10", stat="手动·3·1·2", turn="回合 3")
-    draw_cards(d, turn="回合 3")
+    draw_cards(im, d, turn="回合 3")
     return im
 
 
-# ============ 汇总对照（2 列网格，逐格标注对应问题）============
+# ============ 蘑菇怪贴图·真透明证据（用户问题⑥）============
+def scene_mushroom():
+    """问题⑥：蘑菇怪贴图在战斗/图鉴里带色背景 -> 现用洋红底重生成 + magenta_key 抠图，
+    背景残留 0%（已脚本校验）。预览用真透明合成到战斗背景，证明无灰底方块。"""
+    im, d = battle_base()
+    draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
+    draw_sprite(im, "sp_mush.png", 150, 250)   # 真透明，无灰底
+    draw_hud(d, wave="2/10", stat="手动·3·1·2", turn="回合 2")
+    draw_cards(im, d, turn="回合 2")
+    return im
 def overview(scenes_labels):
     pad = 6
     lw = W + pad * 2
@@ -552,7 +622,9 @@ def main():
     battle_intro = scene_battle_intro()
     dex = scene_dex()
     partners = scene_partners()
+    partners_fox = scene_partners_fox()
     battle_kill = scene_battle_kill()
+    mushroom = scene_mushroom()
 
     paths = {
         "mage_battle_boss_240x320.png": boss,
@@ -571,7 +643,9 @@ def main():
         "mage_battle_intro_240x320.png": battle_intro,
         "mage_dex_240x320.png": dex,
         "mage_partners_240x320.png": partners,
+        "mage_partners_fox_240x320.png": partners_fox,
         "mage_battle_kill_240x320.png": battle_kill,
+        "mage_mushroom_240x320.png": mushroom,
     }
     for name, im in paths.items():
         p = os.path.join(OUT, name)
@@ -597,7 +671,9 @@ def main():
         (battle_intro, "⑨ 遭遇演出·敌群+横幅（新②）"),
         (dex, "⑩ 图鉴页·怪物立绘（新③）"),
         (partners, "⑩ 伙伴页·真实立绘（新③）"),
+        (partners_fox, "⑩ 伙伴页·灵狐出战=真狐狸（用户追加）"),
         (battle_kill, "⑪ 击杀演出窗口·不再秒结算（新②）"),
+        (mushroom, "⑫ 蘑菇怪贴图·真透明无灰底（问题⑥）"),
     ])
     op = os.path.join(OUT, "mage_fixes_overview_480x640.png")
     ov.save(op)

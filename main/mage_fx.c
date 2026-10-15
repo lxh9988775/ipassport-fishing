@@ -677,9 +677,14 @@ void mage_fx_render(void)
     /* ---- 伙伴立绘 = 出战伙伴的物种（用户要求：出战什么就用什么形象）。
      * 只在物种签名变化时才切 src / 改容器尺寸；无出战伙伴保持默认猫灵。
      * 每帧调 mage_img 会刷日志 + 走查表，绝不能放进周期路径。 ---- */
+    /* ---- 伙伴立绘 = 出战伙伴的物种（用户要求：出战什么就用什么形象）。
+     * 关键修复（用户问题②③）：若根本没有出战伙伴，则整只伙伴立绘隐藏，
+     * 不再显示默认的「猫灵」占位图（那正是「我没伙伴却看到灵狐/猫」的根因）。
+     * 有伙伴时才按物种切图（sp_<type>，八方旅人风格，与全图一致）。 ---- */
+    int showPartner = (g.npartners > 0 && g.activePartner >= 0 && g.activePartner < g.npartners);
     {
         int16_t want = 0;   /* 0 = 默认猫灵 */
-        if (g.npartners > 0 && g.activePartner >= 0 && g.activePartner < g.npartners) {
+        if (showPartner) {
             want = (int16_t)(g.partners[g.activePartner].typeIdx + 1);
             if (want < 0) want = 0;
         }
@@ -701,12 +706,19 @@ void mage_fx_render(void)
             }
         }
     }
-    lv_obj_set_pos(F.cat, (int)psx - F.catW / 2, 250 - F.catH);
-    lv_obj_set_pos(F.catShadow, (int)psx - 6, 250 - 2);
+    if (showPartner) {
+        lv_obj_remove_flag(F.cat, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(F.catShadow, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(F.cat, (int)psx - F.catW / 2, 250 - F.catH);
+        lv_obj_set_pos(F.catShadow, (int)psx - 6, 250 - 2);
+    } else {
+        lv_obj_add_flag(F.cat, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(F.catShadow, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* ---- 主角（HTML: hBob/lunge/hTilt + 受击闪红） ---- */
     float hBob  = -fabsf(sinf(bt.walkF * 0.8f)) * 2.5f;
-    float lunge = (bt.lungeT > 0.0f) ? (bt.lungeT / 0.22f) * 10.0f : 0.0f;
+    float lunge = (bt.lungeT > 0.0f) ? (bt.lungeT / 0.22f) * 38.0f : 0.0f;
     float hTilt = (bt.lungeT > 0.0f) ? 0.1f : sinf(bt.walkF * 0.8f) * 0.05f;
     (void)hTilt;   /* 不用旋转，倾斜效果由 lunge 位移近似 */
     /* 主角：不使用 transform 旋转，同样只改 pos（零软件变换） */

@@ -30,6 +30,7 @@ SRC_FILES = [
     os.path.join(ROOT, "main", "mage_draw.c"),
     os.path.join(ROOT, "main", "mage_hud.c"),
     os.path.join(ROOT, "main", "mage_fx.c"),
+    os.path.join(ROOT, "main", "mage_pages.c"),
 ]
 CONV = r"C:/Users/8605464/.workbuddy/binaries/node/workspace/node_modules/lv_font_conv/lv_font_conv.js"
 
@@ -50,6 +51,12 @@ NODE = find_node()
 FONT_NAME = "mage_cjk_16"
 SIZE = 16
 BPP = 4
+
+# 多字号层级（对照 HTML 排版）：16=标题/正文主字号，12=HUD/行内小字（HTML 8-10px 的等价物）
+VARIANTS = [
+    (16, "mage_cjk_16", OUT_C),
+    (12, "mage_cjk_12", os.path.join(ROOT, "assets", "fonts", "mage_cjk_12.c")),
+]
 
 # 源码里没有、但屏上可能作为格式串出现的字符（保险起见一并打进字库）
 EXTRA = "％·×▶"
@@ -78,6 +85,35 @@ def build_symbols():
     return "".join(sorted(s))
 
 
+def gen_one(node, symbols, size, font_name, out_c):
+    cmd = [
+        node, CONV,
+        "--font", OTF,
+        "--symbols", symbols,
+        "--size", str(size),
+        "--bpp", str(BPP),
+        "--format", "lvgl",
+        "--no-compress",
+        "--lv-font-name", font_name,
+        "--lv-include", "lvgl.h",
+        "--output", out_c,
+    ]
+    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r.stdout:
+        print(r.stdout.strip())
+    if r.returncode != 0:
+        print("[FAIL] lv_font_conv(%dpx) 退出码 %d\n%s" % (size, r.returncode, r.stderr))
+        return False
+    sz = os.path.getsize(out_c)
+    with open(out_c, "r", encoding="utf-8", errors="replace") as f:
+        head = f.read(4000)
+    if font_name not in head:
+        print("[FAIL] %dpx 产物里找不到符号 %s" % (size, font_name))
+        return False
+    print("[PASS] 生成 %s  (%.1f KB)  符号名：lv_font_%s" % (out_c, sz / 1024.0, font_name))
+    return True
+
+
 def main():
     if not os.path.exists(NODE) or not os.path.exists(CONV):
         print("[FAIL] 找不到 node 或 lv_font_conv：\n  %s\n  %s" % (NODE, CONV))
@@ -94,34 +130,10 @@ def main():
         f.write(symbols)
     print("字符清单：%d 个 -> %s" % (len(symbols), SYMBOLS_TXT))
 
-    cmd = [
-        NODE, CONV,
-        "--font", OTF,
-        "--symbols", symbols,
-        "--size", str(SIZE),
-        "--bpp", str(BPP),
-        "--format", "lvgl",
-        "--no-compress",
-        "--lv-font-name", FONT_NAME,
-        "--lv-include", "lvgl.h",
-        "--output", OUT_C,
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if r.stdout:
-        print(r.stdout.strip())
-    if r.returncode != 0:
-        print("[FAIL] lv_font_conv 退出码 %d\n%s" % (r.returncode, r.stderr))
-        return 1
-
-    sz = os.path.getsize(OUT_C)
-    with open(OUT_C, "r", encoding="utf-8", errors="replace") as f:
-        head = f.read(4000)
-    if FONT_NAME not in head:
-        print("[FAIL] 产物里找不到符号 %s" % FONT_NAME)
-        return 1
-    print("[PASS] 生成 %s  (%.1f KB)" % (OUT_C, sz / 1024.0))
-    print("       符号名：lv_font_%s" % FONT_NAME)
-    return 0
+    ok = True
+    for size, name, out_c in VARIANTS:
+        ok = gen_one(NODE, symbols, size, name, out_c) and ok
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

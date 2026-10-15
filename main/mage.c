@@ -1035,11 +1035,15 @@ static void refresh_ui(void) {
             if (fon) {
                 lv_label_set_text(g_frame_title, s_ttl[0] ? s_ttl : SCENE_NAME[g_scene]);
                 int by = 34;                          /* 列表页：框内顶部 */
-                if (g_scene == SC_DEX || g_scene == SC_STATUS) by = 98;
+                if (g_scene == SC_DEX || g_scene == SC_STATUS) by = 110;   /* 图鉴/角色：正文下移，避开立绘盒（用户问题⑤） */
                 else if (g_scene == SC_PARTNERS)      by = 136;
                 lv_obj_set_pos(g_scene_body, 16, by);
                 lv_obj_set_width(g_scene_body, 208);
-                lv_obj_set_style_text_font(g_scene_body, &mage_cjk_12, 0);
+                /* 三界面（魔法学院/野外试炼/冒险者公会）原用 12px 太挤（用户问题④），
+                 * 放大到 16px；其余详情页维持 12px 以免溢出。 */
+                lv_obj_set_style_text_font(g_scene_body,
+                    (g_scene == SC_ACAD || g_scene == SC_WILD || g_scene == SC_GUILD)
+                        ? &mage_cjk_16 : &mage_cjk_12, 0);
                 lv_obj_set_style_text_align(g_scene_body, 0,
                     detail ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT);
             } else {
@@ -1744,6 +1748,9 @@ static void hero_strike(void) {
     if (dmg < 1) dmg = 1;
     bt.lungeT = 0.22f;   /* 演出：主角突进 */
     deal_to(e, dmg);
+    /* 演出：在敌人身上炸开命中火花（用户问题⑧：让玩家看清攻击打在敌人身上，而非自己） */
+    mage_fx_spawn(FX_K_RING, (float)(e->x) - (float)(int)bt.cam, 212.0f, 0xffe27a, 16.0f, 0.30f);
+    mage_fx_spawn(FX_K_PARTICLE, (float)(e->x) - (float)(int)bt.cam, 216.0f, 0xfff0c0, 7.0f, 0.40f);
     reap_dead();
     after_player_action();
 }
@@ -2025,6 +2032,17 @@ static void spawn_group(void) {
         e->bob = mage_rf(0.0f, 6.28f);   /* 跳跃相位错开，避免几只怪同步弹跳（HTML e.bob） */
         if (e->elite) { e->hp = (int)(e->hp * 2.2f + 0.5f); e->maxHp = e->hp; e->atk = (int)(e->atk * 1.5f + 0.5f); }
     }
+    /* 多怪站位修复（用户问题⑦）：原来 e->x = BTPX+78+i*16 只隔 16px，敌人立绘宽 30+ 必重叠成一团。
+     * 改为在本波内沿 [BTPX+72, BTPX+146] 均匀分布（英雄在 BTPX=70，敌人整体偏右），
+     * 单怪居中、多怪互不遮挡。 */
+    {
+        int n = bt.enemyCount;
+        int x0 = BTPX + 72, x1 = BTPX + 146;
+        for (int i = 0; i < n; i++) {
+            int x = (n <= 1) ? ((x0 + x1) / 2) : (x0 + (x1 - x0) * i / (n - 1));
+            bt.enemies[i].x = x;
+        }
+    }
 }
 static void spawn_boss(void) {
     int bi = g.mapChapter; if (bi > 4) bi = 4; if (bi < 0) bi = 0;
@@ -2064,6 +2082,8 @@ static void spawn_and_menu(void) {
     bt.turn = 1;
     set_bphase(BP_MENU);
     g_need_refresh = 1;
+    /* 首波给一次操作提示（用户问题①⑨：OK攻击 / ↓魔法 / ↑道具 / 长按OK回城） */
+    if (bt.wave == 1) toast("OK攻击 · ↓魔法 · ↑道具 · 长按OK回城");
 }
 
 /* ---------- 自动战斗 ---------- */
@@ -2392,19 +2412,29 @@ static void battle_render(void) {
 static void battle_handle(int act) {
     switch (bt.phase) {
     case BP_INTRO:
-        /* 遭遇演出中：OK/BACK 跳过直接进入选招，不重刷敌群（组已就位） */
-        if (act == ACT_OK || act == ACT_BACK) { set_bphase(BP_MENU); bt.tickMs = now_ms(); }
+        /* 遭遇演出中：OK 跳过进入选招；BACK 直接撤退回城（不再被 INTRO 吞掉） */
+        if (act == ACT_OK) { set_bphase(BP_MENU); bt.tickMs = now_ms(); }
+        else if (act == ACT_BACK) end_battle();
         break;
     case BP_MENU:
-        if (bt.autoBattle) { bt.autoBattle = 0; toast("手动接管"); break; }
-        if (act == ACT_OK) hero_strike();
+        /* 关键修复（用户问题①②）：自动战斗时，按 下/上/返回 不应只被「切回手动」吞掉，
+         * 否则「只能攻击、选不了魔法道具」。改为：任意指令都会先接管手动，再执行对应动作；
+         * 返回键始终直接回城（只按一次即可，不再需要按两遍）。 */
+        if (act == ACT_OK) {
+            if (bt.autoBattle) { bt.autoBattle = 0; toast("手动接管"); break; }
+            hero_strike();
+        }
         else if (act == ACT_NEXT) {
+            if (bt.autoBattle) bt.autoBattle = 0;
             int lo[16]; int nl = activeLoadoutKeys(lo, 16); if (nl == 0) { toast("没有魔法"); break; }
             bt.magicIdx = 0; g.equipped = lo[0]; set_bphase(BP_MAGIC);
-        } else if (act == ACT_PREV) {
+        }
+        else if (act == ACT_PREV) {
+            if (bt.autoBattle) bt.autoBattle = 0;
             if (item_opt_count() == 0) { toast("没有道具"); break; }
             bt.itemIdx = 0; set_bphase(BP_ITEM);
-        } else if (act == ACT_BACK) end_battle();
+        }
+        else if (act == ACT_BACK) end_battle();
         break;
     case BP_MAGIC:
         if (act == ACT_OK) { set_bphase(BP_MENU); magic_cast(); }

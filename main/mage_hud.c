@@ -11,6 +11,7 @@
 #include "mage_fx.h"
 #include "mage_state.h"
 #include "mage_data.h"
+#include "mage_draw.h"   /* mage_img：取 sp_icon_* 图标 */
 #include "lvgl.h"
 #include "esp_log.h"
 #include <string.h>
@@ -145,8 +146,8 @@ void mage_hud_build(void)
 
     /* ---- 底部三张动作卡：HTML y=H-44=276, x=8+i*78, 72x40 ---- */
     {
-        static const char *nm[3] = {"攻击", "魔法", "道具"};
-        static const char *bd[3] = {"A", "B", "C"};
+        static const char *nm[3]  = {"攻击", "魔法", "道具"};
+        static const char *ic[3]  = {"sp_icon_sword", "sp_icon_staff", "sp_icon_potion"};
         static const uint32_t c1[3] = {0xff8a3d, 0x5a8aff, 0x3dbd7a};
         static const uint32_t c0[3] = {0xffb74d, 0x7cd4ff, 0x8fe89a};
         for (int i = 0; i < 3; i++) {
@@ -158,15 +159,18 @@ void mage_hud_build(void)
             /* 主色徽带：HTML px(x+2,y+3,2.5,36,c1) */
             mk_panel(H.card[i], 2, 3, 3, 34, c1[i], LV_OPA_COVER);
             mk_panel(H.card[i], 2, 3, 3, 5, c0[i], LV_OPA_COVER);
-            /* 键位徽章：HTML arc(x+14,y+11,7) 金框圆片 */
-            H.cardBadge[i] = mk_panel(H.card[i], 7, 4, 15, 15, 0x1a1430, LV_OPA_COVER);
-            lv_obj_set_style_radius(H.cardBadge[i], 8, 0);
-            lv_obj_set_style_border_width(H.cardBadge[i], 1, 0);
-            lv_obj_set_style_border_color(H.cardBadge[i], lv_color_hex(0xc9a44a), 0);
-            H.cardTx[i] = mk_tx(H.cardBadge[i], bd[i], 0, 1, 15, 0xffd93d, &lv_font_montserrat_12);
-            lv_obj_set_style_text_align(H.cardTx[i], LV_TEXT_ALIGN_CENTER, 0);
-            /* 卡片名：HTML txt(cards[i][0],x+38,y+30) */
-            lv_obj_t *nmLbl = mk_tx(H.card[i], nm[i], 12, 18, 58, 0xffffff, &mage_cjk_12);
+            /* 功能图标（用户问题⑨：每个功能配对应图标，替代原 A/B/C 字母徽章） */
+            const lv_image_dsc_t *dsc = mage_img(ic[i]);
+            if (dsc) {
+                lv_obj_t *ico = lv_img_create(H.card[i]);
+                lv_img_set_src(ico, dsc);
+                lv_obj_set_size(ico, 24, 24);          /* 构建期一次性缩放，运行期不碰 */
+                lv_obj_align(ico, LV_ALIGN_TOP_MID, 0, 2);
+                lv_obj_set_style_img_recolor(ico, lv_color_hex(c0[i]), 0);
+                lv_obj_set_style_img_recolor_opa(ico, LV_OPA_50, 0);
+            }
+            /* 卡片名（图标下方功能名） */
+            lv_obj_t *nmLbl = mk_tx(H.card[i], nm[i], 12, 26, 58, 0xffffff, &mage_cjk_12);
             lv_obj_set_style_text_align(nmLbl, LV_TEXT_ALIGN_CENTER, 0);
         }
     }
