@@ -527,6 +527,44 @@ def scene_battle_intro():
     return im
 
 
+def scene_battle_submenu(title, rows, sel, footer):
+    """战斗子菜单（BP_MAGIC/BP_ITEM）：复用战斗背景 + HUD + 底部三卡，
+    居中浮层列表面板带 ▶ 选中，与固件 mage_fx_choices 1:1。"""
+    im, d = battle_base()
+    draw_hud(d, wave="1/10", stat="手动·3·1·2", turn="回合 2")
+    draw_cards(im, d, turn="回合 2")
+    px, py, pw, ph = 16, 56, W - 32, 210
+    d.rectangle([px, py, px + pw, py + ph], fill=(0x0a, 0x08, 0x18), outline=GOLD)
+    txt_c(d, title, px + pw / 2, py + 8, F12, GOLD)
+    d.rectangle([px + 1, py + 24, px + pw - 1, py + 24], fill=(0x2a, 0x23, 0x48))
+    y = py + 38
+    for i, (name, sub) in enumerate(rows):
+        selp = (i == sel)
+        if selp:
+            d.rectangle([px + 6, y - 2, px + pw - 6, y + 17], fill=(0x3a, 0x2c, 0x5c), outline=GOLD)
+            mark = "▶ "
+        else:
+            mark = "  "
+        txt_l(d, mark + name, px + 12, y, F12, (0xff, 0xff, 0xff) if selp else DIM)
+        if sub:
+            txt_r(d, sub, px + pw - 8, y, F12, GOLD if selp else DIM)
+        y += 26
+    txt_c(d, footer, px + pw / 2, py + ph - 16, F10, DIM)
+    return im
+
+
+def scene_battle_magic(sel=1):
+    rows = [("火球", "威力 12 耗 5"), ("冰锥", "威力 10 耗 4"),
+            ("雷击", "威力 16 耗 8"), ("治愈微风", "回复 20 耗 6")]
+    return scene_battle_submenu("选择魔法", rows, sel, "OK 施放 · ↓↑切换 · 长按返回")
+
+
+def scene_battle_item(sel=0):
+    rows = [("药水 ×3", "回复生命/魔力"), ("捕捉球 ×5", "捕捉魔物"),
+            ("封印卡 ×1", "高级捕捉")]
+    return scene_battle_submenu("选择道具", rows, sel, "OK 使用 · ↓↑切换 · 长按返回")
+
+
 # ============ 图鉴/伙伴页·金框 + 程序化怪物立绘（本轮 1:1 复刻核对）============
 def scene_dex(idx=0):
     """魔物图鉴（frameBox 详情页）：金框 + 立绘盒(86,36,68,58) + drawMob 立绘
@@ -661,6 +699,8 @@ def main():
     partners_fox = scene_partners_fox()
     battle_kill = scene_battle_kill()
     mushroom = scene_mushroom()
+    battle_magic = scene_battle_magic()
+    battle_item = scene_battle_item()
 
     paths = {
         "mage_battle_boss_240x320.png": boss,
@@ -683,6 +723,8 @@ def main():
         "mage_partners_fox_240x320.png": partners_fox,
         "mage_battle_kill_240x320.png": battle_kill,
         "mage_mushroom_240x320.png": mushroom,
+        "mage_battle_magic_240x320.png": battle_magic,
+        "mage_battle_item_240x320.png": battle_item,
     }
     for name, im in paths.items():
         p = os.path.join(OUT, name)
@@ -712,6 +754,8 @@ def main():
         (partners_fox, "⑩ 伙伴页·灵狐出战=真狐狸（用户追加）"),
         (battle_kill, "⑪ 击杀演出窗口·不再秒结算（新②）"),
         (mushroom, "⑫ 蘑菇怪贴图·真透明无灰底（问题⑥）"),
+        (battle_magic, "⑬ 魔法选择列表·▶ 选中可见（本轮战斗手动修复）"),
+        (battle_item, "⑬ 道具选择列表·▶ 选中可见（本轮战斗手动修复）"),
     ])
     op = os.path.join(OUT, "mage_fixes_overview_480x640.png")
     ov.save(op)

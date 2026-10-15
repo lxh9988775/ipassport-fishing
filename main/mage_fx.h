@@ -42,6 +42,10 @@ void mage_fx_expo(int show, const char *title, const char *sub,
  * box(28,54,W-56)，无底部提示（HTML 3 秒自动消失，C 端 battle_tick 同步 3 秒自动继续）。 */
 void mage_fx_loot(int show, const char *title, const char *footer, const char **lines, int n);
 
+/* 魔法/道具选择列表面板：复用 evtRoot/evtBox 的单列多行，▶ 标当前选中项，
+ * 与城镇菜单一致的选中高亮语义。show<=0 隐藏。 */
+void mage_fx_choices(int show, const char *title, const char **lines, int n, const char *footer);
+
 /* 每帧推进时间轴（背景滚动、跳跃、粒子、突进、受击），dt 单位秒 */
 void mage_fx_tick(float dt);
 

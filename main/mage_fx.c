@@ -865,6 +865,7 @@ void mage_fx_show(bool on)
 #define FX_PM_RESULT 1
 #define FX_PM_EXPO   2
 #define FX_PM_LOOT   3
+#define FX_PM_CHOICES 4   /* 魔法/道具选择列表面板（带 ▶ 选中） */
 
 static int8_t s_pmode = -1;   /* 当前面板版式（-1=隐藏） */
 static int16_t s_pgeo = -1;   /* 版式+行数组合的几何记忆 */
@@ -1083,6 +1084,57 @@ void mage_fx_loot(int show, const char *title, const char *footer, const char **
         strncpy(lprev, lbuf, sizeof(lprev) - 1); lprev[sizeof(lprev) - 1] = '\0';
         lv_label_set_text(F.evtName, title ? title : "");
         lv_label_set_text(F.evtDesc, lbuf);
+        s_pgen++; mygen = s_pgen;
+    }
+    if (lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+        lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+}
+
+/* 魔法/道具选择列表面板：复用 evtRoot/evtBox，单列带 ▶ 选中的多行文本，
+ * 与城镇菜单一致的「选中高亮」语义；不抢事件面板（EVENT 独占 evtRoot）。
+ * show<=0 时仅当当前就是 CHOICES 面板才隐藏，避免误伤 RESULT/LOOT/EVENT。 */
+void mage_fx_choices(int show, const char *title, const char **lines, int n, const char *footer)
+{
+    if (!F.built || !g_fx_parent) return;
+    if (show <= 0 || n <= 0 || !lines) {
+        if (s_pmode == FX_PM_CHOICES) {
+            if (!lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))
+                lv_obj_add_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
+            s_pmode = -1; s_pgeo = -1;
+        }
+        return;
+    }
+    if (s_pmode != FX_PM_CHOICES) {
+        s_pmode = FX_PM_CHOICES;
+        s_pgen++;
+        panel_geo(4, 16, 56, SCR_W - 32, 210, 0x0a0818);
+        lv_obj_add_flag(F.evtIcon, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(F.evtSub,  LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(F.evtRowL, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(F.evtRowR, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_width(F.evtName, SCR_W - 32);
+        lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffd93d), 0);
+        lv_obj_set_style_text_align(F.evtName, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(F.evtName, 0, 8);
+        lv_obj_set_width(F.evtDesc, SCR_W - 32);
+        lv_obj_set_style_text_color(F.evtDesc, lv_color_hex(0xf2eefb), 0);
+        lv_obj_set_style_text_align(F.evtDesc, LV_TEXT_ALIGN_LEFT, 0);
+        lv_obj_set_pos(F.evtDesc, 0, 30);
+        lv_obj_set_width(F.evtHint, SCR_W - 32);
+        lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0xffd93d), 0);
+        lv_obj_set_style_text_align(F.evtHint, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(F.evtHint, 0, 188);
+    }
+    static char lbuf[384], lprev[384], ltitle[28];
+    static uint8_t mygen = 0;
+    bool force = (mygen != s_pgen);
+    panel_join(lbuf, sizeof(lbuf), lines, n);
+    if (force || strcmp(lbuf, lprev) != 0 || strcmp(title ? title : "", ltitle) != 0) {
+        strncpy(ltitle, title ? title : "", sizeof(ltitle) - 1); ltitle[sizeof(ltitle) - 1] = '\0';
+        strncpy(lprev, lbuf, sizeof(lprev) - 1); lprev[sizeof(lprev) - 1] = '\0';
+        lv_label_set_text(F.evtName, title ? title : "");
+        lv_label_set_text(F.evtDesc, lbuf);
+        lv_label_set_text(F.evtHint, footer ? footer : "");
         s_pgen++; mygen = s_pgen;
     }
     if (lv_obj_has_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN))

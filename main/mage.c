@@ -2461,17 +2461,35 @@ static void battle_render(void) {
     /* 底部动作卡之上不再放任何文字；选中态与选项列表用 toast 提示，
      * 与原版「卡片高亮 + 弹层」语义一致，且绝不遮挡画面。 */
     s_init();
+    static char cbuf[16][48];
+    const char *clines[16]; int cn = 0; const char *ctitle = ""; const char *cfoot = ""; int showChoices = 0;
     switch (bt.phase) {
     case BP_MAGIC: {
         int lo[16]; int nl = activeLoadoutKeys(lo, 16);
-        int k = (bt.magicIdx < nl) ? lo[bt.magicIdx] : g.equipped;
-        s_add("%s 威力%d 耗%d", spellName(k), spellPower(k), spellCost(k));
+        for (int i = 0; i < nl && cn < 16; i++) {
+            int k = lo[i];
+            snprintf(cbuf[cn], sizeof(cbuf[cn]), "%s%s  威力%d 耗%d",
+                     (i == bt.magicIdx) ? "▶ " : "  ",
+                     spellName(k), spellPower(k), spellCost(k));
+            clines[cn++] = cbuf[cn - 1];
+        }
+        ctitle = "选择魔法"; cfoot = "OK 施放 · ↓↑切换 · 长按返回";
+        showChoices = 1;
         break;
     }
     case BP_ITEM: {
         const char *kn[3] = {"药水", "捕捉球", "封印卡"};
-        int kind = item_opt_kind(bt.itemIdx);
-        s_add("%s", kind >= 0 ? kn[kind] : "（空）");
+        int cnt[3] = { g.potions, g.orbs, g.seals };
+        int n = item_opt_count();
+        for (int i = 0; i < n && cn < 16; i++) {
+            int kind = item_opt_kind(i);
+            snprintf(cbuf[cn], sizeof(cbuf[cn]), "%s%s  ×%d",
+                     (i == bt.itemIdx) ? "▶ " : "  ",
+                     kn[kind], cnt[kind]);
+            clines[cn++] = cbuf[cn - 1];
+        }
+        ctitle = "选择道具"; cfoot = "OK 使用 · ↓↑切换 · 长按返回";
+        showChoices = 1;
         break;
     }
     case BP_RESULT: {
@@ -2550,6 +2568,11 @@ static void battle_render(void) {
         mage_fx_event(-1);
         mage_fx_loot(0, NULL, NULL, NULL, 0);
     }
+    /* 魔法/道具选择列表面板：进入子菜单显示，离开（含回主菜单/结算）立即收起，
+     * 不抢 RESULT/LOOT/EVENT 面板。 */
+    if (showChoices) mage_fx_choices(1, ctitle, clines, cn, cfoot);
+    else if (bt.phase != BP_RESULT && bt.phase != BP_LOOT && bt.phase != BP_EVENT)
+        mage_fx_choices(0, NULL, NULL, 0, NULL);
 }
 
 static void battle_handle(int act) {
@@ -2564,7 +2587,7 @@ static void battle_handle(int act) {
          * 否则「只能攻击、选不了魔法道具」。改为：任意指令都会先接管手动，再执行对应动作；
          * 返回键始终直接回城（只按一次即可，不再需要按两遍）。 */
         if (act == ACT_OK) {
-            if (bt.autoBattle) { bt.autoBattle = 0; toast("手动接管"); break; }
+            if (bt.autoBattle) { bt.autoBattle = 0; toast("手动模式"); }
             hero_strike();
         }
         else if (act == ACT_NEXT) {
