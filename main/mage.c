@@ -2468,10 +2468,11 @@ static void battle_render(void) {
         int lo[16]; int nl = activeLoadoutKeys(lo, 16);
         for (int i = 0; i < nl && cn < 16; i++) {
             int k = lo[i];
-            snprintf(cbuf[cn], sizeof(cbuf[cn]), "%s%s  威力%d 耗%d",
+            int idx = cn++;
+            snprintf(cbuf[idx], sizeof(cbuf[idx]), "%s%s  威力%d 耗%d",
                      (i == bt.magicIdx) ? "▶ " : "  ",
                      spellName(k), spellPower(k), spellCost(k));
-            clines[cn++] = cbuf[cn - 1];
+            clines[idx] = cbuf[idx];
         }
         ctitle = "选择魔法"; cfoot = "OK 施放 · ↓↑切换 · 长按返回";
         showChoices = 1;
@@ -2483,10 +2484,11 @@ static void battle_render(void) {
         int n = item_opt_count();
         for (int i = 0; i < n && cn < 16; i++) {
             int kind = item_opt_kind(i);
-            snprintf(cbuf[cn], sizeof(cbuf[cn]), "%s%s  ×%d",
+            int idx = cn++;
+            snprintf(cbuf[idx], sizeof(cbuf[idx]), "%s%s  ×%d",
                      (i == bt.itemIdx) ? "▶ " : "  ",
                      kn[kind], cnt[kind]);
-            clines[cn++] = cbuf[cn - 1];
+            clines[idx] = cbuf[idx];
         }
         ctitle = "选择道具"; cfoot = "OK 使用 · ↓↑切换 · 长按返回";
         showChoices = 1;
