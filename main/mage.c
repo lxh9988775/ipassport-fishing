@@ -140,6 +140,31 @@ static lv_obj_t *g_frame_bar = NULL;    /* (10,9,220,16) 顶部标题条 */
 static lv_obj_t *g_frame_title = NULL;  /* 标题文字（左上，金色） */
 static lv_obj_t *g_dex_box = NULL;      /* 图鉴立绘盒 (86,36,68,58) */
 static lv_obj_t *g_part_card = NULL;    /* 伙伴立绘卡 (68,30,104,96) 描金双框 */
+
+/* 菜单卡片列表（魔法学院/野外试炼/冒险者公会）：每条 = 图标+名称+副文+右标。
+ * 替代原先「单一大 label + 16px 中文无断行点冲出金框」的方案（用户反馈超框+无图标）。
+ * 改用 12px 卡片式布局，与 HTML 1:1；LVGL 对象 build 期一次性建好，刷新仅改 text/src。 */
+#define MENU_ROWS 8
+#define ROW_X 8
+#define ROW_W 204
+#define ROW_H 29
+#define ROW_PITCH 30
+#define ROW_Y0 30
+typedef struct { const char *icon; const char *name; const char *sub; const char *rgt; } MenuRow;
+static lv_obj_t *g_list = NULL;
+static lv_obj_t *g_row_box[MENU_ROWS];
+static lv_obj_t *g_row_ico[MENU_ROWS];
+static lv_obj_t *g_row_name[MENU_ROWS];
+static lv_obj_t *g_row_sub[MENU_ROWS];
+static lv_obj_t *g_row_rgt[MENU_ROWS];
+static int menu_list_dirty = 1;
+static int menu_last_key = -1;
+/* 渲染数据源（由三个 scene 的刷新分支填充） */
+static struct { MenuRow rows[MENU_ROWS]; int n; int sel; } g_menu;
+/* 文本缓冲（指向本缓冲，跨调用有效） */
+static char g_menu_sub[MENU_ROWS][40];
+static char g_menu_rgt[MENU_ROWS][16];
+static void menu_list_render(void);
 static lv_obj_t *g_toast = NULL;
 static lv_obj_t *g_stars[14];
 
@@ -430,6 +455,56 @@ static void build_ui(void) {
     lv_label_set_long_mode(g_scene_body, LV_LABEL_LONG_WRAP);
     lv_obj_set_pos(g_scene_body, 10, 38);
 
+    /* 菜单卡片列表（魔法学院/野外试炼/冒险者公会） */
+    g_list = lv_obj_create(g_scene_grp);
+    lv_obj_remove_style_all(g_list);
+    lv_obj_set_size(g_list, 220, 270);
+    lv_obj_set_pos(g_list, 10, 10);
+    lv_obj_set_style_bg_opa(g_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(g_list, 0, 0);
+    lv_obj_remove_flag(g_list, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(g_list, LV_OBJ_FLAG_HIDDEN);
+    for (int i = 0; i < MENU_ROWS; i++) {
+        lv_obj_t *b = lv_obj_create(g_list);
+        lv_obj_remove_style_all(b);
+        lv_obj_set_size(b, ROW_W, ROW_H);
+        lv_obj_set_style_bg_color(b, lv_color_hex(0x18122c), 0);
+        lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(b, 1, 0);
+        lv_obj_set_style_border_color(b, C_GRAY, 0);
+        lv_obj_set_style_radius(b, 0, 0);
+        lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLLABLE);
+        g_row_box[i] = b;
+        lv_obj_t *ic = lv_img_create(b);
+        lv_obj_set_size(ic, 22, 22);
+        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 4, 0);
+        g_row_ico[i] = ic;
+        lv_obj_t *nm = lv_label_create(b);
+        use_cjk(nm);
+        lv_obj_set_style_text_color(nm, C_WHITE, 0);
+        lv_obj_set_style_text_font(nm, &mage_cjk_12, 0);
+        lv_obj_set_width(nm, 150);
+        lv_obj_set_pos(nm, 32, 3);
+        g_row_name[i] = nm;
+        lv_obj_t *sb = lv_label_create(b);
+        use_cjk(sb);
+        lv_obj_set_style_text_color(sb, C_DIM, 0);
+        lv_obj_set_style_text_font(sb, &mage_cjk_12, 0);
+        lv_obj_set_width(sb, 150);
+        lv_obj_set_pos(sb, 32, 16);
+        g_row_sub[i] = sb;
+        lv_obj_t *rg = lv_label_create(b);
+        use_cjk(rg);
+        lv_obj_set_style_text_color(rg, C_GOLD, 0);
+        lv_obj_set_style_text_font(rg, &mage_cjk_12, 0);
+        lv_obj_set_width(rg, 56);
+        lv_label_set_long_mode(rg, LV_LABEL_LONG_CLIP);
+        lv_obj_set_style_text_align(rg, LV_TEXT_ALIGN_RIGHT, 0);
+        lv_obj_set_pos(rg, ROW_W - 60, 9);
+        g_row_rgt[i] = rg;
+        lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
+    }
+
     g_scene_hint = lv_label_create(g_scene_grp);
     use_font12(g_scene_hint);   /* HTML 底部操作提示为 8-9px -> 12px 子集 */
     lv_obj_set_style_text_color(g_scene_hint, C_DIM, 0);
@@ -527,6 +602,39 @@ static void ensureDungeonOffers(void) {
         int dup = 0;
         for (int i = 0; i < g.ndoffers; i++) if (g.dungeonOffers[i] == id) dup = 1;
         if (!dup) g.dungeonOffers[g.ndoffers++] = id;
+    }
+}
+
+/* 菜单卡片列表渲染：仅当 (场景,选择) 或数据脏标变化时才触碰 LVGL，避免周期重绘卡死。 */
+static void menu_list_render(void) {
+    int sel = (g_scene == SC_ACAD) ? acadIdx : (g_scene == SC_WILD) ? wildIdx : guildIdx;
+    int key = ((int)g_scene << 8) | (sel & 0xff);
+    if (key == menu_last_key && !menu_list_dirty) return;
+    menu_last_key = key;
+    menu_list_dirty = 0;
+
+    for (int i = 0; i < MENU_ROWS; i++) {
+        if (i < g_menu.n) {
+            MenuRow *r = &g_menu.rows[i];
+            lv_obj_clear_flag(g_row_box[i], LV_OBJ_FLAG_HIDDEN);
+            const lv_image_dsc_t *dsc = mage_img(r->icon);
+            if (dsc) lv_img_set_src(g_row_ico[i], dsc);
+            lv_label_set_text(g_row_name[i], r->name);
+            lv_label_set_text(g_row_sub[i], r->sub ? r->sub : "");
+            lv_label_set_text(g_row_rgt[i], r->rgt ? r->rgt : "");
+            int y = ROW_Y0 + i * ROW_PITCH;
+            lv_obj_set_pos(g_row_box[i], ROW_X, y);
+            bool isSel = (i == g_menu.sel);
+            lv_obj_set_style_bg_color(g_row_box[i],
+                isSel ? lv_color_hex(0x3a2c5c) : lv_color_hex(0x18122c), 0);
+            lv_obj_set_style_border_color(g_row_box[i], isSel ? C_GOLD : C_GRAY, 0);
+            lv_obj_set_style_border_width(g_row_box[i], isSel ? 2 : 1, 0);
+            lv_obj_set_style_text_color(g_row_name[i], C_WHITE, 0);
+            lv_obj_set_style_text_color(g_row_sub[i], C_DIM, 0);
+            lv_obj_set_style_text_color(g_row_rgt[i], isSel ? C_GOLD : C_DIM, 0);
+        } else {
+            lv_obj_add_flag(g_row_box[i], LV_OBJ_FLAG_HIDDEN);
+        }
     }
 }
 
@@ -893,14 +1001,20 @@ static void refresh_ui(void) {
     case SC_ACAD: {
         acadIdx = clampi(acadIdx, 0, 2);
         int tc = 20 + g.studyCnt * 15;
-        const char *rows[3];
-        char buf0[48], buf1[48], buf2[48];
-        snprintf(buf0, sizeof(buf0), "魔力修行 · %d金（上限+5）", tc);
-        snprintf(buf1, sizeof(buf1), "学属性魔法 · 45金（已学%d/135）", discoveredCount());
-        snprintf(buf2, sizeof(buf2), "职业晋升考核%s", promoteReady() ? "（可参加）" : "");
-        rows[0] = buf0; rows[1] = buf1; rows[2] = buf2;
-        for (int i = 0; i < 3; i++) s_add("%s%s\n", i == acadIdx ? "▶ " : "  ", rows[i]);
+        snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "魔力上限 +5（当前 %d）", g.maxMp);
+        snprintf(g_menu_rgt[0], sizeof(g_menu_rgt[0]), "%d金", tc);
+        snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "已学 %d/135 种魔法", discoveredCount());
+        snprintf(g_menu_rgt[1], sizeof(g_menu_rgt[1]), "45金");
+        snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "%s",
+                 promoteReady() ? "已达考核标准" : "需击杀/委托达标");
+        snprintf(g_menu_rgt[2], sizeof(g_menu_rgt[2]), "%s", promoteReady() ? "A 考核" : "");
+        g_menu.n = 3; g_menu.sel = acadIdx;
+        g_menu.rows[0] = (MenuRow){"sp_icon_orb", "魔力修行", g_menu_sub[0], g_menu_rgt[0]};
+        g_menu.rows[1] = (MenuRow){"sp_icon_book", "学属性魔法", g_menu_sub[1], g_menu_rgt[1]};
+        g_menu.rows[2] = (MenuRow){"sp_icon_crown", "职业晋升考核", g_menu_sub[2], g_menu_rgt[2]};
         lv_label_set_text(g_scene_hint, "OK 确定 · ↓ 切换 · 长按 返回");
+        s_b[0] = '\0';
+        menu_list_dirty = 1;
         break;
     }
     case SC_PROMOTE: {
@@ -955,33 +1069,54 @@ static void refresh_ui(void) {
     }
     case SC_GUILD: {
         guildIdx = clampi(guildIdx, 0, 3);
+        g_menu.n = 4; g_menu.sel = guildIdx;
         for (int i = 0; i < 4; i++) {
             QuestDef *q = &QUESTS[i];
             int lock = g.arank < q->rank;
             int acc = g.accepted == i;
             int prog = questProg(q);
-            s_add("%s%s%s\n", i == guildIdx ? "▶ " : "  ", acc ? "✓" : "", q->n);
-            if (lock) s_add("  %s级解锁\n", ARANKS[q->rank]);
-            else { s_add("  %s · %d金\n", q->sub, q->gold); if (acc) s_add("  进度 %d/%d\n", prog, q->need); }
+            snprintf(g_menu_sub[i], sizeof(g_menu_sub[i]), "%s · %d金", q->sub, q->gold);
+            if (lock) snprintf(g_menu_rgt[i], sizeof(g_menu_rgt[i]), "未解锁");
+            else if (acc) snprintf(g_menu_rgt[i], sizeof(g_menu_rgt[i]), "进度%d/%d", prog, q->need);
+            else snprintf(g_menu_rgt[i], sizeof(g_menu_rgt[i]), "A 接取");
+            g_menu.rows[i] = (MenuRow){
+                (q->type[0] == 'h') ? "sp_icon_herb" : "sp_icon_sword",
+                q->n, g_menu_sub[i], g_menu_rgt[i]};
         }
-        s_add("冒险者 %s级 · 完成%d单\n", ARANKS[g.arank], g.questDone);
-        lv_label_set_text(g_scene_hint, "OK 接取/交付 · ↓ 切换 · 长按 返回");
+        char hbuf[40];
+        snprintf(hbuf, sizeof(hbuf), "冒险者 %s级 · 完成%d单", ARANKS[g.arank], g.questDone);
+        lv_label_set_text(g_scene_hint, hbuf);
+        s_b[0] = '\0';
+        menu_list_dirty = 1;
         break;
     }
     case SC_WILD: {
         ensureDungeonOffers();
         int n = 5 + 1 + g.ndoffers;
         wildIdx = clampi(wildIdx, 0, n - 1);
+        g_menu.n = n; g_menu.sel = wildIdx;
         for (int i = 0; i < 5; i++) {
             int lock = (i > 0 && !g.bossKilled[i - 1]) || g.level < WILD_REQ[i];
-            s_add("%s%s%s\n", i == wildIdx ? "▶ " : "  ", lock ? "🔒" : "", CHAPTERS[i]);
+            snprintf(g_menu_sub[i], sizeof(g_menu_sub[i]), "%s",
+                     lock ? "先击败上一章BOSS" : "野外区域 · 可挑战");
+            snprintf(g_menu_rgt[i], sizeof(g_menu_rgt[i]), "%s", lock ? "锁" : "A 出发");
+            g_menu.rows[i] = (MenuRow){"sp_icon_map", CHAPTERS[i], g_menu_sub[i], g_menu_rgt[i]};
         }
-        s_add("%s遗迹秘境\n", wildIdx == 5 ? "▶ " : "  ");
+        int base = 5;
+        snprintf(g_menu_sub[base], sizeof(g_menu_sub[base]), "%s",
+                 g.rank < 1 ? "晋升初级魔法师后开放" : "精英连战 3 层");
+        snprintf(g_menu_rgt[base], sizeof(g_menu_rgt[base]), "%s", g.rank < 1 ? "锁" : "A 进入");
+        g_menu.rows[base] = (MenuRow){"sp_icon_gate", "遗迹秘境", g_menu_sub[base], g_menu_rgt[base]};
         for (int i = 0; i < g.ndoffers; i++) {
             int id = g.dungeonOffers[i];
-            s_add("%s%s · %s\n", (wildIdx == 6 + i) ? "▶ " : "  ", DUNGEONS[id].name, DUNGEONS[id].kind);
+            int r = base + 1 + i;
+            snprintf(g_menu_sub[r], sizeof(g_menu_sub[r]), "%s", DUNGEONS[id].kind);
+            snprintf(g_menu_rgt[r], sizeof(g_menu_rgt[r]), "A 进入");
+            g_menu.rows[r] = (MenuRow){"sp_icon_gate", DUNGEONS[id].name, g_menu_sub[r], g_menu_rgt[r]};
         }
         lv_label_set_text(g_scene_hint, "OK 出发/进入 · ↓ 切换 · 长按 返回");
+        s_b[0] = '\0';
+        menu_list_dirty = 1;
         break;
     }
     case SC_BATTLE: {
@@ -1032,6 +1167,10 @@ static void refresh_ui(void) {
             set_hidden(g_scene_title, fon);          /* 金框标题条替代旧居中标题 */
             set_hidden(g_dex_box, !fon || g_scene != SC_DEX);
             set_hidden(g_part_card, !fon || g_scene != SC_PARTNERS);
+            /* 三界面（魔法学院/野外试炼/冒险者公会）改用卡片列表（g_list），隐藏旧 body */
+            bool menu3 = (fon && (g_scene == SC_ACAD || g_scene == SC_WILD || g_scene == SC_GUILD));
+            set_hidden(g_scene_body, menu3);
+            set_hidden(g_list, !menu3);
             if (fon) {
                 lv_label_set_text(g_frame_title, s_ttl[0] ? s_ttl : SCENE_NAME[g_scene]);
                 int by = 34;                          /* 列表页：框内顶部 */
@@ -1039,11 +1178,7 @@ static void refresh_ui(void) {
                 else if (g_scene == SC_PARTNERS)      by = 136;
                 lv_obj_set_pos(g_scene_body, 16, by);
                 lv_obj_set_width(g_scene_body, 208);
-                /* 三界面（魔法学院/野外试炼/冒险者公会）原用 12px 太挤（用户问题④），
-                 * 放大到 16px；其余详情页维持 12px 以免溢出。 */
-                lv_obj_set_style_text_font(g_scene_body,
-                    (g_scene == SC_ACAD || g_scene == SC_WILD || g_scene == SC_GUILD)
-                        ? &mage_cjk_16 : &mage_cjk_12, 0);
+                lv_obj_set_style_text_font(g_scene_body, &mage_cjk_12, 0);
                 lv_obj_set_style_text_align(g_scene_body, 0,
                     detail ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT);
             } else {
@@ -1051,9 +1186,14 @@ static void refresh_ui(void) {
                 lv_obj_set_width(g_scene_body, SCR_W - 16);
                 lv_obj_set_style_text_font(g_scene_body, &mage_cjk_16, 0);
                 lv_obj_set_style_text_align(g_scene_body, 0, LV_TEXT_ALIGN_LEFT);
+                set_hidden(g_list, true);            /* 离帧场景（含战斗）确保列表隐藏 */
             }
         }
     }
+
+    /* 菜单卡片列表渲染（仅场景/选择/数据变化时触碰 LVGL，避免周期重绘卡死） */
+    if (g_scene == SC_ACAD || g_scene == SC_WILD || g_scene == SC_GUILD)
+        menu_list_render();
 
     /* 图鉴/伙伴/角色立绘：按 sp_<type> 原生尺寸展示，脚底中心锚点对齐 HTML 布局
      * （图鉴 foot=120,90；伙伴卡 foot=120,118；角色页 sp_hero foot=120,88）。
@@ -1425,6 +1565,7 @@ static void scene_handle(int act) {
                 else toast("需击杀%d/%d 且委托%d/%d", g.kills, RANK_KILLS[g.rank], g.questDone, g.rank + 1);
             }
         }
+        menu_list_dirty = 1;
         g_need_refresh = 1;
         break;
     case SC_PROMOTE:
@@ -1488,6 +1629,7 @@ static void scene_handle(int act) {
             if (g.questDone % 2 == 0 && g.arank < 6) { g.arank++; toast("冒险者等级→%s", ARANKS[g.arank]); }
             mage_persist(); toast("委托完成！+%d金", q->gold);
         }
+        menu_list_dirty = 1;
         g_need_refresh = 1;
         break;
     case SC_WILD: {
@@ -1511,6 +1653,7 @@ static void scene_handle(int act) {
                 battle_start_dungeon(id);
             }
         }
+        menu_list_dirty = 1;
         g_need_refresh = 1;
         break;
     }

@@ -411,34 +411,69 @@ def frame_hint(im, text):
     txt_c(ImageDraw.Draw(im), text, W / 2, H - 22, F12, DIM)
 
 
-def scene_town_sub(sel=0):
-    """魔法学院（frameBox 列表页）：金框 + 标题条 + 16px 列表（用户问题④：字太小已放大）。"""
-    im = _town_dim_base(179)
-    frame_box(im, "魔法学院")
+def draw_menu_cards(im, title, items, sel, hint, hdr=None):
+    """菜单卡片列表（魔法学院/野外试炼/冒险者公会）：金框 + 每条(图标+名称+副文+右标)。
+    1:1 复刻固件 g_list 卡片布局（替代原单 label 16px 中文无断行点冲框方案）。"""
+    frame_box(im, title)
     d = ImageDraw.Draw(im)
-    rows = ["魔力修行 · 20金（上限+5）", "学属性魔法 · 45金（已学0/135）", "职业晋升考核"]
-    y = 44
-    for i, r in enumerate(rows):
-        prefix = "▶ " if i == sel else "  "
-        txt_l(d, prefix + r, 18, y, F16, WHITE)
-        y += 30
-    frame_hint(im, "OK 确定 · ↓ 切换 · 长按 返回")
+    y0 = 30
+    if hdr:
+        txt_l(d, hdr, 18, y0, F12, GOLD)
+        y0 += 14
+    for i, (icon, name, sub, rgt) in enumerate(items):
+        bx, by = 18, y0 + i * 30
+        selp = (i == sel)
+        d.rectangle([bx, by, bx + 204, by + 29],
+                    fill=(0x3a, 0x2c, 0x5c) if selp else (0x18, 0x12, 0x2c),
+                    outline=GOLD if selp else (0x9a, 0x93, 0xb5))
+        if selp:
+            d.rectangle([bx, by, bx + 204, by + 1], fill=GOLD)   # 选中顶亮条
+        ic = load_png(icon)
+        if ic:
+            ic = ic.resize((22, 22), Image.LANCZOS)
+            im.paste(ic, (bx + 4, by + 3), ic)
+        txt_l(d, name, bx + 32, by + 3, F12, WHITE)
+        txt_l(d, sub, bx + 32, by + 16, F12, DIM)
+        txt_r(d, rgt, bx + 204 - 6, by + 9, F12, GOLD if selp else DIM)
+    frame_hint(im, hint)
     return im
+
+
+def scene_town_sub(sel=0):
+    """魔法学院（卡片列表）：图标 + 名称 + 副文（替代原单 label 16px 冲框）。"""
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_orb.png", "魔力修行", "魔力上限 +5（当前 80）", "20金"),
+        ("sp_icon_book.png", "学属性魔法", "已学 0/135 种魔法", "45金"),
+        ("sp_icon_crown.png", "职业晋升考核", "需击杀/委托达标", ""),
+    ]
+    return draw_menu_cards(im, "魔法学院", items, sel, "OK 确定 · ↓ 切换 · 长按 返回")
 
 
 def scene_town_wild(sel=0):
-    """野外试炼（frameBox 列表页）：金框 + 关卡列表（用户问题④：字太小已放大）。"""
+    """野外试炼（卡片列表）：章节 + 遗迹秘境 + 随机副本。"""
     im = _town_dim_base(179)
-    frame_box(im, "野外试炼")
-    d = ImageDraw.Draw(im)
-    rows = ["远征森林", "迷雾沼泽", "熔岩洞窟", "寒霜雪原", "遗迹秘境"]
-    y = 44
-    for i, r in enumerate(rows):
-        prefix = "▶ " if i == sel else "  "
-        txt_l(d, prefix + r, 18, y, F16, WHITE)
-        y += 30
-    frame_hint(im, "OK 出发/进入 · ↓ 切换 · 长按 返回")
-    return im
+    items = [
+        ("sp_icon_map.png", "远征森林", "野外区域 · 可挑战", "A 出发"),
+        ("sp_icon_map.png", "迷雾沼泽", "野外区域 · 可挑战", "A 出发"),
+        ("sp_icon_map.png", "熔岩洞窟", "先击败上一章BOSS", "锁"),
+        ("sp_icon_map.png", "寒霜雪原", "野外区域 · 可挑战", "A 出发"),
+        ("sp_icon_gate.png", "遗迹秘境", "精英连战 3 层", "A 进入"),
+    ]
+    return draw_menu_cards(im, "野外试炼", items, sel, "OK 出发/进入 · ↓ 切换 · 长按 返回")
+
+
+def scene_town_guild(sel=0):
+    """冒险者公会（卡片列表）：委托 + 进度。"""
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_sword.png", "讨伐委托 · 初级", "击杀 8 只魔物 · 40金", "A 接取"),
+        ("sp_icon_herb.png", "采药委托", "交付 3 株月光草 · 35金", "未解锁"),
+        ("sp_icon_sword.png", "讨伐委托 · 中级", "击杀 20 只魔物 · 120金", "A 接取"),
+        ("sp_icon_sword.png", "深渊侦查 · 上级", "击杀 35 只魔物 · 260金", "A 接取"),
+    ]
+    return draw_menu_cards(im, "冒险者公会", items, sel, "OK 接取/交付 · ↓ 切换 · 长按 返回",
+                          hdr="冒险者 F级 · 完成 0 单")
 
 
 def scene_func_status():
@@ -617,6 +652,7 @@ def main():
     loot_herb = scene_loot("herb")
     town_acad = scene_town_sub()
     town_wild = scene_town_wild()
+    town_guild = scene_town_guild()
     func_status = scene_func_status()
     func_bag = scene_func_bag()
     battle_intro = scene_battle_intro()
@@ -638,6 +674,7 @@ def main():
         "mage_loot_herb_240x320.png": loot_herb,
         "mage_town_acad_240x320.png": town_acad,
         "mage_town_wild_240x320.png": town_wild,
+        "mage_town_guild_240x320.png": town_guild,
         "mage_func_status_240x320.png": func_status,
         "mage_func_bag_240x320.png": func_bag,
         "mage_battle_intro_240x320.png": battle_intro,
@@ -664,8 +701,9 @@ def main():
         (expo,  "⑥ 远征汇总·BOSS 装备（bug⑥）"),
         (loot_chest, "⑥ 宝箱战利品·具体物品（bug⑥）"),
         (loot_herb, "⑥ 采集收获（bug⑥）"),
-        (town_acad, "⑦ 魔法学院·有背景（新①）"),
-        (town_wild, "⑦ 野外试炼·有背景（新①）"),
+        (town_acad, "⑦ 魔法学院·卡片列表+图标（新①超框修复）"),
+        (town_wild, "⑦ 野外试炼·卡片列表+图标（新①超框修复）"),
+        (town_guild, "⑦ 冒险者公会·卡片列表+图标（新①超框修复）"),
         (func_status, "⑧ 功能面板·角色·有背景（新③）"),
         (func_bag, "⑧ 功能面板·背包·有背景（新③）"),
         (battle_intro, "⑨ 遭遇演出·敌群+横幅（新②）"),
