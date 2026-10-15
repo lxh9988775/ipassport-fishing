@@ -718,7 +718,7 @@ void mage_fx_render(void)
 
     /* ---- 主角（HTML: hBob/lunge/hTilt + 受击闪红） ---- */
     float hBob  = -fabsf(sinf(bt.walkF * 0.8f)) * 2.5f;
-    float lunge = (bt.lungeT > 0.0f) ? (bt.lungeT / 0.22f) * 38.0f : 0.0f;
+    float lunge = (bt.lungeT > 0.0f) ? (bt.lungeT / 0.5f) * 38.0f : 0.0f;
     float hTilt = (bt.lungeT > 0.0f) ? 0.1f : sinf(bt.walkF * 0.8f) * 0.05f;
     (void)hTilt;   /* 不用旋转，倾斜效果由 lunge 位移近似 */
     /* 主角：不使用 transform 旋转，同样只改 pos（零软件变换） */

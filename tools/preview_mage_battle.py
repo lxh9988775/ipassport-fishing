@@ -507,6 +507,110 @@ def scene_func_bag():
     return im
 
 
+# ============ 本轮扩展：其余功能面板全部改为「图标卡片列表」（用户要求每个板块都有设计图标）============
+def scene_func_menu(sel=0):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_bolt.png",   "自动战斗", "开",            "▶"),
+        ("sp_icon_paw.png",    "自动捕捉", "关",            ""),
+        ("sp_icon_star.png",   "音效",     "开",            ""),
+        ("sp_icon_crown.png",  "难度",     "普通",          ""),
+        ("sp_icon_scroll.png", "导出存档", "",              ""),
+        ("sp_icon_scroll.png", "导入存档", "",              ""),
+        ("sp_icon_gear.png",   "重新开始", "",              ""),
+    ]
+    return draw_menu_cards(im, "设置", items, sel, "OK 执行 · ↓ 切换 · 长按 返回")
+
+def scene_func_home(sel=0):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_bed.png",   "休息",     "恢复全部状态",       "▶"),
+        ("sp_icon_flask.png", "炼金台",   "炼制药剂与捕捉球",   ""),
+        ("sp_icon_book.png",  "魔法研究", "消耗材料升魔法等级", ""),
+    ]
+    return draw_menu_cards(im, "住宅", items, sel, "OK 选择 · ↓ 切换 · 长按 返回")
+
+def scene_func_research(sel=1):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_book.png", "火球",     "基础 Lv2",         ""),
+        ("sp_icon_book.png", "冰锥",     "基础 Lv2 成60%",   "▶"),
+        ("sp_icon_book.png", "雷击",     "基础 Lv1",         ""),
+        ("sp_icon_book.png", "治愈微风", "初级 Lv1",         ""),
+    ]
+    return draw_menu_cards(im, "魔法研究", items, sel, "OK 研究 · ↓ 切换 · 长按 返回住宅")
+
+def scene_func_forge(sel=0):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_sword.png", "锻造武器", "3级 · 120金+兽骨x6", "▶"),
+        ("sp_icon_robe.png",  "锻造法袍", "2级 · 90金+兽骨x4",  "生命+8"),
+    ]
+    return draw_menu_cards(im, "锻造房", items, sel, "OK 锻造 · ↓ 切换 · 长按 返回")
+
+def scene_func_market(sel=0):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_herb.png",    "月光草",       "持有 12 · 20金",  "▶"),
+        ("sp_icon_bone.png",    "兽骨",         "持有 8 · 15金",   ""),
+        ("sp_icon_crystal.png", "魔晶",         "持有 3 · 30金",   ""),
+        ("sp_icon_seal.png",    "魔法封印卡",   "持有 1 · 50金",   ""),
+        ("sp_icon_staff.png",   "随机魔法卷",   "随机魔法 · 100金", ""),
+    ]
+    return draw_menu_cards(im, "魔法黑市", items, sel, "OK 购买 · ↓ 切换 · 长按 返回")
+
+def scene_func_alchemy(sel=0):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_potion.png",  "体力药水",     "草2 骨1",       "▶"),
+        ("sp_icon_orb.png",     "捕捉球",       "草1 晶1",       "炼制"),
+        ("sp_icon_seal.png",    "魔法封印卡",   "草2 晶1",       "炼制"),
+        ("sp_icon_flask.png",   "中级药水",     "草3 骨2",       "炼制"),
+        ("sp_icon_crystal.png", "炎之心片",     "草4 骨3 晶2",   "炼制"),
+        ("sp_icon_flask.png",   "高级药水",     "草5 骨4",       "炼制"),
+        ("sp_icon_crystal.png", "雷之石",       "草3 晶3",       "炼制"),
+    ]
+    return draw_menu_cards(im, "炼金台", items, sel, "OK 炼制 · ↓ 切换 · 长按 返回")
+
+def scene_func_equip(sel=3):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_sword.png", "铁剑",     "已装备",     ""),
+        ("sp_icon_robe.png",  "学徒法袍", "已装备",     ""),
+        ("sp_icon_staff.png", "橡木法杖", "已装备",     ""),
+        ("sp_icon_sword.png", "钢刃",     "攻击+4",     "▶"),
+        ("sp_icon_staff.png", "秘银杖",   "法强+12%",   ""),
+    ]
+    return draw_menu_cards(im, "装备", items, sel, "OK 装备/卸下 · ↓ 切换 · 长按 返回")
+
+def scene_func_mupgrade(sel=1):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_star.png", "火球", "基础 Lv2",            ""),
+        ("sp_icon_star.png", "冰锥", "基础 Lv2→Lv3 · 150金", "▶"),
+        ("sp_icon_star.png", "雷击", "基础 Lv1",            ""),
+    ]
+    return draw_menu_cards(im, "魔法升级", items, sel, "OK 升级 · ↓ 切换 · 长按 返回")
+
+def scene_func_craft(sel=0):
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_staff.png",   "形态", "爆发",         "▶"),
+        ("sp_icon_bolt.png",    "元素", "雷",           "OK切"),
+        ("sp_icon_crystal.png", "修饰", "穿透",         "OK切"),
+        ("sp_icon_star.png",    "雷爆·穿透", "威力 28 耗 9", "预览"),
+    ]
+    return draw_menu_cards(im, "魔法拼装", items, sel, "OK 切槽 · ↓ 换项 · 长按 装配")
+
+def scene_func_promote():
+    im = _town_dim_base(179)
+    items = [
+        ("sp_icon_crown.png", "当前职级", "见习魔法师", ""),
+        ("sp_icon_star.png",  "晋升为",   "初级魔法师", "OK接受"),
+    ]
+    return draw_menu_cards(im, "晋升仪式", items, 0, "OK 接受晋升 · 长按 返回")
+
+
 # ============ 战斗遭遇演出（新反馈②：战斗太快只见结算）============
 def scene_battle_intro():
     """BP_INTRO：进战斗先亮出敌群 2.5s + 底部遭遇战横幅（HTML walk+meet 对应）。
@@ -693,6 +797,16 @@ def main():
     town_guild = scene_town_guild()
     func_status = scene_func_status()
     func_bag = scene_func_bag()
+    func_menu = scene_func_menu()
+    func_home = scene_func_home()
+    func_research = scene_func_research()
+    func_forge = scene_func_forge()
+    func_market = scene_func_market()
+    func_alchemy = scene_func_alchemy()
+    func_equip = scene_func_equip()
+    func_mupgrade = scene_func_mupgrade()
+    func_craft = scene_func_craft()
+    func_promote = scene_func_promote()
     battle_intro = scene_battle_intro()
     dex = scene_dex()
     partners = scene_partners()
@@ -717,6 +831,16 @@ def main():
         "mage_town_guild_240x320.png": town_guild,
         "mage_func_status_240x320.png": func_status,
         "mage_func_bag_240x320.png": func_bag,
+        "mage_func_menu_240x320.png": func_menu,
+        "mage_func_home_240x320.png": func_home,
+        "mage_func_research_240x320.png": func_research,
+        "mage_func_forge_240x320.png": func_forge,
+        "mage_func_market_240x320.png": func_market,
+        "mage_func_alchemy_240x320.png": func_alchemy,
+        "mage_func_equip_240x320.png": func_equip,
+        "mage_func_mupgrade_240x320.png": func_mupgrade,
+        "mage_func_craft_240x320.png": func_craft,
+        "mage_func_promote_240x320.png": func_promote,
         "mage_battle_intro_240x320.png": battle_intro,
         "mage_dex_240x320.png": dex,
         "mage_partners_240x320.png": partners,
@@ -748,6 +872,16 @@ def main():
         (town_guild, "⑦ 冒险者公会·卡片列表+图标（新①超框修复）"),
         (func_status, "⑧ 功能面板·角色·有背景（新③）"),
         (func_bag, "⑧ 功能面板·背包·有背景（新③）"),
+        (func_menu, "⑭ 设置·图标卡片（本轮）"),
+        (func_home, "⑮ 住宅·图标卡片（本轮）"),
+        (func_research, "⑯ 魔法研究·图标卡片（本轮）"),
+        (func_forge, "⑰ 锻造房·图标卡片（本轮）"),
+        (func_market, "⑱ 魔法黑市·图标卡片（本轮）"),
+        (func_alchemy, "⑲ 炼金台·图标卡片（本轮）"),
+        (func_equip, "⑳ 装备·图标卡片（本轮）"),
+        (func_mupgrade, "㉑ 魔法升级·图标卡片（本轮）"),
+        (func_craft, "㉒ 魔法拼装·图标卡片（本轮）"),
+        (func_promote, "㉓ 晋升仪式·图标卡片（本轮）"),
         (battle_intro, "⑨ 遭遇演出·敌群+横幅（新②）"),
         (dex, "⑩ 图鉴页·怪物立绘（新③）"),
         (partners, "⑩ 伙伴页·真实立绘（新③）"),

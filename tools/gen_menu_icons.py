@@ -143,6 +143,174 @@ def herb():
     save("herb", im)
 
 
-for fn in (book, orb, crown, map, gate, herb):
+RED = (255, 107, 107, 255)
+BLUE = (94, 200, 242, 255)
+PURPLE = (185, 140, 255, 255)
+DARK = (40, 30, 70, 255)
+LAV = (200, 180, 235, 255)
+
+
+def heart():
+    im = new(); d = ImageDraw.Draw(im)
+    cx, cy = SS // 2, int(SS * 0.56); r = SS * 0.22
+    d.ellipse([cx - r, cy - r * 1.4, cx, cy - r * 0.2], fill=RED)
+    d.ellipse([cx, cy - r * 1.4, cx + r, cy - r * 0.2], fill=RED)
+    d.polygon([(cx - r, cy - r * 0.4), (cx + r, cy - r * 0.4), (cx, cy + r * 1.2)], fill=RED)
+    d.line([(cx - r, cy - r * 0.4), (cx, cy + r * 1.2), (cx + r, cy - r * 0.4)], fill=GOLD, width=4)
+    save("heart", im)
+
+
+def shield():
+    im = new(); d = ImageDraw.Draw(im)
+    x0, x1 = SS * 0.30, SS * 0.70; y0, y1 = SS * 0.24, SS * 0.74
+    pts = [(x0, y0), (x1, y0), (x1, y1 - SS * 0.06), (SS // 2, y1), (x0, y1 - SS * 0.06)]
+    d.polygon(pts, fill=BLUE)
+    d.line(pts + [pts[0]], fill=GOLD, width=4)
+    save("shield", im)
+
+
+def coin():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); r = SS * 0.32
+    d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=GOLD)
+    d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], outline=(180, 140, 20, 255), width=5)
+    d.ellipse([c[0] - r * 0.6, c[1] - r * 0.6, c[0] + r * 0.6, c[1] + r * 0.6], outline=(255, 240, 160, 255), width=3)
+    d.rectangle([c[0] - r * 0.12, c[1] - r * 0.34, c[0] + r * 0.12, c[1] + r * 0.34], fill=(150, 110, 10, 255))
+    save("coin", im)
+
+
+def paw():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2)
+    d.ellipse([c[0] - SS * 0.18, c[1] - SS * 0.02, c[0] + SS * 0.18, c[1] + SS * 0.22], fill=LAV)
+    for dx, dy in [(-0.24, -0.18), (0.24, -0.18), (-0.11, -0.27), (0.11, -0.27)]:
+        cx2, cy2, r = c[0] + dx * SS, c[1] + dy * SS, SS * 0.085
+        d.ellipse([cx2 - r, cy2 - r, cx2 + r, cy2 + r], fill=LAV)
+    save("paw", im)
+
+
+def bolt():
+    im = new(); d = ImageDraw.Draw(im)
+    pts = [(SS * 0.56, SS * 0.18), (SS * 0.33, SS * 0.56), (SS * 0.48, SS * 0.56),
+           (SS * 0.40, SS * 0.82), (SS * 0.67, SS * 0.42), (SS * 0.52, SS * 0.42)]
+    d.polygon(pts, fill=(255, 225, 77, 255))
+    d.line(pts + [pts[0]], fill=GOLD, width=3)
+    save("bolt", im)
+
+
+def star():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); R = SS * 0.33; r = R * 0.45
+    import math
+    pts = []
+    for i in range(10):
+        ang = math.pi / 2 + i * math.pi / 5
+        rad = R if i % 2 == 0 else r
+        pts.append((c[0] + rad * math.cos(ang), c[1] - rad * math.sin(ang)))
+    d.polygon(pts, fill=GOLD)
+    d.line(pts + [pts[0]], fill=(200, 160, 20, 255), width=3)
+    save("star", im)
+
+
+def bed():
+    im = new(); d = ImageDraw.Draw(im)
+    m = SS * 0.18
+    d.rounded_rectangle([m, SS * 0.46, SS - m, SS * 0.76], radius=SS * 0.04, fill=LAV)
+    d.rectangle([m, SS * 0.46, m + SS * 0.18, SS * 0.62], fill=WHITE)
+    d.rectangle([m, SS * 0.40, SS - m, SS * 0.50], fill=(110, 90, 170, 255))
+    d.line([(m, SS * 0.40), (SS - m, SS * 0.40)], fill=GOLD, width=3)
+    save("bed", im)
+
+
+def flask():
+    im = new(); d = ImageDraw.Draw(im)
+    cx = SS // 2; top = SS * 0.22; neck = SS * 0.10
+    d.polygon([(cx - neck, top), (cx + neck, top), (cx + neck, SS * 0.44),
+               (SS * 0.74, SS * 0.78), (SS * 0.26, SS * 0.78), (cx - neck, SS * 0.44)], fill=(120, 200, 255, 110))
+    d.polygon([(cx - neck, SS * 0.58), (SS * 0.70, SS * 0.78), (SS * 0.30, SS * 0.78)], fill=(90, 200, 255, 220))
+    d.line([(cx - neck, top), (cx + neck, top), (cx + neck, SS * 0.44),
+            (SS * 0.74, SS * 0.78), (SS * 0.26, SS * 0.78), (cx - neck, SS * 0.44), (cx - neck, top)], fill=GOLD, width=3)
+    save("flask", im)
+
+
+def hammer():
+    im = new(); d = ImageDraw.Draw(im)
+    d.rectangle([SS * 0.28, SS * 0.28, SS * 0.72, SS * 0.46], fill=GRAY)
+    d.rectangle([SS * 0.44, SS * 0.46, SS * 0.56, SS * 0.80], fill=(150, 110, 60, 255))
+    d.line([(SS * 0.28, SS * 0.28), (SS * 0.72, SS * 0.28), (SS * 0.72, SS * 0.46),
+            (SS * 0.28, SS * 0.46), (SS * 0.28, SS * 0.28)], fill=GOLD, width=3)
+    save("hammer", im)
+
+
+def robe():
+    im = new(); d = ImageDraw.Draw(im)
+    pts = [(SS * 0.40, SS * 0.22), (SS * 0.60, SS * 0.22), (SS * 0.70, SS * 0.78), (SS * 0.30, SS * 0.78)]
+    d.polygon(pts, fill=(170, 120, 220, 255))
+    d.line([(SS * 0.40, SS * 0.22), (SS * 0.30, SS * 0.78)], fill=GOLD, width=3)
+    d.line([(SS * 0.60, SS * 0.22), (SS * 0.70, SS * 0.78)], fill=GOLD, width=3)
+    d.line([(SS * 0.46, SS * 0.34), (SS * 0.54, SS * 0.34)], fill=GOLD, width=3)
+    save("robe", im)
+
+
+def crystal():
+    im = new(); d = ImageDraw.Draw(im)
+    pts = [(SS // 2, SS * 0.18), (SS * 0.70, SS * 0.46), (SS // 2, SS * 0.82), (SS * 0.30, SS * 0.46)]
+    d.polygon(pts, fill=(120, 220, 210, 255))
+    d.line([(SS // 2, SS * 0.18), (SS * 0.30, SS * 0.46), (SS // 2, SS * 0.82),
+            (SS * 0.70, SS * 0.46), (SS // 2, SS * 0.18)], fill=GOLD, width=3)
+    d.line([(SS * 0.30, SS * 0.46), (SS * 0.70, SS * 0.46)], fill=GOLD, width=2)
+    save("crystal", im)
+
+
+def gear():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); r = SS * 0.24
+    import math
+    for i in range(8):
+        a = i * 2 * math.pi / 8
+        x0 = c[0] + r * 0.85 * math.cos(a); x1 = c[0] + r * 1.3 * math.cos(a)
+        y0 = c[1] + r * 0.85 * math.sin(a); y1 = c[1] + r * 1.3 * math.sin(a)
+        d.rectangle([min(x0, x1) - SS * 0.04, min(y0, y1) - SS * 0.04,
+                     max(x0, x1) + SS * 0.04, max(y0, y1) + SS * 0.04], fill=GRAY)
+    d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=GRAY)
+    d.ellipse([c[0] - r * 0.4, c[1] - r * 0.4, c[0] + r * 0.4, c[1] + r * 0.4], fill=DARK)
+    save("gear", im)
+
+
+def bag():
+    im = new(); d = ImageDraw.Draw(im)
+    d.rounded_rectangle([SS * 0.28, SS * 0.42, SS * 0.72, SS * 0.80], radius=SS * 0.06, fill=(180, 150, 100, 255))
+    d.line([(SS * 0.40, SS * 0.42), (SS * 0.40, SS * 0.52), (SS * 0.60, SS * 0.52), (SS * 0.60, SS * 0.42)],
+           fill=(150, 120, 80, 255), width=4)
+    d.line([(SS * 0.28, SS * 0.58), (SS * 0.72, SS * 0.58)], fill=GOLD, width=3)
+    save("bag", im)
+
+
+def scroll():
+    im = new(); d = ImageDraw.Draw(im)
+    d.rounded_rectangle([SS * 0.22, SS * 0.30, SS * 0.78, SS * 0.70], radius=SS * 0.04, fill=(235, 225, 195, 255))
+    for yy in (0.42, 0.52, 0.62):
+        d.line([(SS * 0.30, SS * yy), (SS * 0.70, SS * yy)], fill=(150, 130, 90, 255), width=3)
+    d.ellipse([SS * 0.16, SS * 0.26, SS * 0.30, SS * 0.40], fill=(200, 180, 140, 255))
+    d.ellipse([SS * 0.70, SS * 0.60, SS * 0.84, SS * 0.74], fill=(200, 180, 140, 255))
+    save("scroll", im)
+
+
+def bone():
+    im = new(); d = ImageDraw.Draw(im)
+    cx, cy = SS // 2, SS // 2; r = SS * 0.12
+    d.line([(cx - r * 1.5, cy - r * 0.2), (cx + r * 1.5, cy + r * 0.2)], fill=(230, 230, 210, 255), width=int(SS * 0.09))
+    for dx, dy in [(-1.5, -0.2), (-1.5, 0.2), (1.5, -0.2), (1.5, 0.2)]:
+        x, y = cx + dx * r, cy + dy * r
+        d.ellipse([x - r * 0.5, y - r * 0.5, x + r * 0.5, y + r * 0.5], fill=(230, 230, 210, 255))
+    save("bone", im)
+
+
+def seal():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); r = SS * 0.26
+    d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=(200, 90, 120, 255))
+    d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], outline=GOLD, width=4)
+    d.ellipse([c[0] - r * 0.5, c[1] - r * 0.5, c[0] + r * 0.5, c[1] + r * 0.5], outline=(255, 200, 220, 255), width=2)
+    save("seal", im)
+
+
+for fn in (book, orb, crown, map, gate, herb, heart, shield, coin, paw, bolt,
+           star, bed, flask, hammer, robe, crystal, gear, bag, scroll, bone, seal):
     fn()
 print("done")

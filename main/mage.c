@@ -97,10 +97,11 @@ static bool is_town_scene(int s) {
  * 住宅/锻造房/魔法黑市/晋升仪式 在 HTML 里无金框，保持原样。 */
 static bool is_frame_scene(int s) {
     switch (s) {
-    case SC_STATUS: case SC_PARTNERS: case SC_BOOK: case SC_ALCHEMY:
+    case SC_CITY: case SC_STATUS: case SC_PARTNERS: case SC_BOOK: case SC_ALCHEMY:
     case SC_BAG: case SC_EQUIP: case SC_ACAD: case SC_WILD:
     case SC_GUILD: case SC_DEX: case SC_MUPGRADE: case SC_MENU:
-    case SC_RESEARCH: case SC_CRAFT:
+    case SC_RESEARCH: case SC_CRAFT: case SC_HOME: case SC_FORGE:
+    case SC_MARKET: case SC_PROMOTE:
         return true;
     default:
         return false;
@@ -108,7 +109,7 @@ static bool is_frame_scene(int s) {
 }
 
 /* ===================== 动作枚举 ===================== */
-enum { ACT_OK = 0, ACT_NEXT, ACT_PREV, ACT_BACK };
+enum { ACT_OK = 0, ACT_NEXT, ACT_PREV, ACT_BACK, ACT_LUP };
 
 /* ===================== 颜色 ===================== */
 #define C_GOLD  lv_color_hex(0xffd93d)
@@ -162,8 +163,15 @@ static int menu_last_key = -1;
 /* 渲染数据源（由三个 scene 的刷新分支填充） */
 static struct { MenuRow rows[MENU_ROWS]; int n; int sel; } g_menu;
 /* 文本缓冲（指向本缓冲，跨调用有效） */
-static char g_menu_sub[MENU_ROWS][40];
+static char g_menu_sub[MENU_ROWS][56];
 static char g_menu_rgt[MENU_ROWS][16];
+static int g_list_y0 = ROW_Y0;   /* 详情页(图鉴/伙伴/角色)把卡片列表下移到立绘下方 */
+/* 城镇地点 / 功能面板的图标映射（每个板块都有专属设计图标） */
+static const char *CITY_LOC_ICON[7] = {"sp_icon_book","sp_icon_map","sp_icon_sword",
+                                       "sp_icon_bed","sp_icon_hammer","sp_icon_coin","sp_icon_staff"};
+static const char *CITY_FUNC_ICON[8] = {"sp_icon_heart","sp_icon_paw","sp_icon_book",
+                                        "sp_icon_flask","sp_icon_bag","sp_icon_shield",
+                                        "sp_icon_crystal","sp_icon_gear"};
 static void menu_list_render(void);
 static lv_obj_t *g_toast = NULL;
 static lv_obj_t *g_stars[14];
@@ -279,6 +287,7 @@ static int spellModLen(int slot) { return slot == 0 ? 3 : slot == 1 ? 9 : 5; }
 static void battle_render(void);
 static void battle_handle(int act);
 static void battle_tick(void);
+static void battle_force_render(void);
 
 /* ===================== 建 UI ===================== */
 static void build_ui(void) {
@@ -605,9 +614,10 @@ static void ensureDungeonOffers(void) {
     }
 }
 
-/* 菜单卡片列表渲染：仅当 (场景,选择) 或数据脏标变化时才触碰 LVGL，避免周期重绘卡死。 */
+/* 菜单卡片列表渲染：仅当 (场景,选择) 或数据脏标变化时才触碰 LVGL，避免周期重绘卡死。
+ * 所有框架页（含详情页）统一走这里；详情页通过 g_list_y0 把列表下移到立绘下方。 */
 static void menu_list_render(void) {
-    int sel = (g_scene == SC_ACAD) ? acadIdx : (g_scene == SC_WILD) ? wildIdx : guildIdx;
+    int sel = g_menu.sel;
     int key = ((int)g_scene << 8) | (sel & 0xff);
     if (key == menu_last_key && !menu_list_dirty) return;
     menu_last_key = key;
@@ -622,7 +632,7 @@ static void menu_list_render(void) {
             lv_label_set_text(g_row_name[i], r->name);
             lv_label_set_text(g_row_sub[i], r->sub ? r->sub : "");
             lv_label_set_text(g_row_rgt[i], r->rgt ? r->rgt : "");
-            int y = ROW_Y0 + i * ROW_PITCH;
+            int y = g_list_y0 + i * ROW_PITCH;
             lv_obj_set_pos(g_row_box[i], ROW_X, y);
             bool isSel = (i == g_menu.sel);
             lv_obj_set_style_bg_color(g_row_box[i],
@@ -745,132 +755,140 @@ static void refresh_ui(void) {
     case SC_CITY: {
         s_ttl[0] = '\0';
         if (g.cityMode == 0) {
-            s_add("· 魔法小镇 ·\n");
             for (int i = 0; i < 7; i++)
-                s_add("%s%s\n", i == locSel ? "▶ " : "  ", LOCATIONS[i].n);
+                g_menu.rows[i] = (MenuRow){ CITY_LOC_ICON[i], LOCATIONS[i].n, LOCATIONS[i].d,
+                                           i == locSel ? "▶" : "" };
+            g_menu.n = 7; g_menu.sel = locSel;
             lv_label_set_text(g_scene_hint, "↑↓ 选地点 · OK 进入 · 长按 功能栏");
         } else {
-            s_add("· 功能面板 ·\n");
             for (int i = 0; i < 8; i++)
-                s_add("%s%s\n", i == funcSel ? "▶ " : "  ", FUNCS[i].n);
+                g_menu.rows[i] = (MenuRow){ CITY_FUNC_ICON[i], FUNCS[i].n, "",
+                                           i == funcSel ? "▶" : "" };
+            g_menu.n = 8; g_menu.sel = funcSel;
             lv_label_set_text(g_scene_hint, "↑↓ 选功能 · OK 打开 · 长按 回地图");
         }
+        menu_list_dirty = 1;
         break;
     }
     case SC_STATUS: {
         int atk = 7 + g.level * 2 + g.rank * 3 + g.atkBonus + eqAtk();
-        s_add("%s\n", g.name);
-        s_add("%s · Lv%d\n", RANKS[g.rank], g.level);
-        s_add("经验 %d/%d\n", g.exp, expNeed());
-        s_add("生命 %d/%d\n", g.hp, g.maxHp);
-        s_add("魔力 %d/%d\n", g.mp, g.maxMp);
-        s_add("攻击 %d（装+%d）\n", atk, eqAtk());
-        s_add("护甲减伤 %d\n", eqDef());
-        s_add("金币 %d · 击杀 %d\n", g.gold, g.kills);
-        s_add("伙伴 %d 只\n", g.cats);
-        int lo[4]; int n = activeLoadoutKeys(lo, 4);
-        s_add("出战 %d/4：", n);
-        for (int i = 0; i < n; i++) s_add("%s ", spellName(lo[i]));
-        s_add("\n");
-        lv_label_set_text(g_scene_hint, "OK/长按 回城 · ↓ 管理装备");
+        g_menu.n = 0;
+        snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "%d / %d", g.hp, g.maxHp);
+        g_menu.rows[0] = (MenuRow){"sp_icon_heart", "生命", g_menu_sub[0], ""};
+        snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "%d / %d", g.mp, g.maxMp);
+        g_menu.rows[1] = (MenuRow){"sp_icon_bolt", "魔力", g_menu_sub[1], ""};
+        snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "Lv%d · 经验%d/%d", g.level, g.exp, expNeed());
+        g_menu.rows[2] = (MenuRow){"sp_icon_star", "等级", g_menu_sub[2], RANKS[g.rank]};
+        snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "%d（装+%d）", atk, eqAtk());
+        g_menu.rows[3] = (MenuRow){"sp_icon_sword", "攻击", g_menu_sub[3], ""};
+        snprintf(g_menu_sub[4], sizeof(g_menu_sub[4]), "减伤 %d", eqDef());
+        g_menu.rows[4] = (MenuRow){"sp_icon_shield", "护甲", g_menu_sub[4], ""};
+        snprintf(g_menu_sub[5], sizeof(g_menu_sub[5]), "%d · 击杀%d", g.gold, g.kills);
+        g_menu.rows[5] = (MenuRow){"sp_icon_coin", "金币", g_menu_sub[5], ""};
+        g_menu.n = 6; g_menu.sel = 0;
+        lv_label_set_text(g_scene_hint, "伙伴 %d 只 · OK/长按 回城 · ↓ 管理装备", g.cats);
+        menu_list_dirty = 1;
         break;
     }
     case SC_BAG: {
-        char cat[12], nm[24]; int cnt = 0;
         int nP = 0, nB = 0;
         for (int id = 0; id < 20; id++) if (g.pbag[id] > 0) nP++;
         for (int id = 0; id < 40; id++) if (g.mbag[id] > 0) nB++;
-        int listN = 0;
-        for (int id = 0; id < 20; id++) if (g.pbag[id] > 0) listN++;
-        for (int id = 0; id < 40; id++) if (g.mbag[id] > 0) listN++;
-        for (int i = 1; i <= 4; i++) if (stoneN(i) > 0) listN++;
-        const char *props[6] = {"orbs","seals","herbs","mats","crystals","potions"};
-        for (int i = 0; i < 6; i++) if (g_str_field(props[i]) > 0) listN++;
-        if (listN == 0) {
-            s_add("背包空空如也\n");
-            lv_label_set_text(g_scene_hint, "长按 返回");
-            break;
-        }
-        bagIdx = clampi(bagIdx, 0, listN - 1);
-        bagItemAt(bagIdx, cat, nm, &cnt, NULL);
-        s_add("分类：%s\n", cat);
-        s_add("[ %s ]\n", nm);
-        s_add("数量 ×%d\n", cnt);
-        s_add("已收集 药%d/20 材%d/40\n", nP, nB);
-        s_add("(%d / %d)\n", bagIdx + 1, listN);
-        lv_label_set_text(g_scene_hint, "OK/↓ 切换 · 长按 返回");
+        g_menu.n = 0;
+        #define BAGROW(ic,nm,val) do{ if(g_menu.n<MENU_ROWS){ \
+            snprintf(g_menu_rgt[g_menu.n],sizeof(g_menu_rgt[g_menu.n]),"×%d",val); \
+            g_menu.rows[g_menu.n]=(MenuRow){ic,nm,"",g_menu_rgt[g_menu.n]}; g_menu.n++; } }while(0)
+        BAGROW("sp_icon_potion","体力药水", g.potions);
+        BAGROW("sp_icon_herb","月光草", g.herbs);
+        BAGROW("sp_icon_bone","兽骨", g.mats);
+        BAGROW("sp_icon_crystal","魔晶", g.crystals);
+        BAGROW("sp_icon_orb","捕捉球", g.orbs);
+        BAGROW("sp_icon_seal","封印卡", g.seals);
+        int stones = 0; for (int i = 1; i <= 4; i++) stones += stoneN(i);
+        BAGROW("sp_icon_star","魔石", stones);
+        #undef BAGROW
+        g_menu.sel = 0;
+        snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "已收集 药%d/20 材%d/40", nP, nB);
+        lv_label_set_text(g_scene_hint, g_menu_sub[0]);
+        menu_list_dirty = 1;
         break;
     }
     case SC_DEX: {
         int seen = 0, caught = 0;
         for (int i = 0; i < DEXORDER_COUNT; i++) { if (g.dexSeen[i]) seen++; if (g.dexCaught[i]) caught++; }
         dexIdx = clampi(dexIdx, 0, DEXORDER_COUNT - 1);
-        s_add("已收录 %d/%d · 收服 %d\n", seen, DEXORDER_COUNT, caught);
+        g_menu.n = 0;
+        snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "已收录 %d/%d · 收服%d", seen, DEXORDER_COUNT, caught);
+        g_menu.rows[0] = (MenuRow){"sp_icon_book", "收录进度", g_menu_sub[0], ""};
         int t = enemyIndex(DEXORDER[dexIdx]);
         MobDef *bd = &ENEMY[t];
         int seenF = g.dexSeen[dexIdx];
-        s_add(seenF ? "%s\n" : "？？？（未发现）\n", seenF ? bd->n : "");
+        snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "%s", seenF ? bd->n : "？？？（未发现）");
+        g_menu.rows[1] = (MenuRow){"sp_icon_staff", "当前", g_menu_sub[1],
+                                    seenF && g.dexCaught[dexIdx] ? "已收服" : ""};
         if (seenF) {
-            s_add(bd->capturable ? "可捕捉" : "不可捕捉");
+            snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "%s", speciesZones(dexIdx));
+            g_menu.rows[2] = (MenuRow){"sp_icon_map", "出没", g_menu_sub[2], ""};
+            char sk[40]; sk[0] = 0;
+            for (int i = 0; i < bd->nSkills; i++) {
+                int l = (int)strlen(sk); if (l) sk[l++] = ' ';
+                strncat(sk, SKILLS[skillIndex(bd->skills[i])].n, sizeof(sk) - l - 1);
+            }
+            snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "%s", sk);
+            g_menu.rows[3] = (MenuRow){"sp_icon_star", "天赋", g_menu_sub[3], ""};
+            char cap[40]; cap[0] = 0;
             if (bd->capturable) {
                 const char *tool = bd->cap.tool && strcmp(bd->cap.tool, "seal") == 0 ? "封印卡" : "捕捉球";
-                if (bd->hasCap && bd->cap.hp > 0) s_add(" · 用%s（血<%d%%）", tool, (int)(bd->cap.hp * 100));
-                else s_add(" · 用%s", tool);
-            }
-            s_add("\n");
-            s_add("出没：%s\n", speciesZones(dexIdx));
-            s_add("天赋：");
-            for (int i = 0; i < bd->nSkills; i++) s_add("%s ", SKILLS[skillIndex(bd->skills[i])].n);
-            s_add("\n特性：");
-            for (int i = 0; i < bd->nTraits; i++) s_add("%s ", TRAITS[traitIndex(bd->traits[i])].n);
-            s_add("\n");
-            if (bd->hasEvo) s_add("进化：Lv%d → %s%s\n", bd->evo.lvl, bd->n, bd->evo.title);
-            else s_add("进化：无\n");
-            if (bd->dex) s_add("%s\n", bd->dex);
-            if (g.dexCaught[dexIdx]) s_add("已收服 %d 只\n", g.dexCaught[dexIdx]);
+                if (bd->hasCap && bd->cap.hp > 0) snprintf(cap, sizeof(cap), "用%s(血<%d%%)", tool, (int)(bd->cap.hp * 100));
+                else snprintf(cap, sizeof(cap), "用%s", tool);
+            } else snprintf(cap, sizeof(cap), "不可捕捉");
+            g_menu.rows[4] = (MenuRow){"sp_icon_paw", "捕捉", cap, ""};
         }
-        s_add("(%d / %d)\n", dexIdx + 1, DEXORDER_COUNT);
+        g_menu.n = seenF ? 5 : 2;
+        g_menu.sel = 0;
         lv_label_set_text(g_scene_hint, "OK 捕捉条件 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_BOOK: {
         int n = discoveredCount();
         int total = n + 1;  /* +1 = 研究新魔法 */
         bookIdx = clampi(bookIdx, 0, total - 1);
-        s_add("已习得 %d/135\n", n);
-        int win = 5, start = clampi(bookIdx - 2, 0, total - win);
+        g_menu.n = 0;
+        int win = 6, start = clampi(bookIdx - 2, 0, total - win);
         if (start < 0) start = 0;
-        for (int i = start; i < start + win && i < total; i++) {
+        for (int i = start; i < start + win && i < total && g_menu.n < MENU_ROWS; i++) {
             if (i < n) {
                 int k = discoveredKeyAt(i);
                 int inlo = 0; for (int j = 0; j < g.nload; j++) if (g.loadout[j] == k) inlo = 1;
-                s_add("%s%s%s\n", i == bookIdx ? "▶ " : "  ", spellName(k), inlo ? " ★" : "");
+                snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]), "Lv%d 威力%d", slv(k), spellPower(k));
+                g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_book", spellName(k), g_menu_sub[g_menu.n], inlo ? "★出战" : ""};
             } else {
-                s_add("%s✚ 研究新魔法\n", i == bookIdx ? "▶ " : "  ");
+                g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_staff", "✚ 研究新魔法", "三槽自由拼装独门魔法", ""};
             }
+            g_menu.n++;
         }
-        s_add("———\n");
+        g_menu.sel = clampi(bookIdx - start, 0, g_menu.n - 1);
+        char hb[64];
         if (bookIdx < n) {
             int k = discoveredKeyAt(bookIdx);
             int a, e, m; spell_split(k, &a, &e, &m);
             int inlo = 0; for (int j = 0; j < g.nload; j++) if (g.loadout[j] == k) inlo = 1;
-            s_add("%s · %s魔法\n", spellName(k), TIER_NAMES[m]);
-            s_add("Lv%d 威力%d 耗魔%d\n", slv(k), spellPower(k), spellCost(k));
-            s_add(inlo ? "★已在出战编队\n" : "A 加入出战\n");
-            s_add("系：%s\n", ELEMS[e].n);
+            snprintf(hb, sizeof(hb), "%s · %s魔法 Lv%d 威力%d 耗%d%s",
+                     spellName(k), TIER_NAMES[m], slv(k), spellPower(k), spellCost(k), inlo ? " ★出战" : "");
         } else {
-            s_add("✚ 三槽自由拼装\n组合独门魔法\n");
+            snprintf(hb, sizeof(hb), "✚ 三槽自由拼装 · OK 加入/移出 · ↓ 切换");
         }
-        int lo[4]; int nl = activeLoadoutKeys(lo, 4);
-        s_add("出战 %d/4\n", nl);
-        lv_label_set_text(g_scene_hint, "OK 加入/移出 · ↓ 切换 · 长按 返回");
+        lv_label_set_text(g_scene_hint, hb);
+        menu_list_dirty = 1;
         break;
     }
     case SC_PARTNERS: {
         if (g.npartners == 0) {
-            s_add("还没有伙伴\n");
-            s_add("去野外把魔物打到虚弱\n再用球/卡收服\n");
+            g_menu.n = 1; g_menu.sel = 0;
+            g_menu.rows[0] = (MenuRow){"sp_icon_paw", "还没有伙伴", "去野外打到虚弱再收服", ""};
             lv_label_set_text(g_scene_hint, "长按 返回");
+            menu_list_dirty = 1;
             break;
         }
         partIdx = clampi(partIdx, 0, g.npartners - 1);
@@ -881,90 +899,111 @@ static void refresh_ui(void) {
         int ivs2 = p->ivs[2] < 0 ? 0 : p->ivs[2];
         int total = ivs0 + ivs1 + ivs2;
         const char *grade = total >= 40 ? "S" : total >= 33 ? "A" : total >= 26 ? "B" : "C";
-        if (g.activePartner == partIdx) s_add("%s ★\n", p->name);
-        else s_add("%s\n", p->name);
-        s_add("%s Lv%d 资质%s(%d/45)\n", bd->n, p->level, grade, total);
-        s_add("技能 %s\n", SKILLS[p->skillIdx < 7 ? p->skillIdx : 0].n);
-        s_add("特性 %s\n", TRAITS[p->traitIdx < 7 ? p->traitIdx : 0].n);
-        if (bd->hasEvo) s_add(bd->evo.lvl <= p->level ? "★ Lv%d可进化%s\n" : "Lv%d 可进化%s\n", bd->evo.lvl, bd->evo.title);
-        s_add("攻%d 防%d 速%d\n", ivs0, ivs1, ivs2);
-        if (partMenuOpen) {
-            s_add("———菜单———\n");
-            int nopts = 0;
-            if (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) nopts++;
-            nopts += 3; /* release/city/close */
-            int oi = 0;
-            if (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) { s_add("%s进化→%s%s\n", oi++ == partMenu ? "▶" : " ", p->name, bd->evo.title); }
-            s_add("%s放生\n", oi++ == partMenu ? "▶" : " ");
-            s_add("%s返回城镇\n", oi++ == partMenu ? "▶" : " ");
-            s_add("%s关闭菜单\n", oi++ == partMenu ? "▶" : " ");
-        } else if (partRelConf) {
-            s_add("确认放生 %s？\nA 放生 · 长按 取消\n", p->name);
+        g_menu.n = 0;
+        snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "%s%s 资质%s(%d/45)",
+                 g.activePartner == partIdx ? "★ " : "", bd->n, grade, total);
+        g_menu.rows[0] = (MenuRow){"sp_icon_paw", p->name, g_menu_sub[0], ""};
+        snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "Lv%d", p->level);
+        g_menu.rows[1] = (MenuRow){"sp_icon_star", "物种", g_menu_sub[1], ""};
+        snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "%s · %s",
+                 SKILLS[p->skillIdx < 7 ? p->skillIdx : 0].n,
+                 TRAITS[p->traitIdx < 7 ? p->traitIdx : 0].n);
+        g_menu.rows[2] = (MenuRow){"sp_icon_book", "技能/特性", g_menu_sub[2], ""};
+        snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "攻%d 防%d 速%d", ivs0, ivs1, ivs2);
+        g_menu.rows[3] = (MenuRow){"sp_icon_bolt", "三维", g_menu_sub[3], ""};
+        if (bd->hasEvo) {
+            snprintf(g_menu_sub[4], sizeof(g_menu_sub[4]), "Lv%d 可进化%s",
+                     bd->evo.lvl, p->evolved ? "(已进化)" : bd->evo.title);
+            g_menu.rows[4] = (MenuRow){"sp_icon_staff", "进化", g_menu_sub[4], ""};
+            g_menu.n = 5;
         } else {
-            s_add("(%d/%d)\n", partIdx + 1, g.npartners);
+            g_menu.n = 4;
         }
-        lv_label_set_text(g_scene_hint, partMenuOpen || partRelConf ? "↓ 选 · OK 确定" : "OK 出战 · ↓ 切换 · 长按 菜单");
+        g_menu.sel = 0;
+        lv_label_set_text(g_scene_hint, partMenuOpen || partRelConf ? "↓ 选 · OK 确定"
+                         : "OK 出战 · ↓ 切换 · 长按 菜单");
+        menu_list_dirty = 1;
         break;
     }
     case SC_MENU: {
         menuIdx = clampi(menuIdx, 0, 6);
-        const char *items[7];
-        items[0] = g.autoMode ? "自动战斗：开" : "自动战斗：关";
-        items[1] = g.autoCapture ? "自动捕捉：开" : "自动捕捉：关";
-        items[2] = g.sound ? "音效：开" : "音效：关";
-        items[3] = diffC()->n;
-        items[4] = "导出存档";
-        items[5] = "导入存档";
-        items[6] = "重新开始";
-        for (int i = 0; i < 7; i++)
-            s_add("%s%s\n", i == menuIdx ? "▶ " : "  ", items[i]);
+        const char *micon[7] = {"sp_icon_bolt","sp_icon_paw","sp_icon_star",
+                                "sp_icon_crown","sp_icon_scroll","sp_icon_scroll","sp_icon_gear"};
+        const char *mname[7] = {"自动战斗","自动捕捉","音效","难度","导出存档","导入存档","重新开始"};
+        g_menu.n = 7; g_menu.sel = menuIdx;
+        for (int i = 0; i < 7; i++) {
+            const char *val = "";
+            if (i == 0) val = g.autoMode ? "开" : "关";
+            else if (i == 1) val = g.autoCapture ? "开" : "关";
+            else if (i == 2) val = g.sound ? "开" : "关";
+            else if (i == 3) val = diffC()->n;
+            g_menu.rows[i] = (MenuRow){micon[i], mname[i], val, i == menuIdx ? "▶" : ""};
+        }
         lv_label_set_text(g_scene_hint, "OK 执行 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_HOME: {
         homeSel = clampi(homeSel, 0, 2);
-        const char *it[3] = {"休息", "炼金台", "魔法研究"};
-        const char *sub[3] = {"恢复全部状态", "炼制药剂与捕捉球", "消耗材料升魔法等级"};
-        for (int i = 0; i < 3; i++) s_add("%s%s\n  %s\n", i == homeSel ? "▶ " : "  ", it[i], sub[i]);
+        g_menu.n = 3; g_menu.sel = homeSel;
+        g_menu.rows[0] = (MenuRow){"sp_icon_bed",   "休息",     "恢复全部状态",       homeSel==0?"▶":""};
+        g_menu.rows[1] = (MenuRow){"sp_icon_flask", "炼金台",   "炼制药剂与捕捉球",   homeSel==1?"▶":""};
+        g_menu.rows[2] = (MenuRow){"sp_icon_book",  "魔法研究", "消耗材料升魔法等级", homeSel==2?"▶":""};
         lv_label_set_text(g_scene_hint, "OK 选择 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_RESEARCH: {
         int n = discoveredCount();
-        resIdx = clampi(resIdx, 0, n == 0 ? 0 : n - 1);
-        int win = 5, start = clampi(resIdx - 2, 0, n - win);
-        if (n > 0) {
-            for (int i = start; i < start + win && i < n; i++) {
-                int k = discoveredKeyAt(i);
-                s_add("%s%s Lv%d\n", i == resIdx ? "▶ " : "  ", spellName(k), slv(k));
-            }
-        }
-        if (n > 0) {
-            int k = discoveredKeyAt(resIdx);
-            int lv = slv(k);
-            int rate = researchRateFor(k);
-            s_add("———\n%s Lv%d→Lv%d\n威力%d→%d\n成功率%d%%\n", spellName(k), lv, lv + 1, spellPower(k), spellPower2(k, lv + 1), rate);
-            s_add("耗 月光草x2 兽骨x2\n持有 %d/%d\n", g.herbs, g.mats);
+        g_menu.n = 0;
+        if (n == 0) {
+            g_menu.rows[0] = (MenuRow){"sp_icon_book", "魔法书是空的", "去战斗或炼金习得魔法", ""};
+            g_menu.n = 1; g_menu.sel = 0;
         } else {
-            s_add("魔法书还是空的\n");
+            resIdx = clampi(resIdx, 0, n - 1);
+            int win = 6, start = clampi(resIdx - 2, 0, n - win);
+            if (start < 0) start = 0;
+            for (int i = start; i < start + win && i < n && g_menu.n < MENU_ROWS; i++) {
+                int k = discoveredKeyAt(i);
+                int a, e, m; spell_split(k, &a, &e, &m);
+                int lv = slv(k);
+                if (i == resIdx) {
+                    int rate = researchRateFor(k);
+                    snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
+                             "%s Lv%d→%d 成%d%%", TIER_NAMES[m], lv, lv + 1, rate);
+                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_book", spellName(k),
+                                                     g_menu_sub[g_menu.n], "OK研究"};
+                } else {
+                    snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
+                             "%s Lv%d", TIER_NAMES[m], lv);
+                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_book", spellName(k),
+                                                     g_menu_sub[g_menu.n], ""};
+                }
+                g_menu.n++;
+            }
+            g_menu.sel = clampi(resIdx - start, 0, g_menu.n - 1);
         }
         lv_label_set_text(g_scene_hint, "OK 研究 · ↓ 切换 · 长按 返回住宅");
+        menu_list_dirty = 1;
         break;
     }
     case SC_FORGE: {
         forgeSel = clampi(forgeSel, 0, 1);
-        const char *nm[2] = {"锻造武器", "锻造法袍"};
-        for (int i = 0; i < 2; i++) {
-            int lv = i == 0 ? g.weaponLv : g.armorLv;
-            int gg = 30 * (lv + 1), mm = 2 * (lv + 1);
-            s_add("%s %d级 · %d金+兽骨x%d\n  %s\n", i == forgeSel ? "▶" : " ", lv + 1, gg, mm,
-                  i == 0 ? "攻击+2" : "生命上限+8");
-        }
+        g_menu.n = 2; g_menu.sel = forgeSel;
+        int lw = g.weaponLv, la = g.armorLv;
+        snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "%d级 · %d金+兽骨x%d", lw + 1, 30 * (lw + 1), 2 * (lw + 1));
+        snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "%d级 · %d金+兽骨x%d", la + 1, 30 * (la + 1), 2 * (la + 1));
+        g_menu.rows[0] = (MenuRow){"sp_icon_sword", "锻造武器", g_menu_sub[0], forgeSel==0?"▶":"攻击+2"};
+        g_menu.rows[1] = (MenuRow){"sp_icon_robe",  "锻造法袍", g_menu_sub[1], forgeSel==1?"▶":"生命+8"};
         lv_label_set_text(g_scene_hint, "OK 锻造 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_MARKET: {
         marketIdx = clampi(marketIdx, 0, 4);
+        const char *mkicon[5] = {"sp_icon_herb","sp_icon_bone","sp_icon_crystal",
+                                 "sp_icon_seal","sp_icon_staff"};
+        g_menu.n = 5; g_menu.sel = marketIdx;
         for (int i = 0; i < 5; i++) {
             int hold = 0;
             switch (MARKET[i].holdField) {
@@ -974,28 +1013,37 @@ static void refresh_ui(void) {
                 case 3: hold = g.seals; break;
                 default: hold = -1; break;
             }
-            s_add("%s%s · %d金\n", i == marketIdx ? "▶ " : "  ", MARKET[i].n, MARKET[i].price);
-            if (hold >= 0) s_add("  持有 %d\n", hold);
-            else s_add("  随机习得魔法\n");
+            if (hold >= 0)
+                snprintf(g_menu_sub[i], sizeof(g_menu_sub[i]), "持有 %d · %d金", hold, MARKET[i].price);
+            else
+                snprintf(g_menu_sub[i], sizeof(g_menu_sub[i]), "随机魔法 · %d金", MARKET[i].price);
+            g_menu.rows[i] = (MenuRow){mkicon[i], MARKET[i].n, g_menu_sub[i],
+                                       i == marketIdx ? "▶" : ""};
         }
         lv_label_set_text(g_scene_hint, "OK 购买 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_ALCHEMY: {
         alcIdx = clampi(alcIdx, 0, 6);
-        int win = 6, start = clampi(alcIdx - 2, 0, 7 - win);
-        for (int i = start; i < start + win && i < 7; i++) {
+        g_menu.n = 7; g_menu.sel = alcIdx;
+        for (int i = 0; i < 7; i++) {
             RecipeDef *r = &RECIPES[i];
-            s_add("%s%s\n", i == alcIdx ? "▶ " : "  ", r->n);
-            s_add("  耗 ");
-            if (r->cH) s_add("草%d ", r->cH);
-            if (r->cM) s_add("骨%d ", r->cM);
-            if (r->cC) s_add("晶%d", r->cC);
-            if (r->makeStone) s_add("→%s", STONE_NAMES[r->makeStone]);
-            s_add("\n");
+            const char *ic = "sp_icon_flask";
+            if (r->makeStone > 0) ic = "sp_icon_crystal";
+            else if (!strcmp(r->outName, "potions")) ic = "sp_icon_potion";
+            else if (!strcmp(r->outName, "orbs")) ic = "sp_icon_orb";
+            else if (!strcmp(r->outName, "seals")) ic = "sp_icon_seal";
+            char cost[40]; cost[0] = 0;
+            if (r->cH) { int l = (int)strlen(cost); snprintf(cost + l, sizeof(cost) - l, "草%d ", r->cH); }
+            if (r->cM) { int l = (int)strlen(cost); snprintf(cost + l, sizeof(cost) - l, "骨%d ", r->cM); }
+            if (r->cC) { int l = (int)strlen(cost); snprintf(cost + l, sizeof(cost) - l, "晶%d", r->cC); }
+            if (r->makeStone) { int l = (int)strlen(cost); snprintf(cost + l, sizeof(cost) - l, "→%s", STONE_NAMES[r->makeStone]); }
+            snprintf(g_menu_sub[i], sizeof(g_menu_sub[i]), "%s", cost);
+            g_menu.rows[i] = (MenuRow){ic, r->n, g_menu_sub[i], i == alcIdx ? "▶" : "炼制"};
         }
-        s_add("草%d 骨%d 晶%d\n", g.herbs, g.mats, g.crystals);
         lv_label_set_text(g_scene_hint, "OK 炼制 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_ACAD: {
@@ -1018,53 +1066,66 @@ static void refresh_ui(void) {
         break;
     }
     case SC_PROMOTE: {
-        s_add("晋 升 仪 式\n\n");
-        s_add("%s\n", g.name);
-        s_add("%s →\n", RANKS[g.rank]);
-        if (g.rank < 6) s_add("%s\n", RANKS[g.rank + 1]);
-        else s_add("魔法帝！\n");
-        s_add("「试炼已足」\n");
+        g_menu.n = 2; g_menu.sel = 0;
+        g_menu.rows[0] = (MenuRow){"sp_icon_crown", "当前职级", RANKS[g.rank], ""};
+        g_menu.rows[1] = (MenuRow){"sp_icon_star",  "晋升为",
+            g.rank < 6 ? RANKS[g.rank + 1] : "魔法帝！", "OK接受"};
         lv_label_set_text(g_scene_hint, "OK 接受晋升 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_CRAFT: {
         craftSlot = clampi(craftSlot, 0, 2);
-        const char *slots[3] = {"形态", "元素", "修饰"};
-        s_add("%s%s\n", craftSlot == 0 ? "▶" : " ", slots[0]);
-        s_add("  %s\n", FORMS[g.spell[0]].n);
-        s_add("%s%s\n", craftSlot == 1 ? "▶" : " ", slots[1]);
-        s_add("  %s\n", ELEMS[g.spell[1]].n);
-        s_add("%s%s\n", craftSlot == 2 ? "▶" : " ", slots[2]);
-        s_add("  %s\n", MODS[g.spell[2]].n);
         int key = spell_key(g.spell[0], g.spell[1], g.spell[2]);
-        s_add("———\n预览：%s\n", spellName(key));
-        s_add("威力%d 耗魔%d\n", spellPower(key), spellCost(key));
+        const char *cic[3] = {"sp_icon_staff","sp_icon_bolt","sp_icon_crystal"};
+        g_menu.n = 4;
+        g_menu.rows[0] = (MenuRow){cic[0], "形态", FORMS[g.spell[0]].n,  craftSlot==0?"▶":"OK切"};
+        g_menu.rows[1] = (MenuRow){cic[1], "元素", ELEMS[g.spell[1]].n,  craftSlot==1?"▶":"OK切"};
+        g_menu.rows[2] = (MenuRow){cic[2], "修饰", MODS[g.spell[2]].n,   craftSlot==2?"▶":"OK切"};
+        snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "威力%d 耗%d", spellPower(key), spellCost(key));
+        g_menu.rows[3] = (MenuRow){"sp_icon_star", spellName(key), g_menu_sub[3], "预览"};
+        g_menu.sel = craftSlot;
         lv_label_set_text(g_scene_hint, "OK 切槽 · ↓ 换项 · 长按 装配");
+        menu_list_dirty = 1;
         break;
     }
     case SC_EQUIP: {
-        if (g.nebag == 0) {
-            s_add("装备背包是空的\n去锻造/战斗获取\n");
+        g_menu.n = 0;
+        /* 已装备（展示用，不可选中） */
+        for (int s = 0; s < 3 && g_menu.n < MENU_ROWS; s++) {
+            EquipItem *it = &g.equip[s];
+            if (it->rar < 0) continue;
+            const char *ic = (s == 0) ? "sp_icon_sword" : (s == 1) ? "sp_icon_robe" : "sp_icon_staff";
+            g_menu.rows[g_menu.n] = (MenuRow){ic, it->name, "已装备", ""};
+            g_menu.n++;
+        }
+        int eqBase = g_menu.n;
+        if (g.nebag == 0 && eqBase == 0) {
+            g_menu.rows[0] = (MenuRow){"sp_icon_gear", "装备背包是空的", "去锻造/战斗获取", ""};
+            g_menu.n = 1; g_menu.sel = 0;
         } else {
             eqSel = clampi(eqSel, 0, g.nebag - 1);
-            int win = 6, start = clampi(eqSel - 2, 0, g.nebag - win);
-            for (int i = start; i < start + win && i < g.nebag; i++) {
+            int maxBag = MENU_ROWS - eqBase;
+            int win = (maxBag > 6) ? 6 : (maxBag < 1 ? 1 : maxBag);
+            int start = clampi(eqSel - 2, 0, g.nebag - win);
+            if (start < 0) start = 0;
+            for (int i = start; i < start + win && i < g.nebag && g_menu.n < MENU_ROWS; i++) {
                 EbagItem *it = &g.ebag[i];
-                s_add("%s[%c]%s", i == eqSel ? "▶" : " ", it->slot, it->name);
-                if (it->atk) s_add(" 攻+%d", it->atk);
-                else if (it->def) s_add(" 减伤%d", it->def);
-                else if (it->pow > 0) s_add(" 法强+%d%%", (int)((it->pow - 1) * 100));
-                s_add("\n");
+                char stat[20];
+                if (it->atk) snprintf(stat, sizeof(stat), "攻击+%d", it->atk);
+                else if (it->def) snprintf(stat, sizeof(stat), "减伤%d", it->def);
+                else if (it->pow > 0) snprintf(stat, sizeof(stat), "法强+%d%%", (int)((it->pow - 1) * 100));
+                else stat[0] = 0;
+                const char *ic = (it->slot == 'w') ? "sp_icon_sword" : (it->slot == 'a') ? "sp_icon_robe" : "sp_icon_staff";
+                snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]), "%s", stat);
+                g_menu.rows[g_menu.n] = (MenuRow){ic, it->name, g_menu_sub[g_menu.n], i == eqSel ? "▶" : ""};
+                g_menu.n++;
             }
-        }
-        s_add("———\n");
-        const char *sl[3] = {"w", "a", "t"};
-        for (int i = 0; i < 3; i++) {
-            int idx = (sl[i][0] == 'w') ? 0 : (sl[i][0] == 'a') ? 1 : 2;
-            EquipItem *it = &g.equip[idx];
-            s_add("%s：%s\n", EQ_SLOTS[idx].n, it->rar >= 0 ? it->name : "空");
+            g_menu.sel = eqBase + clampi(eqSel - start, 0, g.nebag - start - 1);
+            if (g_menu.sel >= g_menu.n) g_menu.sel = g_menu.n - 1;
         }
         lv_label_set_text(g_scene_hint, "OK 装备/卸下 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     case SC_GUILD: {
@@ -1125,23 +1186,37 @@ static void refresh_ui(void) {
     }
     case SC_MUPGRADE: {
         int n = discoveredCount();
-        if (n == 0) { s_add("魔法书还是空的\n"); lv_label_set_text(g_scene_hint, "长按 返回"); break; }
-        muIdx = clampi(muIdx, 0, n - 1);
-        int win = 5, start = clampi(muIdx - 2, 0, n - win);
-        for (int i = start; i < start + win && i < n; i++) {
-            int k = discoveredKeyAt(i);
-            int a, e, m; spell_split(k, &a, &e, &m);
-            s_add("%s%s(%s) Lv%d\n", i == muIdx ? "▶ " : "  ", spellName(k), TIER_NAMES[m], slv(k));
-        }
-        if (n > 0) {
-            int k = discoveredKeyAt(muIdx);
-            int a, e, m; spell_split(k, &a, &e, &m);
-            int lv = slv(k), gold = 50 * (lv + 1);
-            s_add("———\n%s Lv%d→Lv%d\n威力%d→%d\n", spellName(k), lv, lv + 1, spellPower(k), spellPower2(k, lv + 1));
-            if (m > 0) s_add("需%s×1 + %d金\n", STONE_NAMES[m], gold);
-            else s_add("需 %d金\n", gold);
+        g_menu.n = 0;
+        if (n == 0) {
+            g_menu.rows[0] = (MenuRow){"sp_icon_star", "魔法书是空的", "去战斗或炼金习得魔法", ""};
+            g_menu.n = 1; g_menu.sel = 0;
+        } else {
+            muIdx = clampi(muIdx, 0, n - 1);
+            int win = 6, start = clampi(muIdx - 2, 0, n - win);
+            if (start < 0) start = 0;
+            for (int i = start; i < start + win && i < n && g_menu.n < MENU_ROWS; i++) {
+                int k = discoveredKeyAt(i);
+                int a, e, m; spell_split(k, &a, &e, &m);
+                int lv = slv(k);
+                if (i == muIdx) {
+                    int gold = 50 * (lv + 1);
+                    snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
+                             "%s Lv%d→%d · %d金%s", TIER_NAMES[m], lv, lv + 1, gold,
+                             m > 0 ? "+魔石" : "");
+                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_star", spellName(k),
+                                                     g_menu_sub[g_menu.n], "OK升"};
+                } else {
+                    snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
+                             "%s Lv%d", TIER_NAMES[m], lv);
+                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_star", spellName(k),
+                                                     g_menu_sub[g_menu.n], ""};
+                }
+                g_menu.n++;
+            }
+            g_menu.sel = clampi(muIdx - start, 0, g_menu.n - 1);
         }
         lv_label_set_text(g_scene_hint, "OK 升级 · ↓ 切换 · 长按 返回");
+        menu_list_dirty = 1;
         break;
     }
     default:
@@ -1160,27 +1235,26 @@ static void refresh_ui(void) {
         bool fon = is_frame_scene(g_scene);
         if (last_frame_scene != g_scene) {
             last_frame_scene = g_scene;
-            bool detail = (g_scene == SC_DEX || g_scene == SC_PARTNERS || g_scene == SC_STATUS);
             set_hidden(g_frame, !fon);
             set_hidden(g_frame_bar, !fon);
             set_hidden(g_frame_title, !fon);
             set_hidden(g_scene_title, fon);          /* 金框标题条替代旧居中标题 */
             set_hidden(g_dex_box, !fon || g_scene != SC_DEX);
             set_hidden(g_part_card, !fon || g_scene != SC_PARTNERS);
-            /* 三界面（魔法学院/野外试炼/冒险者公会）改用卡片列表（g_list），隐藏旧 body */
-            bool menu3 = (fon && (g_scene == SC_ACAD || g_scene == SC_WILD || g_scene == SC_GUILD));
-            set_hidden(g_scene_body, menu3);
-            set_hidden(g_list, !menu3);
+            /* 所有框架页统一用带图标的卡片列表（g_list），隐藏旧纯文字 body */
+            set_hidden(g_scene_body, fon);
+            set_hidden(g_list, !fon);
+            /* 详情页：卡片列表下移到立绘下方，立绘盒居中；并把立绘置顶，
+             * 彻底根治「文字/卡片压住立绘」的遮挡问题（用户问题④）。 */
+            if (g_scene == SC_DEX)            g_list_y0 = 96;
+            else if (g_scene == SC_PARTNERS)  g_list_y0 = 130;
+            else if (g_scene == SC_STATUS)    g_list_y0 = 88;
+            else                              g_list_y0 = ROW_Y0;
             if (fon) {
                 lv_label_set_text(g_frame_title, s_ttl[0] ? s_ttl : SCENE_NAME[g_scene]);
-                int by = 34;                          /* 列表页：框内顶部 */
-                if (g_scene == SC_DEX || g_scene == SC_STATUS) by = 110;   /* 图鉴/角色：正文下移，避开立绘盒（用户问题⑤） */
-                else if (g_scene == SC_PARTNERS)      by = 136;
-                lv_obj_set_pos(g_scene_body, 16, by);
-                lv_obj_set_width(g_scene_body, 208);
-                lv_obj_set_style_text_font(g_scene_body, &mage_cjk_12, 0);
-                lv_obj_set_style_text_align(g_scene_body, 0,
-                    detail ? LV_TEXT_ALIGN_CENTER : LV_TEXT_ALIGN_LEFT);
+                if (g_scene == SC_DEX)           { lv_obj_move_foreground(g_dex_box);   lv_obj_move_foreground(g_scene_img); }
+                else if (g_scene == SC_PARTNERS) { lv_obj_move_foreground(g_part_card); lv_obj_move_foreground(g_scene_img); }
+                else if (g_scene == SC_STATUS)    { lv_obj_move_foreground(g_scene_img); }
             } else {
                 lv_obj_set_pos(g_scene_body, 10, 38);
                 lv_obj_set_width(g_scene_body, SCR_W - 16);
@@ -1192,7 +1266,7 @@ static void refresh_ui(void) {
     }
 
     /* 菜单卡片列表渲染（仅场景/选择/数据变化时触碰 LVGL，避免周期重绘卡死） */
-    if (g_scene == SC_ACAD || g_scene == SC_WILD || g_scene == SC_GUILD)
+    if (is_frame_scene(g_scene))
         menu_list_render();
 
     /* 图鉴/伙伴/角色立绘：按 sp_<type> 原生尺寸展示，脚底中心锚点对齐 HTML 布局
@@ -1251,9 +1325,9 @@ static void refresh_ui(void) {
          * 持续显示 —— 这就是「其他界面直接用了 BOSS 战背景」的根因。 */
         mage_fx_show(in_bt);
         set_hidden(g_hud, in_bt);
-        set_hidden(g_scene_body, in_bt);
+        set_hidden(g_scene_body, in_bt || is_frame_scene(g_scene));
         set_hidden(g_scene_hint, in_bt);
-        set_hidden(g_scene_title, in_bt);
+        set_hidden(g_scene_title, in_bt || is_frame_scene(g_scene));
         /* 战斗时把底部 toast 抬到卡片之上（y=232），避免压住动作卡与回合徽标
          * （卡片从 276 起、徽标 269~283）；非战斗回落原位 264。记忆上次值防每帧重排。 */
         static int8_t s_toastY = -1;
@@ -1693,6 +1767,7 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
         else if (btn == BSP_BTN_UP) act = ACT_PREV;
     } else if (ev == BSP_BTN_LONG) {
         if (btn == BSP_BTN_OK) act = ACT_BACK;
+        else if (btn == BSP_BTN_UP) act = ACT_LUP;   /* 长按↑ = 切回自动战斗 */
     }
     if (act < 0) return;
     scene_handle(act);
@@ -1889,12 +1964,13 @@ static void hero_strike(void) {
     }
     int dmg = (int)((9 + g.level * 3 + g.rank * 3 + g.atkBonus + eqAtk()) * mage_rf(0.9f, 1.1f) + 0.5f);
     if (dmg < 1) dmg = 1;
-    bt.lungeT = 0.22f;   /* 演出：主角突进 */
+    bt.lungeT = 0.5f;   /* 演出：主角突进（延长到 0.5s，跨多帧可见"冲出去又退回"） */
     deal_to(e, dmg);
     /* 演出：在敌人身上炸开命中火花（用户问题⑧：让玩家看清攻击打在敌人身上，而非自己） */
     mage_fx_spawn(FX_K_RING, (float)(e->x) - (float)(int)bt.cam, 212.0f, 0xffe27a, 16.0f, 0.30f);
     mage_fx_spawn(FX_K_PARTICLE, (float)(e->x) - (float)(int)bt.cam, 216.0f, 0xfff0c0, 7.0f, 0.40f);
     reap_dead();
+    battle_force_render();
     after_player_action();
 }
 static void partner_strike(void) {
@@ -1944,24 +2020,30 @@ static void magic_cast(void) {
     if (a == 0) take = nh > 0 ? 1 : 0;                 /* 弹：单体 */
     else if (m == 3) take = nh > 3 ? 3 : nh;           /* 古代：最多3 */
     if (take == 0) { toast("空放了…"); after_player_action(); return; }
-    /* 演出：英雄突进（HTML bt.lungeT/0.22）+ 施法聚能光球（HTML fx charge） */
-    bt.lungeT = 0.22f;
+    /* 演出：英雄突进（HTML bt.lungeT）+ 施法聚能（按元素着色，让用户一眼区分魔法属性） */
+    bt.lungeT = 0.5f;
+    uint32_t eleCol = hex2col(ELEMS[e2].c);
+    /* 英雄脚下魔法阵（元素色） */
+    mage_fx_spawn(FX_K_CIRCLE, (float)(BTPX) - (float)(int)bt.cam, 252.0f, eleCol, 22.0f, 0.5f);
+    /* 施法聚能光球（元素色，替换原先固定紫色 0xb98cff） */
     mage_fx_spawn(FX_K_CHARGE, (float)(hits[0]->x) - (float)(int)bt.cam,
-                   205.0f, 0xb98cff, 12.0f, 0.35f);
+                   205.0f, eleCol, 12.0f, 0.35f);
     for (int i = 0; i < take; i++) {
         BattleEnemy *en = hits[i];
         int wk = 0; for (int j = 0; j < ENEMY[en->typeIdx].nWeak; j++) if (ENEMY[en->typeIdx].weakOf[j] == e2) wk = 1;
         int resisted = (en->resist[0] >= 0 && (en->resist[0] == e2 || en->resist[1] == e2)) ? 1 : 0;
         int dmg = (int)(pow * mage_rf(0.9f, 1.15f) + 0.5f); if (dmg < 1) dmg = 1;
         if (resisted) { dmg = (int)(dmg * 0.45f + 0.5f); en->resistKnown = 1; toast("抗性!"); }
+        /* 命中环（元素色）：每次命中都在敌人身上炸开一圈对应属性的光环 */
+        mage_fx_spawn(FX_K_RING, (float)(en->x) - (float)(int)bt.cam, 212.0f, eleCol, 14.0f, 0.35f);
         if (wk) {
             dmg = (int)(dmg * 1.5f + 0.5f);
             bt.weakKnown = 1;   /* 弱点揭示（HTML e.weakKnown 命中后才显示图标） */
-            /* 演出：地面魔法阵 + 扩散环 */
+            /* 演出：地面魔法阵 + 扩散环（元素色强化） */
             mage_fx_spawn(FX_K_CIRCLE, (float)(en->x) - (float)(int)bt.cam,
                            252.0f, 0x7fd4ff, 20.0f, 0.5f);
             mage_fx_spawn(FX_K_RING, (float)(en->x) - (float)(int)bt.cam,
-                          210.0f, 0xffd93d, 16.0f, 0.4f);
+                          210.0f, eleCol, 18.0f, 0.45f);
             bt.shake = 0.8f;   /* 弱点暴击强震屏 */
             if (en->shield > 0 && en->brokenTurns <= 0) {
                 en->shield--;
@@ -1972,6 +2054,7 @@ static void magic_cast(void) {
         deal_to(en, dmg);
     }
     reap_dead();
+    battle_force_render();
     after_player_action();
 }
 static int item_opt_count(void) {
@@ -2424,22 +2507,42 @@ void battle_start_boss(int chapter) {
  * 250ms 约 4fps，动画偏慢但绝不卡死（宁可慢，不能卡）。
  * 宁可动画慢，绝不能卡死或烧板。 */
 static float g_fx_acc = 0.0f;
+static uint32_t g_fx_last = 0;
+static bool g_fx_force = false;
+#define FX_INTERVAL 0.18f   /* 真实时间节流：约 5.5fps。原 0.25s/调用在 60ms 刷新下
+                               * 实测只会 ~1.3fps（主角突进 0.22s 一帧就结束→看起来完全不动）。
+                               * 改真实时间累加后稳定 5.5fps，单核全屏重绘仍安全（背景静态只 blit）。 */
+
+/* "#rrggbb" 字符串 -> 0xRRGGBB（魔法元素色用于演出着色） */
+static uint32_t hex2col(const char *s) {
+    if (!s || s[0] != '#') return 0xffffff;
+    unsigned int v = 0;
+    sscanf(s + 1, "%x", &v);
+    return (uint32_t)v;
+}
 
 static void battle_art_update(void) {
     const bool in_battle = (g_scene == SC_BATTLE) && bt.active;
     mage_fx_show(in_battle);
     if (!in_battle) {
-        g_fx_acc = 0.0f;
+        g_fx_acc = 0.0f; g_fx_last = 0; g_fx_force = false;
         return;
     }
-    g_fx_acc += 0.020f;
-    /* 250ms（4fps）。整屏 240x320 RGB565 = 153600B/帧，ESP32-C3 单核软件
-     * 光栅化扛不住每帧重绘，150ms 仍会卡死。降到 250ms 实测可稳。 */
-    if (g_fx_acc < 0.25f) return;
+    /* 真实时间累加：无论 refresh 调用频率如何，都按固定 ~180ms 渲染一帧，
+     * 主角突进(0.5s)可跨 2~3 帧显示，肉眼可见"冲出去又退回"。 */
+    uint32_t now = now_ms();
+    if (g_fx_last == 0) g_fx_last = now;
+    g_fx_acc += (float)(now - g_fx_last) / 1000.0f;
+    g_fx_last = now;
+    if (!g_fx_force && g_fx_acc < FX_INTERVAL) return;
+    g_fx_force = false;
     g_fx_acc = 0.0f;
-    mage_fx_tick(0.25f);
+    mage_fx_tick(FX_INTERVAL);
     mage_fx_render();
 }
+
+/* 玩家行动瞬间（攻击/施法）强制下一帧立即渲染，让演出第一帧立刻可见 */
+static void battle_force_render(void) { g_fx_force = true; }
 
 /* 战斗文字：按 HTML 原版 drawBattle 收敛 —— 敌人血条/等级画在画面上（演出层负责），
  * 这里只保留必要信息，且必须能塞进底部 196..320 这 124px 面板内，
@@ -2602,17 +2705,20 @@ static void battle_handle(int act) {
             if (item_opt_count() == 0) { toast("没有道具"); break; }
             bt.itemIdx = 0; set_bphase(BP_ITEM);
         }
+        else if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); }
         else if (act == ACT_BACK) end_battle();
         break;
     case BP_MAGIC:
         if (act == ACT_OK) { set_bphase(BP_MENU); magic_cast(); }
         else if (act == ACT_NEXT) { int lo[16]; int nl = activeLoadoutKeys(lo, 16); if (nl == 0) break; bt.magicIdx = (bt.magicIdx + 1) % nl; g.equipped = lo[bt.magicIdx]; g_need_refresh = 1; }
         else if (act == ACT_PREV || act == ACT_BACK) set_bphase(BP_MENU);
+        else if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); set_bphase(BP_MENU); }
         break;
     case BP_ITEM:
         if (act == ACT_OK) { set_bphase(BP_MENU); use_item(); }
         else if (act == ACT_NEXT) { int c = item_opt_count(); if (c == 0) break; bt.itemIdx = (bt.itemIdx + 1) % c; g_need_refresh = 1; }
         else if (act == ACT_PREV || act == ACT_BACK) set_bphase(BP_MENU);
+        else if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); set_bphase(BP_MENU); }
         break;
     case BP_RESULT:
         if (act == ACT_OK) next_wave();
