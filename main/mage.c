@@ -786,7 +786,7 @@ static void refresh_ui(void) {
         snprintf(g_menu_sub[5], sizeof(g_menu_sub[5]), "%d · 击杀%d", g.gold, g.kills);
         g_menu.rows[5] = (MenuRow){"sp_icon_coin", "金币", g_menu_sub[5], ""};
         g_menu.n = 6; g_menu.sel = 0;
-        lv_label_set_text(g_scene_hint, "伙伴 %d 只 · OK/长按 回城 · ↓ 管理装备", g.cats);
+        lv_label_set_text_fmt(g_scene_hint, "伙伴 %d 只 · OK/长按 回城 · ↓ 管理装备", g.cats);
         menu_list_dirty = 1;
         break;
     }
@@ -2001,6 +2001,10 @@ static void partner_strike(void) {
     }
     reap_dead();
 }
+
+/* "#rrggbb" 字符串 -> 0xRRGGBB（魔法元素色用于演出着色）。定义见 battle_art_update 区。 */
+static uint32_t hex2col(const char *s);
+
 static void magic_cast(void) {
     int key = g.equipped;
     int cost = spellCost(key);
