@@ -165,6 +165,8 @@ static int g_part_sig = -1;                            /* 网格脏标：记录(
 #define ROW_H 33   /* 12px字库行高15：name(1..16)+sub(17..32)；旧29两行叠字且sub超框 */
 #define ROW_PITCH 34
 #define ROW_Y0 27  /* 金框标题条底 y=25 + 2px；8行列表底=298 < 提示行302 */
+#define LIST_BOTTOM 294  /* 动态行距下列表底界（提示行302之上留8px） */
+#define PITCH_MAX 88     /* 行数少(>=3)时行拉高铺满框，但别夸张成通天大卡 */
 typedef struct { const char *icon; const char *name; const char *sub; const char *rgt; } MenuRow;
 static lv_obj_t *g_list = NULL;
 static lv_obj_t *g_row_box[MENU_ROWS];
@@ -596,10 +598,10 @@ static void build_ui(void) {
         use_cjk(rg);
         lv_obj_set_style_text_color(rg, C_GOLD, 0);
         lv_obj_set_style_text_font(rg, &mage_cjk_12, 0);
-        lv_obj_set_width(rg, 56);
+        lv_obj_set_width(rg, 76);   /* 56 会把「见习魔法师」(60px)裁成「凡习魔法师」 */
         lv_label_set_long_mode(rg, LV_LABEL_LONG_CLIP);
         lv_obj_set_style_text_align(rg, LV_TEXT_ALIGN_RIGHT, 0);
-        lv_obj_set_pos(rg, ROW_W - 60, 9);
+        lv_obj_set_pos(rg, ROW_W - 80, 9);   /* y 由 menu_list_render 按行高居中 */
         g_row_rgt[i] = rg;
         lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
     }
@@ -714,6 +716,27 @@ static void menu_list_render(void) {
     menu_last_key = key;
     menu_list_dirty = 0;
 
+    /* 【动态行距铺满】行数少的页面(学院3行/住宅3行等)把行拉高填满框体，
+     * 不再留大片空白（用户铁律：列表必须铺满界面）。
+     * pitch = (LIST_BOTTOM - y0) / n，下限 ROW_H(两行行最小 33，字库行高铁律)，
+     * 上限 PITCH_MAX；框体高度随内容自适应，封顶 298（提示行 302 之上）。 */
+    int n = g_menu.n;
+    int pitch = ROW_PITCH;
+    int rowH = ROW_H;
+    int frame_h = 270;
+    if (n > 0) {
+        pitch = (LIST_BOTTOM - g_list_y0) / n;
+        if (pitch > PITCH_MAX) pitch = PITCH_MAX;
+        if (pitch < ROW_H) pitch = ROW_H;
+        rowH = pitch - 1;
+        int fb = g_list_y0 + n * pitch + 3;
+        if (fb > 298) fb = 298;
+        frame_h = fb - 10;
+    }
+    /* 脏标守卫内执行，仅场景/选中变化时才碰；同值重复 set 无害 */
+    lv_obj_set_height(g_frame, frame_h);
+    lv_obj_set_height(g_list, frame_h);
+
     for (int i = 0; i < MENU_ROWS; i++) {
         if (i < g_menu.n) {
             MenuRow *r = &g_menu.rows[i];
@@ -723,8 +746,27 @@ static void menu_list_render(void) {
             lv_label_set_text(g_row_name[i], r->name);
             lv_label_set_text(g_row_sub[i], r->sub ? r->sub : "");
             lv_label_set_text(g_row_rgt[i], r->rgt ? r->rgt : "");
-            int y = g_list_y0 + i * ROW_PITCH;
+            int y = g_list_y0 + i * pitch;
+            lv_obj_set_size(g_row_box[i], ROW_W, rowH);
             lv_obj_set_pos(g_row_box[i], ROW_X, y);
+            /* 行内垂直居中：两行块(name 15px + 间 1 + sub 15px)=31；单行块=15 */
+            const char *sub = r->sub ? r->sub : "";
+            int top;
+            if (sub[0]) {
+                top = (rowH - 31) / 2;
+                if (top < 1) top = 1;
+                lv_obj_set_pos(g_row_name[i], 46, top);
+                lv_obj_set_pos(g_row_sub[i], 46, top + 16);
+            } else {
+                top = (rowH - 15) / 2;
+                if (top < 0) top = 0;
+                lv_obj_set_pos(g_row_name[i], 46, top);
+                lv_obj_set_pos(g_row_sub[i], 46, top + 16);
+            }
+            lv_obj_set_pos(g_row_rgt[i], ROW_W - 80, (rowH - 15) / 2);
+            /* 图标/三角按新行高重新垂直居中（对齐是一次性设位，行高变了要重排） */
+            lv_obj_align(g_row_ico[i], LV_ALIGN_LEFT_MID, 18, 0);
+            lv_obj_align(g_row_tri[i], LV_ALIGN_LEFT_MID, 4, 0);
             bool isSel = (i == g_menu.sel);
             lv_obj_set_style_bg_color(g_row_box[i],
                 isSel ? lv_color_hex(0x3a2c5c) : lv_color_hex(0x18122c), 0);
@@ -1468,6 +1510,11 @@ static void refresh_ui(void) {
         ESP_LOGI(TAG, "FX g_scene=%d bt.active=%d in_bt=%d", g_scene, bt.active ? 1 : 0, in_bt ? 1 : 0);
         /* 结算/战利品面板（BP_RESULT / BP_LOOT）需完整露出，故隐藏底部动作卡 */
         mage_hud_show(in_bt && bt.phase != BP_LOOT && bt.phase != BP_INTRO);
+        /* 底部三卡只在可交互阶段（主菜单/魔法/道具选择）显示；
+         * 结算面板底边 286、远征总结算底边 290 都压在卡区(y=276..316)上，
+         * 卡不藏就会盖住 footer（用户实测照片：结算栏被操作栏挡住）。 */
+        mage_hud_cards_show(in_bt && (bt.phase == BP_MENU || bt.phase == BP_MAGIC ||
+                                      bt.phase == BP_ITEM));
         /* 战斗演出层（含 battle_bg 背景图）必须随战斗状态显隐：
          * 否则战斗结束后 battle_art_update 不再被调用，mage_fx_show(false)
          * 永远不触发，battle_bg 会残留在透明背景的场景（如状态/背包页）之后
@@ -2039,7 +2086,7 @@ static void deal_to(BattleEnemy *e, int dmg) {
     if (e->boss && !e->enraged && e->hp > 0 && e->hp <= (int)(e->maxHp * 0.65f)) {
         e->enraged = 1; e->atk = (int)(e->atk * 1.6f + 0.5f);
         e->bossCD = e->bossCD < 2 ? e->bossCD : 2;
-        toast("🔥 %s 狂暴了！攻击大幅提升", ENEMY[e->typeIdx].n);
+        toast("%s 狂暴了！攻击大幅提升", ENEMY[e->typeIdx].n);   /* 不用 emoji：子集字库无 emoji 字形，屏上只会出豆腐块 */
     }
     if (ENEMY[e->typeIdx].hasCap && can_capture(e)) {           /* 手下留情锁血 */
         int fl = (int)(e->maxHp * 0.08f + 0.5f); if (fl < 1) fl = 1;
@@ -2282,7 +2329,7 @@ static void throw_orb(int seal) {   /* seal: 1=封印卡 0=球 -1=auto */
 /* ---------- 敌方回合 ---------- */
 static void apply_enemy_hit(BattleEnemy *e, int big) {
     int d = (int)(e->atk + mage_ri(-1, 2)); if (d < 1) d = 1;
-    if (big) { d = (int)(d * 2.6f + 0.5f); toast("💥 %s 大招命中！", ENEMY[e->typeIdx].n); }
+    if (big) { d = (int)(d * 2.6f + 0.5f); toast("%s 大招命中！", ENEMY[e->typeIdx].n); }
     d = (int)(d * diffC()->dmgTaken + 0.5f); if (d < 1) d = 1;
     d -= eqDef(); if (d < 1) d = 1;
     Partner *pr = NULL;

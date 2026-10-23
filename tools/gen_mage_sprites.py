@@ -54,15 +54,18 @@ ICONS = {
 PARTNER_THUMBS = ["cat", "fox", "slime", "goblin", "mush", "wolf", "goblin_boss"]
 
 
-def make_thumb(species, th=40):
-    """读 sp_<species>.png -> 缩到高度 th（保持宽高比）的 PIL RGBA 图。"""
+def make_thumb(species, th=40, max_w=44):
+    """读 sp_<species>.png -> 缩到高度 th（保持宽高比）的 PIL RGBA 图。
+    max_w 限宽：伙伴格内区只有 50px，横身魔物(如 glowfish 1.53)按高度缩会超宽。"""
     path = os.path.join(SRC, "sp_%s.png" % species)
     if not os.path.exists(path):
         return None
     im = Image.open(path).convert("RGBA")
     w, h = im.size
-    tw = max(1, int(round(w * th / h)))
-    return im.resize((tw, th), Image.LANCZOS)
+    scale = min(th / h, max_w / w)
+    tw = max(1, int(round(w * scale)))
+    tH = max(1, int(round(h * scale)))
+    return im.resize((tw, tH), Image.LANCZOS)
 
 
 def make_triangle(w=10, h=12):
@@ -193,9 +196,13 @@ def main():
         px = load_rgba(os.path.join(SRC, src_name), tw, th)
         total += emit(parts, index, name, px, tw, th, "rgb565")
 
-    # ---- 伙伴网格缩略图（高度 40，透明；运行期禁止缩放，必须烘焙期缩好）----
-    for sp in PARTNER_THUMBS:
-        im = make_thumb(sp, 40)
+    # ---- 伙伴网格缩略图（高度 40、限宽 44，透明；运行期禁止缩放，必须烘焙期缩好）----
+    # 【教训】不能只硬编码几只：玩家能收服任何可捕捉魔物，缺 thumb 的种类
+    # 在伙伴网格里就是空格子（2026-10-23 板上实测「根须/点点没图」）。
+    # 改为遍历全部魔物源图，一只不落。
+    for _key, _base in discover_monsters():
+        sp = _key[3:] if _key.startswith("sp_") else _key  # sp_treant -> treant
+        im = make_thumb(sp, 40, max_w=44)
         if im is None:
             print("跳过缩略图 %s（源图缺失）" % sp)
             continue

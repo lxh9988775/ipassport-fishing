@@ -9,6 +9,7 @@
 void mage_hud_attach(lv_obj_t *parent);
 void mage_hud_build(void);
 void mage_hud_show(bool on);
+void mage_hud_cards_show(bool on);   /* 底部三卡+回合徽标独立显隐（非交互战斗阶段藏卡） */
 void mage_hud_update(int hp, int maxHp, int mp, int maxMp,
                      int wave, int waveMax, bool crawl,
                      bool autoMode, bool autoCap, int loadout,

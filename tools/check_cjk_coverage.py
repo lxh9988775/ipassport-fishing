@@ -26,6 +26,15 @@ SRC_LOGIC = os.path.join(ROOT, "main", "fishing_logic.c")
 SRC_FILES = [SRC_C, SRC_LOGIC]
 FONT_C = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_16.c")
 
+# v3：魔法帝之路线独立字库（mage_cjk_12/16），此前只查钓鱼导致 mage 缺字
+# 「当/挑/关」漏网（2026-10-23 板上实测豆腐块）。mage 文案散在 mage*.c 全家。
+import glob as _glob
+MAGE_SRC = sorted(_glob.glob(os.path.join(ROOT, "main", "mage*.c")))
+MAGE_FONTS = [
+    os.path.join(ROOT, "assets", "fonts", "mage_cjk_12.c"),
+    os.path.join(ROOT, "assets", "fonts", "mage_cjk_16.c"),
+]
+
 
 def strip_comments(s):
     s = re.sub(r"/\*.*?\*/", "", s, flags=re.S)
@@ -33,9 +42,9 @@ def strip_comments(s):
     return s
 
 
-def needed_chars():
+def needed_chars_from(src_files):
     lits = []
-    for p in SRC_FILES:
+    for p in src_files:
         with open(p, "r", encoding="utf-8") as f:
             src = strip_comments(f.read())
         lits += re.findall(r'"((?:[^"\\]|\\.)*)"', src)
@@ -47,12 +56,20 @@ def needed_chars():
     return need, lits
 
 
-def font_chars():
-    with open(FONT_C, "r", encoding="utf-8", errors="replace") as f:
+def needed_chars():
+    return needed_chars_from(SRC_FILES)
+
+
+def font_chars_from(font_c):
+    with open(font_c, "r", encoding="utf-8", errors="replace") as f:
         body = f.read()
     have = {chr(int(m, 16)) for m in re.findall(r"/\* U\+([0-9A-Fa-f]+) ", body)}
     have |= {chr(c) for c in range(0x20, 0x7F)}   # 可打印 ASCII
     return have
+
+
+def font_chars():
+    return font_chars_from(FONT_C)
 
 
 def width_check():
@@ -96,6 +113,31 @@ def width_check():
 
 
 def main():
+    rc_total = 0
+
+    # ---- v3：魔法线校验（mage*.c 全部字符串 vs mage_cjk_12/16 字形）----
+    if MAGE_SRC:
+        mage_need, _ = needed_chars_from(MAGE_SRC)
+        for fc in MAGE_FONTS:
+            name = os.path.basename(fc)
+            if not os.path.exists(fc):
+                print("[FAIL] 找不到 %s" % fc)
+                rc_total = 1
+                continue
+            have = font_chars_from(fc)
+            missing = {c: v for c, v in mage_need.items() if c not in have}
+            print("== 魔法线 %s ==" % name)
+            print("  源文案非 ASCII 字符 %d 个，字库覆盖 %d 个（含 ASCII）"
+                  % (len(mage_need), len(have)))
+            if missing:
+                print("  [FAIL] 缺字（屏上会出方框），修法：跑 python tools/gen_font_mage.py")
+                for ch, lits_ in sorted(missing.items()):
+                    print("    %s  U+%04X   出现在：%s" % (ch, ord(ch), " / ".join(sorted(lits_))))
+                rc_total = 1
+            else:
+                print("  [PASS] 无缺字。")
+
+    # ---- 钓鱼/宠物线校验（原有逻辑）----
     if not os.path.exists(SRC_C) or not os.path.exists(FONT_C):
         print("[FAIL] 找不到 %s 或 %s" % (SRC_C, FONT_C))
         return 2

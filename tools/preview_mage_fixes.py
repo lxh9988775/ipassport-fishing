@@ -6,16 +6,24 @@
 直接用与固件 main/mage.c / main/mage_fx.c / main/mage_hud.c **同一套坐标与颜色常量**画出来。
 
 覆盖本次修复：
-  ① 战斗中「切回自动」只在 BP_MENU/MAGIC/ITEM 处理，清场屏(BP_RESULT)与遭遇(BP_INTRO)没处理，
-     且顶部 HUD 在 BP_RESULT/LOOT/INTRO 隐藏 → 看不到 AUTO/手动。
-     -> 现在：ACT_LUP(长按↑) 全战斗阶段可切自动；BP_RESULT 时顶部 HUD 显示 AUTO/手动。
-  ② 结算面板 box(20,150,*,170) 底边顶到 320 屏底，footer 被压在屏幕最下沿像被裁掉。
-     -> 现在：box(20,120,*,166)，footer 留 16px 下边距。
-  ③ 菜单/状态副标题用 C_DIM(0x6b6480) 太暗看不清。
-     -> 现在：改用 C_SUB(0xc9c2e6) 亮藕荷色。
+  —— 前序批次 ——
+  ① 战斗中「切回自动」全阶段可切；BP_RESULT 时顶部 HUD 显示 AUTO/手动。
+  ② 结算面板上移留边距；非交互阶段(RESULT/LOOT/INTRO/EVENT/FAINT)藏底部三卡防盖 footer。
+  ③ 菜单/状态副标题改用亮藕荷色 C_SUB。
+  ④ 菜单行高 33、name(y+1)/sub(y+17) 分离防叠字；图标用真实 sp_icon_*。
+  —— 第六批（用户板照炸裂反馈）——
+  ⑤ 列表不铺满：frame 高度固定 270 + pitch 固定 34，学院 3 行下面大片空白。
+     -> 现在：menu_list_render 动态 pitch=(LIST_BOTTOM-g_list_y0)/n 铺满、框高随行数自适应(封顶298)、行内容垂直居中。
+  ⑥ 角色页/菜单右列裁切：「见习魔法师」(60px) 被旧 56px 右列裁成「凡习魔法师」，信息显示不全。
+     -> 现在：右列宽 56→76、pos ROW_W-80，职级等右列文本完整显示。
+  ⑦ 伙伴图鉴没图：PARTNER_THUMBS 硬编码 7 + 烘焙只 8 个 thumb → sp_treant_thumb 等 NULL 空白格。
+     -> 现在：gen_mage_sprites 遍历全部魔物烘 84 个 _thumb，网格 8 格全有立绘。
+  ⑧ 豆腐块缺字：10-15~10-23 加的文案(当前/可挑战等)及 emoji 从未进字库；check_cjk_coverage 只查钓鱼线漏查魔法线。
+     -> 现在：重跑 gen_font_mage(1173 字形) + 扩展检查脚本覆盖魔法线(双线 PASS)；删 💥🔥 emoji toast。
+     注：缺字属字库层缺陷，电脑端预览用真实中文 ttf 无法复现豆腐块，故该项的诚实证据是 check_cjk_coverage.py PASS。
 
 仅在预览里复刻「位置+颜色层面」，不渲染真实贴图（验证的是布局与对比度）。
-产出 assets/preview/mage_fix_*.png（240x320 原生 + 2x 放大 + 一张 2x2 总览）。
+产出 assets/preview/mage_fix_*.png（240x320 原生 + 2x 放大 + 一张 2x2 总览）+ 第六批 mage_sixth_*.png（3×2 总览）。
 """
 from __future__ import annotations
 import os
@@ -77,7 +85,24 @@ def cjk(s):
 
 
 # ---------------- 结算面板（问题①②） ----------------
-def draw_result(d, im, box_y, box_h, footer_text, show_hud, label):
+def draw_action_cards(d, im, turn=2):
+    """底部三张动作卡 + 回合徽标（与固件 mage_hud.c 同几何：x=8+i*78, y=276, 72x40）"""
+    names = ["攻击", "魔法", "道具"]
+    icons = ["sp_icon_sword", "sp_icon_staff", "sp_icon_potion"]
+    c1 = [(255, 138, 61), (90, 138, 255), (61, 189, 122)]
+    for i in range(3):
+        x, y, w, h = 8 + i * 78, 276, 72, 40
+        d.rectangle([x, y, x + w, y + h], fill=(36, 29, 74), outline=(138, 106, 42))
+        d.rectangle([x + 2, y + 3, x + 4, y + 36], fill=c1[i])
+        ic = load_icon(icons[i])
+        im.paste(ic, (x + (w - 22) // 2, y + 2), ic)
+        d.text((x + w // 2, y + 31), names[i], font=F9, fill=(255, 255, 255), anchor="mm")
+    # 回合徽标（固件 turnBox: (W/2-30, CARD_Y-7, 60,14)）
+    d.rectangle([W // 2 - 30, 269, W // 2 + 30, 283], fill=(13, 10, 26), outline=(201, 164, 74))
+    d.text((W // 2, 276), f"回合 {turn}", font=F9, fill=C_GOLD, anchor="mm")
+
+
+def draw_result(d, im, box_y, box_h, footer_text, show_hud, label, show_cards=False):
     # 战斗场景底（夜色）
     d.rectangle([0, 0, W, H], fill=C_BG)
     # 地面草丛暗示
@@ -85,27 +110,28 @@ def draw_result(d, im, box_y, box_h, footer_text, show_hud, label):
     # 顶部 HUD（问题①：修复后 BP_RESULT 也显示，含 AUTO/手动）
     if show_hud:
         d.rectangle([0, 0, W, 24], fill=(20, 16, 40))
-        d.text((8, 6), "HP 274/274", font=F9, fill=C_CYAN)
-        d.text((120, 6), "MP 88/120", font=F9, fill=C_CYAN)
-        d.text((8, 13), "试炼 4/6", font=F9, fill=C_WHITE)
-        d.text((150, 2), "手动·2·1·3", font=F9, fill=C_GOLD)   # 状态行：手动/AUTO + 球/印/药
+        d.text((82, 2), "102/104", font=F9, fill=(255, 255, 255))
+        d.text((7, 3), "HP", font=F9, fill=(255, 136, 136))
+        d.text((82, 13), "59/62", font=F9, fill=C_CYAN)
+        d.text((7, 14), "MP", font=F9, fill=(124, 184, 255))
+        d.text((W - 6, 1), "试炼 7/10", font=F9, fill=C_GOLD, anchor="ra")
+        d.text((W - 6, 14), "AUTO·0·0·4", font=F9, fill=(127, 220, 138), anchor="ra")
     else:
         d.text((8, 6), "(顶部 HUD 隐藏：看不到手动/AUTO)", font=F9, fill=C_DIM)
-    # 结算面板
+    # 结算面板（固件：evtName y+8 / evtDesc 多行 y+28 / footer y+150）
     bx, by, bw, bh = 20, box_y, 200, box_h
     round_rect(d, [bx, by, bx + bw, by + bh], 6, fill=C_PANEL, outline=C_GOLD, width=1)
-    d.text((bx + bw // 2, by + 8), "第 4 波 清场（累计收益）", font=F13, fill=C_GOLD, anchor="mm")
-    # 明细（两列）
-    rows = ["击杀 史莱姆 x3", "获得 经验 +48", "金币 +26", "掉落 魔法草 x2", "伙伴 喵喵 Lv↑"]
-    yy = by + 28
-    for i, r in enumerate(rows):
-        x = bx + 14 + (i % 2) * 96
-        if i % 2 == 0 and i > 0:
-            yy += 18
-        col = bx + 14 if i % 2 == 0 else bx + 110
-        d.text((col, yy), r, font=F12, fill=C_REWARD)
+    d.text((bx + bw // 2, by + 8), "第 7 波 清场（累计收益）", font=F13, fill=C_GOLD, anchor="mm")
+    rows = ["金币 +94", "经验 +201", "月光草 +5", "兽骨 +3", "药水 +2"]
+    yy = by + 30
+    for r in rows:
+        d.text((bx + 14, yy), r, font=F12, fill=C_REWARD)
+        yy += 19
     # footer（问题②：应留边距，不被屏底裁掉）
     d.text((bx + bw // 2, by + 150), footer_text, font=F12, fill=C_GOLD, anchor="mm")
+    # 底部动作卡：修复前显示（盖住 footer，= 用户板上的现象）；修复后藏卡
+    if show_cards:
+        draw_action_cards(d, im, turn=7)
     # 标签：面板顶到屏底时放顶部，避免与 footer 重叠
     if box_y + box_h >= H - 20:
         d.text((W // 2, 36), label, font=F9, fill=(255, 120, 120), anchor="mm")
@@ -158,6 +184,188 @@ def draw_menu(d, im, sub_color, label, geo):
     d.text((W // 2, H - 12), label, font=F9, fill=C_CYAN, anchor="mm")
 
 
+def draw_battle_menu(d, im, label):
+    """战斗菜单阶段（BP_MENU）：证明三张动作卡照常显示，修复只藏结算/事件等非交互阶段。"""
+    d.rectangle([0, 0, W, H], fill=C_BG)
+    d.rectangle([0, 250, W, H], fill=(18, 22, 16))
+    # 顶部 HUD（同 show_hud 分支的真实坐标）
+    d.rectangle([0, 0, W, 24], fill=(20, 16, 40))
+    d.text((82, 2), "102/104", font=F9, fill=(255, 255, 255))
+    d.text((7, 3), "HP", font=F9, fill=(255, 136, 136))
+    d.text((82, 13), "59/62", font=F9, fill=C_CYAN)
+    d.text((7, 14), "MP", font=F9, fill=(124, 184, 255))
+    d.text((W - 6, 1), "试炼 7/10", font=F9, fill=C_GOLD, anchor="ra")
+    d.text((W - 6, 14), "AUTO·0·0·4", font=F9, fill=(127, 220, 138), anchor="ra")
+    # 敌人区占位（战斗画面示意，验证的是卡不消失）
+    d.rectangle([70, 60, 170, 160], fill=(30, 24, 58), outline=(90, 80, 130))
+    d.text((W // 2, 110), "敌人", font=F12, fill=(120, 110, 160), anchor="mm")
+    d.text((W // 2, 200), "OK攻击 · ↓魔法 · ↑道具", font=F12, fill=C_GOLD, anchor="mm")
+    d.text((W // 2, 220), "长按↑自动/手动 · 长按OK回城", font=F9, fill=C_SUB, anchor="mm")
+    # 三张动作卡：菜单阶段照常显示（= 修复后的行为）
+    draw_action_cards(d, im, turn=7)
+    d.text((W // 2, 250), "▲ 战斗菜单阶段：三卡照常显示", font=F9, fill=(127, 220, 138), anchor="mm")
+
+
+def load_monster(type_key, th=40, max_w=44):
+    """读取源怪物 PNG（mage-game/assets/sp_<type>.png）并按烘焙期 make_thumb 同口径缩放。
+
+    与固件 assets/mage_sprites.c 烘焙同源：scale=min(th/h, max_w/w) 限宽 44、高 40。
+    """
+    p = os.path.join(ICON_DIR, "sp_%s.png" % type_key)
+    im = Image.open(p).convert("RGBA")
+    w, h = im.size
+    scale = min(th / h, max_w / w)
+    nw, nh = max(1, int(w * scale)), max(1, int(h * scale))
+    return im.resize((nw, nh), Image.LANCZOS)
+
+
+# ---------------- 第六批数据（与固件真实文案/物种一一对应） ----------------
+# 学院页：3 行（g_menu.n=3），旧几何留下大片空白；新几何铺满。
+ACADEMY_ROWS = [
+    ("sp_icon_orb",   "魔力修行",     "魔力上限 +5（当前 104）", "20金"),
+    ("sp_icon_book",  "学属性魔法",   "已学 12/135 种魔法",      "45金"),
+    ("sp_icon_crown", "职业晋升考核", "需击杀/委托达标",         ""),
+]
+# 角色页：6 行属性（g_menu.n=6），旧右列 56px 裁「见习魔法师」。
+STATUS_ROWS = [
+    ("sp_icon_heart", "生命", "104 / 104", ""),
+    ("sp_icon_bolt",  "魔力", "59 / 62",   ""),
+    ("sp_icon_star",  "等级", "Lv7 · 经验210/320", "见习魔法师"),
+    ("sp_icon_sword", "攻击", "29（装+3）", ""),
+    ("sp_icon_shield","护甲", "减伤 6",   ""),
+    ("sp_icon_coin",  "金币", "1860 · 击杀 142", ""),
+]
+# 伙伴网格：8 个真实物种（cat/fox/frog/deer/bat/boar/goblin/treant 均有源 PNG）。
+PARTNERS = [
+    ("cat",     "猫灵",     "优 Lv5"),
+    ("fox",     "灵狐",     "极 Lv6"),
+    ("frog",    "沼泽蛙",   "良 Lv4"),
+    ("deer",    "斑鹿",     "良 Lv5"),
+    ("bat",     "洞穴蝙蝠", "普 Lv3"),
+    ("boar",    "獠牙野猪", "良 Lv5"),
+    ("goblin",  "哥布林",   "普 Lv4"),
+    ("treant",  "小树精",   "优 Lv7"),
+]
+
+C_CELL = (35, 27, 66)        # 0x231b42 网格单元底（与固件 lv_color_hex(0x231b42) 一致）
+
+
+def draw_frame(d, frame_h, title):
+    d.rectangle([10, 10, 230, 10 + frame_h], fill=C_CELL, outline=(201, 162, 39))
+    d.rectangle([10, 9, 230, 25], fill=(42, 35, 72), outline=(201, 162, 39))
+    d.text((18, 14), title, font=F12, fill=C_GOLD)
+
+
+def draw_list_row(d, im, x, y, w, h, icon, name, sub, rgt,
+                  rgt_w=76, rgt_xoff=80, sel=False, clip_rgt=False):
+    if sel:
+        round_rect(d, [x, y, x + w, y + h], 0, fill=(58, 44, 92), outline=C_GOLD, width=2)
+        d.polygon([(x + 4, y + 10), (x + 4, y + 22), (x + 14, y + 16)], fill=C_GOLD)
+    else:
+        round_rect(d, [x, y, x + w, y + h], 0, fill=(24, 18, 44), outline=C_GRAY, width=1)
+    ic = load_icon(icon)
+    iy = y + (h - 22) // 2
+    im.paste(ic, (x + 18, iy), ic)
+    top = y + (h - 31) // 2
+    d.text((x + 46, top + 1), name, font=F12, fill=C_WHITE)
+    d.text((x + 46, top + 17), sub, font=F12, fill=C_SUB)
+    rx = x + w - rgt_xoff
+    ry = y + (h - 15) // 2
+    if clip_rgt:
+        # 模拟旧右列裁切：先画，再用单元格底色盖掉溢出部分，并画红裁切线标出旧 56px 边界
+        d.text((rx, ry), rgt, font=F12, fill=C_GOLD)
+        d.rectangle([rx + rgt_w, y, x + w - 2, y + h], fill=(24, 18, 44))
+        d.line([rx + rgt_w, y, rx + rgt_w, y + h], fill=(255, 107, 107), width=2)
+    else:
+        d.text((rx, ry), rgt, font=F12, fill=C_GOLD)
+
+
+# ---------------- 列表铺满（问题⑤：学院 3 行） ----------------
+def draw_academy(d, im, before):
+    d.rectangle([0, 0, W, H], fill=C_BG)
+    if before:
+        # 旧：frame 固定 270 高，pitch 固定 34，3 行挤在顶部，下方大片空白
+        draw_frame(d, 270, "魔法学院")
+        y0, pitch, row_h = 27, 34, 33
+        for i, (ic, nm, sub, rgt) in enumerate(ACADEMY_ROWS):
+            draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt, sel=(i == 0))
+        # 标注空白区
+        d.rectangle([ROW_X, 140, ROW_X + ROW_W, 280], outline=(90, 80, 130), width=1)
+        d.text((W // 2, 200), "旧：下方大片空白（170px 空）", font=F9, fill=(150, 140, 180), anchor="mm")
+    else:
+        # 新：pitch=(294-27)/3≈89→cap88，rowH=87，框高随内容自适应到 284
+        pitch = (294 - 27) // len(ACADEMY_ROWS)
+        if pitch > 88:
+            pitch = 88
+        row_h = pitch - 1
+        fb = 27 + len(ACADEMY_ROWS) * pitch + 3
+        if fb > 298:
+            fb = 298
+        frame_h = fb - 10
+        draw_frame(d, frame_h, "魔法学院")
+        for i, (ic, nm, sub, rgt) in enumerate(ACADEMY_ROWS):
+            draw_list_row(d, im, ROW_X, 27 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt, sel=(i == 0))
+    d.text((W // 2, H - 12), "OK 确定 · ↓ 切换 · 长按 返回", font=F9, fill=C_CYAN, anchor="mm")
+
+
+# ---------------- 角色页右列裁切（问题⑥：见习魔法师被裁） ----------------
+def draw_status(d, im, before):
+    d.rectangle([0, 0, W, H], fill=C_BG)
+    # 新几何：pitch=(294-27)/6≈44，rowH=43，框高自适应；右列 76px @ ROW_W-80
+    pitch = (294 - 27) // len(STATUS_ROWS)
+    if pitch > 88:
+        pitch = 88
+    row_h = pitch - 1
+    fb = 27 + len(STATUS_ROWS) * pitch + 3
+    if fb > 298:
+        fb = 298
+    frame_h = fb - 10
+    draw_frame(d, frame_h, "角色")
+    for i, (ic, nm, sub, rgt) in enumerate(STATUS_ROWS):
+        if before and rgt:
+            # 旧：右列 56px @ ROW_W-60 → 「见习魔法师」(60px) 被裁
+            draw_list_row(d, im, ROW_X, 27 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt,
+                          rgt_w=56, rgt_xoff=60, sel=(i == 0), clip_rgt=True)
+        else:
+            draw_list_row(d, im, ROW_X, 27 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt,
+                          rgt_w=76, rgt_xoff=80, sel=(i == 0))
+    d.text((W // 2, H - 12), "伙伴 3 只 · OK/长按 回城 · ↓ 管理装备", font=F9, fill=C_CYAN, anchor="mm")
+
+
+# ---------------- 伙伴网格有图（问题⑦） ----------------
+def draw_partners(d, im, before):
+    d.rectangle([0, 0, W, H], fill=C_BG)
+    # 镜像固件 g_part_root(10,26,220,250) + 4×2 单元(cw54,ch100,size50×96,pos(2+col*54,2+rowi*100))
+    d.rectangle([10, 9, 230, 25], fill=(42, 35, 72), outline=(201, 162, 39))
+    d.text((18, 14), "伙伴", font=F12, fill=C_GOLD)
+    cw, ch, cell_inner_w = 54, 100, 50
+    for i, (typ, nm, tag) in enumerate(PARTNERS):
+        col = i % 4
+        rowi = i // 4
+        cx = 10 + 2 + col * cw
+        cy = 26 + 2 + rowi * ch
+        cell = (cx, cy, cx + cell_inner_w, cy + (ch - 4))
+        round_rect(d, cell, 0, fill=C_CELL, outline=C_GRAY, width=1)
+        if before:
+            # 旧：立绘 NULL，格子只有名/角标，中间是空白
+            d.rectangle([cx + 4, cy + 6, cx + cell_inner_w - 4, cy + 56],
+                        outline=(90, 80, 130), width=1)
+            d.text((cx + cell_inner_w // 2, cy + 31), "✕ 无立绘", font=F9, fill=(150, 140, 180), anchor="mm")
+        else:
+            mon = load_monster(typ)
+            mw, mh = mon.size
+            mx = cx + (cell_inner_w - mw) // 2
+            my = cy + 8 + (40 - mh) // 2
+            im.paste(mon, (mx, my), mon)
+        d.text((cx + cell_inner_w // 2, cy + 66), nm, font=F9, fill=C_WHITE, anchor="mm")
+        d.text((cx + cell_inner_w // 2, cy + 82), tag, font=F9, fill=C_GOLD, anchor="mm")
+    d.text((W // 2, 280), "OK 出战 · ↓ 切换 · 长按 菜单", font=F9, fill=C_CYAN, anchor="mm")
+    if before:
+        d.text((W // 2, 296), "修复前：烘焙只 8 个 thumb，多数 NULL 空白格", font=F9, fill=(255, 120, 120), anchor="mm")
+    else:
+        d.text((W // 2, 296), "修复后：遍历全部魔物烘 84 个 thumb，8 格全有立绘", font=F9, fill=(127, 220, 138), anchor="mm")
+
+
 def make_cell(fn, *a):
     im = Image.new("RGB", (W, H), C_BG)
     d = ImageDraw.Draw(im)
@@ -173,9 +381,9 @@ def main():
     # 单图
     cells = {
         "result_before": make_cell(draw_result, 150, 170, "A继续·B回城·长按↑自动", False,
-                                   "修复前：面板顶到屏底，footer 被裁"),
+                                   "修复前：面板顶到屏底 + 动作卡盖住 footer", True),
         "result_after":  make_cell(draw_result, 120, 166, "A继续·B回城·长按↑自动", True,
-                                   "修复后：上移留边距 + HUD 显示手动/AUTO"),
+                                   "修复后：上移留边距 + HUD 显示 + 非交互阶段藏卡", False),
         "gray_before":   make_cell(draw_menu, C_DIM,
                                    "修复前：行高29 name(y+3) sub(y+16) 叠字+偏暗",
                                    (29, 30, 30, 3, 16)),   # 旧几何：行高29/PITCH30/Y0=30
@@ -186,6 +394,11 @@ def main():
     for k, im in cells.items():
         im.save(os.path.join(OUT, f"mage_fix_{k}_240x320.png"))
         up2x(im).save(os.path.join(OUT, f"mage_fix_{k}_2x.png"))
+
+    # 战斗菜单阶段：证明动作卡在可交互阶段照常显示（修复不影响）
+    bm = make_cell(draw_battle_menu, "战斗菜单阶段：三卡照常显示（修复只藏结算/事件阶段的卡）")
+    bm.save(os.path.join(OUT, "mage_fix_battle_menu_240x320.png"))
+    up2x(bm).save(os.path.join(OUT, "mage_fix_battle_menu_2x.png"))
 
     # 2x2 总览
     ov = Image.new("RGB", (W * 2, H * 2), C_BG)
@@ -200,6 +413,40 @@ def main():
         d.rectangle([x, y, x + W - 1, y + H - 1], outline=C_GOLD, width=2)
     ov.save(os.path.join(OUT, "mage_fix_overview_480x640.png"))
     print("written:", os.path.join(OUT, "mage_fix_overview_480x640.png"))
+
+    # ---------------- 第六批对比图（用户板照炸裂反馈） ----------------
+    sixth = {
+        "academy_before": make_cell(draw_academy, True),
+        "academy_after":  make_cell(draw_academy, False),
+        "status_before":  make_cell(draw_status, True),
+        "status_after":   make_cell(draw_status, False),
+        "partners_before": make_cell(draw_partners, True),
+        "partners_after":  make_cell(draw_partners, False),
+    }
+    for k, im in sixth.items():
+        im.save(os.path.join(OUT, "mage_sixth_%s_240x320.png" % k))
+        up2x(im).save(os.path.join(OUT, "mage_sixth_%s_2x.png" % k))
+
+    # 3×2 总览（720×640）
+    ov6 = Image.new("RGB", (W * 3, H * 2), C_BG)
+    order6 = ["academy_before", "academy_after",
+              "status_before", "status_after",
+              "partners_before", "partners_after"]
+    for idx, k in enumerate(order6):
+        cell = sixth[k].resize((W, H))
+        x = (idx % 3) * W
+        y = (idx // 3) * H
+        ov6.paste(cell, (x, y))
+        dd = ImageDraw.Draw(ov6)
+        dd.rectangle([x, y, x + W - 1, y + H - 1], outline=C_GOLD, width=2)
+        labels6 = {
+            "academy_before": "⑤列表不铺满·旧", "academy_after": "⑤列表铺满·新",
+            "status_before": "⑥右列裁切·旧", "status_after": "⑥右列完整·新",
+            "partners_before": "⑦伙伴无图·旧", "partners_after": "⑦伙伴有图·新",
+        }
+        dd.text((x + 4, y + 4), labels6[k], font=F9, fill=C_WHITE)
+    ov6.save(os.path.join(OUT, "mage_sixth_overview_720x640.png"))
+    print("written:", os.path.join(OUT, "mage_sixth_overview_720x640.png"))
 
 
 if __name__ == "__main__":

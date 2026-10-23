@@ -47,6 +47,7 @@ typedef struct {
     lv_obj_t *turnBox;        /* 回合徽标 */
     lv_obj_t *turnTx;
     int8_t shown;         /* 上一次 show/hide 的值（-1=未初始化），防每帧重复切 flag */
+    int8_t cardsShown;    /* 底部动作卡显隐记忆（结算/事件等非交互阶段藏卡，防盖住面板 footer） */
     /* 文本与条宽的记忆值：只有真正变化时才调 LVGL，防每帧重排导致卡死 */
     char hpTxt[24], mpTxt[24], waveTxt[40], statTxt[40], turnTxt[24];
     int  hpW, mpW;
@@ -183,7 +184,32 @@ void mage_hud_build(void)
     lv_obj_set_style_text_align(H.turnTx, LV_TEXT_ALIGN_CENTER, 0);
 
     H.built = true;
+    /* 构建出的卡默认可见：若记忆状态是「藏」，立刻补一次隐藏（否则
+     * cards_show(false) 因状态相等而早退，新 build 的卡会一直盖在结算面板上） */
+    if (H.cardsShown == 0) {
+        for (int i = 0; i < 3; i++) lv_obj_add_flag(H.card[i], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(H.turnBox, LV_OBJ_FLAG_HIDDEN);
+    }
     ESP_LOGI(TAG, "战斗 HUD 就绪（1:1 复刻原版：顶部血条 + 底部三卡）");
+}
+
+/* 底部三张动作卡 + 回合徽标的显隐（独立于整个 HUD）。
+ * 结算(BP_RESULT)/远征总结算/事件/力竭等非交互阶段，卡不可按却会盖住
+ * 面板 footer（卡 y=276..316 + 回合徽标 y=269，结算面板底边 286）。
+ * 铁律：状态记忆，翻转才碰 LVGL（refresh_ui 每 60ms 调一次）。 */
+void mage_hud_cards_show(bool on)
+{
+    int8_t want = on ? 1 : 0;
+    if (H.cardsShown == want) return;
+    if (H.built) {
+        for (int i = 0; i < 3; i++) {
+            if (on) lv_obj_remove_flag(H.card[i], LV_OBJ_FLAG_HIDDEN);
+            else    lv_obj_add_flag(H.card[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        if (on) lv_obj_remove_flag(H.turnBox, LV_OBJ_FLAG_HIDDEN);
+        else    lv_obj_add_flag(H.turnBox, LV_OBJ_FLAG_HIDDEN);
+    }
+    H.cardsShown = want;
 }
 
 /* 防卡死铁律：refresh_ui 每 60ms 调一次本函数，而
