@@ -958,15 +958,17 @@ void mage_fx_event(int show_kind)
         lv_obj_remove_flag(F.evtRoot, LV_OBJ_FLAG_HIDDEN);
 }
 
-/* 每波结算（HTML drawResult）：box(20,150,W-40,150)，标题金 y≈159，
- * 明细 #cfc 自 y≈186 每 16px 一行，底部金字「A 继续前进 · B 回城」。 */
+/* 每波结算（HTML drawResult）：box(20,120,W-40,166)，标题金 y≈128，
+ * 明细 #cfc 自 y≈148 每 16px 一行，底部金字「A 继续 · B 回城 · 长按↑自动」。
+ * 注：旧版 box(20,150,*,170) 底边正好顶到 320 屏底，footer 被压在屏幕最下沿像被裁掉；
+ * 现整体上移并收紧高度，footer 留 16px 下边距。 */
 void mage_fx_result(int show, const char *title, const char *footer, const char **lines, int n)
 {
     if (!F.built || !g_fx_parent) return;
     if (show <= 0 || n <= 0 || !lines) { panel_hide(); return; }
     if (s_pmode != FX_PM_RESULT) {
         s_pmode = FX_PM_RESULT;
-        panel_geo(1, 20, 150, SCR_W - 40, 170, 0x0a0818);
+        panel_geo(1, 20, 120, SCR_W - 40, 166, 0x0a0818);
         lv_obj_set_width(F.evtName, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffd93d), 0);
         lv_obj_set_pos(F.evtName, 0, 8);

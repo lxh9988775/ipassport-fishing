@@ -119,6 +119,7 @@ enum { ACT_OK = 0, ACT_NEXT, ACT_PREV, ACT_BACK, ACT_LUP };
 #define C_RED   lv_color_hex(0xff6b6b)
 #define C_GREEN lv_color_hex(0x7fdc8a)
 #define C_DIM   lv_color_hex(0x6b6480)
+#define C_SUB   lv_color_hex(0xc9c2e6)   /* 菜单/状态副标题：C_DIM 太暗看不清，改用亮藕荷色 */
 #define C_PANEL lv_color_hex(0x0d0b1a)   /* 战斗底部文字面板底色 */
 #define C_BG    lv_color_hex(0x0d0b1a)
 
@@ -161,9 +162,9 @@ static int g_part_sig = -1;                            /* 网格脏标：记录(
 #define MENU_ROWS 8
 #define ROW_X 8
 #define ROW_W 204
-#define ROW_H 29
-#define ROW_PITCH 30
-#define ROW_Y0 30
+#define ROW_H 33   /* 12px字库行高15：name(1..16)+sub(17..32)；旧29两行叠字且sub超框 */
+#define ROW_PITCH 34
+#define ROW_Y0 27  /* 金框标题条底 y=25 + 2px；8行列表底=298 < 提示行302 */
 typedef struct { const char *icon; const char *name; const char *sub; const char *rgt; } MenuRow;
 static lv_obj_t *g_list = NULL;
 static lv_obj_t *g_row_box[MENU_ROWS];
@@ -582,14 +583,14 @@ static void build_ui(void) {
         lv_obj_set_style_text_color(nm, C_WHITE, 0);
         lv_obj_set_style_text_font(nm, &mage_cjk_12, 0);
         lv_obj_set_width(nm, 140);
-        lv_obj_set_pos(nm, 46, 3);
+        lv_obj_set_pos(nm, 46, 1);
         g_row_name[i] = nm;
         lv_obj_t *sb = lv_label_create(b);
         use_cjk(sb);
-        lv_obj_set_style_text_color(sb, C_DIM, 0);
+        lv_obj_set_style_text_color(sb, C_SUB, 0);
         lv_obj_set_style_text_font(sb, &mage_cjk_12, 0);
         lv_obj_set_width(sb, 140);
-        lv_obj_set_pos(sb, 46, 16);
+        lv_obj_set_pos(sb, 46, 17);
         g_row_sub[i] = sb;
         lv_obj_t *rg = lv_label_create(b);
         use_cjk(rg);
@@ -730,7 +731,7 @@ static void menu_list_render(void) {
             lv_obj_set_style_border_color(g_row_box[i], isSel ? C_GOLD : C_GRAY, 0);
             lv_obj_set_style_border_width(g_row_box[i], isSel ? 2 : 1, 0);
             lv_obj_set_style_text_color(g_row_name[i], C_WHITE, 0);
-            lv_obj_set_style_text_color(g_row_sub[i], C_DIM, 0);
+            lv_obj_set_style_text_color(g_row_sub[i], C_SUB, 0);
             lv_obj_set_style_text_color(g_row_rgt[i], isSel ? C_GOLD : C_DIM, 0);
             set_hidden(g_row_tri[i], !isSel);   /* 选中三角替代 ▶ 豆腐块 */
         } else {
@@ -1466,7 +1467,7 @@ static void refresh_ui(void) {
         const bool in_bt = (g_scene == SC_BATTLE) && bt.active;
         ESP_LOGI(TAG, "FX g_scene=%d bt.active=%d in_bt=%d", g_scene, bt.active ? 1 : 0, in_bt ? 1 : 0);
         /* 结算/战利品面板（BP_RESULT / BP_LOOT）需完整露出，故隐藏底部动作卡 */
-        mage_hud_show(in_bt && bt.phase != BP_RESULT && bt.phase != BP_LOOT && bt.phase != BP_INTRO);
+        mage_hud_show(in_bt && bt.phase != BP_LOOT && bt.phase != BP_INTRO);
         /* 战斗演出层（含 battle_bg 背景图）必须随战斗状态显隐：
          * 否则战斗结束后 battle_art_update 不再被调用，mage_fx_show(false)
          * 永远不触发，battle_bg 会残留在透明背景的场景（如状态/背包页）之后
@@ -2461,7 +2462,7 @@ static void spawn_and_menu(void) {
     set_bphase(BP_MENU);
     g_need_refresh = 1;
     /* 首波给一次操作提示（用户问题①⑨：OK攻击 / ↓魔法 / ↑道具 / 长按OK回城） */
-    if (bt.wave == 1) toast("OK攻击 · ↓魔法 · ↑道具 · 长按OK回城");
+    if (bt.wave == 1) toast("OK攻击 · ↓魔法 · ↑道具 · 长按↑自动/手动 · 长按OK回城");
 }
 
 /* ---------- 自动战斗 ---------- */
@@ -2767,7 +2768,7 @@ static void battle_render(void) {
             xp[nx++] = b8;
             if (promoteReady()) xp[nx++] = "★ 已达晋升标准！";
             snprintf(sub, sizeof(sub), "%s 已肃清", CHAPTERS[clampi(g.mapChapter, 0, 4)]);
-            mage_fx_expo(1, "★ 远征胜利 ★", sub, rowsL, rowsR, 6, xp, nx, "A 继续 · B 回城");
+            mage_fx_expo(1, "★ 远征胜利 ★", sub, rowsL, rowsR, 6, xp, nx, "A继续·B回城·长按↑自动");
         } else {
             snprintf(b0, sizeof(b0), "第 %d 波 清场（累计收益）", bt.wave);
             snprintf(b1, sizeof(b1), "金币 +%d", bt.goldGain); lp[nl++] = b1;
@@ -2776,7 +2777,7 @@ static void battle_render(void) {
             if (bt.matGain)  { snprintf(b4, sizeof(b4), "兽骨 +%d", bt.matGain); lp[nl++] = b4; }
             if (bt.potGain)  { snprintf(b5, sizeof(b5), "药水 +%d", bt.potGain); lp[nl++] = b5; }
             if (promoteReady()) lp[nl++] = "★ 已达晋升标准！";
-            mage_fx_result(1, b0, "A 继续前进 · B 回城", lp, nl);
+            mage_fx_result(1, b0, "A继续·B回城·长按↑自动", lp, nl);
         }
         break;
     }
@@ -2839,6 +2840,7 @@ static void battle_handle(int act) {
         /* 遭遇演出中：OK 跳过进入选招；BACK 直接撤退回城（不再被 INTRO 吞掉） */
         if (act == ACT_OK) { set_bphase(BP_MENU); bt.tickMs = now_ms(); }
         else if (act == ACT_BACK) end_battle();
+        else if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); }
         break;
     case BP_MENU:
         /* 关键修复（用户问题①②）：自动战斗时，按 下/上/返回 不应只被「切回手动」吞掉，
@@ -2876,16 +2878,20 @@ static void battle_handle(int act) {
     case BP_RESULT:
         if (act == ACT_OK) next_wave();
         else if (act == ACT_BACK) end_battle();
+        else if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); }
         break;
     case BP_EVENT:
         if (act == ACT_OK) apply_event();
         else if (act == ACT_BACK) { bt.eventKind = -1; spawn_and_menu(); }
+        else if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); }
         break;
     case BP_LOOT:
         if (act == ACT_OK || act == ACT_BACK) spawn_and_menu();
+        else if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); }
         break;
     case BP_FAINT:
-        if (act == ACT_OK || act == ACT_BACK) {
+        if (act == ACT_LUP) { bt.autoBattle = 1; toast("自动模式"); }
+        else if (act == ACT_OK || act == ACT_BACK) {
             g.hp = (int)(g.maxHp * 0.5f + 0.5f); if (g.hp < 1) g.hp = 1;
             g.mp = (int)(g.maxMp * 0.5f + 0.5f);
             if (bt.mode == 1) {
