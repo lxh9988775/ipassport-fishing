@@ -924,6 +924,7 @@ static void refresh_ui(void) {
         if (s_dim != want) { s_dim = want; lv_obj_set_style_bg_opa(g_city_dim, want, 0); }
     }
 
+    ESP_LOGI(TAG, "CK pre-switch g_scene=%d", g_scene);
     switch (g_scene) {
     case SC_CITY: {
         s_ttl[0] = '\0';
@@ -1413,12 +1414,14 @@ static void refresh_ui(void) {
             }
         }
     }
+    ESP_LOGI(TAG, "CK post-switch");
 
     /* 菜单卡片列表渲染 / 伙伴网格渲染（仅场景/选择/数据变化时触碰 LVGL，避免周期重绘卡死） */
     if (is_frame_scene(g_scene)) {
         if (g_scene == SC_PARTNERS) partners_grid_render();
         else menu_list_render();
     }
+    ESP_LOGI(TAG, "CK menu-done");
 
     /* 图鉴/伙伴/角色立绘：按 sp_<type> 原生尺寸展示，脚底中心锚点对齐 HTML 布局
      * （图鉴 foot=120,90；伙伴卡 foot=120,118；角色页 sp_hero foot=120,88）。
@@ -1466,6 +1469,7 @@ static void refresh_ui(void) {
     {
         const bool in_bt = (g_scene == SC_BATTLE) && bt.active;
         ESP_LOGI(TAG, "FX g_scene=%d bt.active=%d in_bt=%d", g_scene, bt.active ? 1 : 0, in_bt ? 1 : 0);
+        ESP_LOGI(TAG, "CK fx-in");
         /* 结算/战利品面板（BP_RESULT / BP_LOOT）需完整露出，故隐藏底部动作卡 */
         mage_hud_show(in_bt && bt.phase != BP_RESULT && bt.phase != BP_LOOT && bt.phase != BP_INTRO);
         /* 战斗演出层（含 battle_bg 背景图）必须随战斗状态显隐：
@@ -1473,6 +1477,7 @@ static void refresh_ui(void) {
          * 永远不触发，battle_bg 会残留在透明背景的场景（如状态/背包页）之后
          * 持续显示 —— 这就是「其他界面直接用了 BOSS 战背景」的根因。 */
         mage_fx_show(in_bt);
+        ESP_LOGI(TAG, "CK fx-out");
         set_hidden(g_hud, in_bt);
         set_hidden(g_scene_body, in_bt || is_frame_scene(g_scene));
         set_hidden(g_scene_hint, in_bt);
@@ -1511,6 +1516,7 @@ static void refresh_ui(void) {
     } else {
         set_hidden(g_toast, true);
     }
+    ESP_LOGI(TAG, "CK ret");
 }
 
 /* ===================== 辅助：背包/魔法计数 ===================== */
@@ -1925,6 +1931,7 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
 static void game_task(void *arg) {
     (void)arg;
     for (;;) {
+        ESP_LOGI(TAG, "CK loop");
         btn_ev_t e;
         if (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) {
             handle_btn(e.btn, e.ev);
