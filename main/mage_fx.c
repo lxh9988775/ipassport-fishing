@@ -245,6 +245,7 @@ static void fx_build(void)
     lv_obj_remove_style_all(F.hero);
     lv_obj_set_size(F.hero, 36, 46);
     mage_draw_bg(F.hero, "sp_hero", 0, 0, 36, 46);
+    ESP_LOGI("mage_fx", "FXB hero-done");
 
     /* 前景草丛：HTML 画两组三角，这里用一排深绿小三角块近似（视差 1.3） */
     F.grassFg = lv_obj_create(g_fx_parent);
@@ -268,12 +269,14 @@ static void fx_build(void)
         }
     }
 
+    ESP_LOGI("mage_fx", "FXB grass-done");
     /* 粒子槽 */
     for (int i = 0; i < 16; i++) {
         F.fx[i] = mk_dot(g_fx_parent, 5, FX_WHITE, 2);
         lv_obj_add_flag(F.fx[i], LV_OBJ_FLAG_HIDDEN);
     }
 
+    ESP_LOGI("mage_fx", "FXB fx-done");
     /* 伤害飘字槽：1:1 复刻 HTML bt.nums
      *（x,y,v,c,t）→ 红/白字、向上飘 22px/s、0.8~1.2s 淡出 */
     for (int i = 0; i < 8; i++) {
@@ -286,6 +289,7 @@ static void fx_build(void)
         F.num[i] = o;
     }
 
+    ESP_LOGI("mage_fx", "FXB nums-done");
     /* BOSS 蓄力警告 */
     F.warn = lv_label_create(g_fx_parent);
     use_cjk(F.warn);
@@ -295,6 +299,7 @@ static void fx_build(void)
     lv_label_set_text(F.warn, "蓄力大招!");
     lv_obj_add_flag(F.warn, LV_OBJ_FLAG_HIDDEN);
 
+    ESP_LOGI("mage_fx", "FXB warn-done");
     /* ---- 探索事件面板：1:1 复刻 HTML drawEventPanel ----
      * box(20,120,W-40,110) 金边 + 事件图形 + 名称 + 描述 + "C 绕开"。
      * 挂在 fx 层之上（后建，z 最上），非事件阶段隐藏。 */
@@ -317,6 +322,7 @@ static void fx_build(void)
     lv_obj_set_style_border_color(F.evtBox, lv_color_hex(0xffd93d), 0);
     lv_obj_remove_flag(F.evtBox, LV_OBJ_FLAG_SCROLLABLE);
 
+    ESP_LOGI("mage_fx", "FXB evtbox-done");
     F.evtIcon = lv_image_create(F.evtBox);
     lv_obj_set_pos(F.evtIcon, (SCR_W - 40) / 2 - 28, 2);   /* 56x56 图标，水平居中，上移避免压标题 */
 
@@ -375,6 +381,7 @@ static void fx_build(void)
     lv_obj_add_flag(F.evtRowR, LV_OBJ_FLAG_HIDDEN);
 
     F.built = true;
+    ESP_LOGI("mage_fx", "FXB pre-built");
     ESP_LOGI(TAG, "战斗演出层就绪");
 }
 
