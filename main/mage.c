@@ -2934,6 +2934,15 @@ void mage_app_start(void) {
         refresh_ui();
         bsp_lvgl_unlock();
     }
+    /* ========== 临时调试：启动即自动进 SC_CITY 复现「进城崩溃」 ==========
+     * 抓到 panic 后整段删除。 */
+    if (bsp_lvgl_lock(1000)) {
+        mage_new_game();
+        g_scene = SC_CITY; g.cityMode = 0; g_need_refresh = 1;
+        refresh_ui();
+        bsp_lvgl_unlock();
+    }
+    /* ===================== 调试段结束 ===================== */
     bsp_button_init(mage_on_key, NULL);
     xTaskCreate(game_task, "mage", 12288, NULL, 5, NULL);
 }
