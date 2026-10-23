@@ -23,7 +23,7 @@ import os
 import glob
 import sys
 
-from PIL import Image
+from PIL import Image, ImageDraw
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "mage-game", "assets")
@@ -49,6 +49,35 @@ ICONS = {
     "cat_icon":    ("catspirit.png", 56, 56),
     "goblin_icon": ("goblin.png", 56, 56),
 }
+
+# ---- 伙伴网格缩略图：把物种立绘在「烘焙期」缩到网格显示尺寸（运行期禁止 LVGL 缩放）----
+PARTNER_THUMBS = ["cat", "fox", "slime", "goblin", "mush", "wolf", "goblin_boss"]
+
+
+def make_thumb(species, th=40):
+    """读 sp_<species>.png -> 缩到高度 th（保持宽高比）的 PIL RGBA 图。"""
+    path = os.path.join(SRC, "sp_%s.png" % species)
+    if not os.path.exists(path):
+        return None
+    im = Image.open(path).convert("RGBA")
+    w, h = im.size
+    tw = max(1, int(round(w * th / h)))
+    return im.resize((tw, th), Image.LANCZOS)
+
+
+def make_triangle(w=10, h=12):
+    """金色实心三角（替代 ▶ 文字符号，避免字体缺字形豆腐块）。透明底。"""
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.polygon([(0, 0), (0, h - 1), (w - 1, (h - 1) // 2)], fill=(0xff, 0xd9, 0x3d, 255))
+    return im
+
+
+def emit_pil(parts, index, name, im, fmt):
+    """与 emit 同逻辑，但输入是 PIL 图（用于三角/缩略图，无源文件）。"""
+    px = list(im.getdata())
+    return emit(parts, index, name, px, im.size[0], im.size[1], fmt)
+
 
 # 自动发现怪物立绘：sp_*.png，排除 *_k.png（旧预乘素材）、sp_hero.png（旧头图）、接触表
 def discover_monsters():
@@ -163,6 +192,22 @@ def main():
         print(f"图标 {name} <- {src_name} ({tw}x{th}) rgb565")
         px = load_rgba(os.path.join(SRC, src_name), tw, th)
         total += emit(parts, index, name, px, tw, th, "rgb565")
+
+    # ---- 伙伴网格缩略图（高度 40，透明；运行期禁止缩放，必须烘焙期缩好）----
+    for sp in PARTNER_THUMBS:
+        im = make_thumb(sp, 40)
+        if im is None:
+            print("跳过缩略图 %s（源图缺失）" % sp)
+            continue
+        name = "sp_%s_thumb" % sp
+        print("缩略图 %s <- sp_%s.png (%dx%d) rgb565a8"
+              % (name, sp, im.size[0], im.size[1]))
+        total += emit_pil(parts, index, name, im, "rgb565a8")
+
+    # ---- 选中三角（替代 ▶ 文字符号，避免字体缺字形豆腐块）----
+    tri = make_triangle(10, 12)
+    total += emit_pil(parts, index, "sp_tri", tri, "rgb565a8")
+    print("选中三角 sp_tri (10x12) rgb565a8")
 
     n_mon = 0
     for key, base in discover_monsters():

@@ -241,12 +241,64 @@ def hammer():
 
 def robe():
     im = new(); d = ImageDraw.Draw(im)
-    pts = [(SS * 0.40, SS * 0.22), (SS * 0.60, SS * 0.22), (SS * 0.70, SS * 0.78), (SS * 0.30, SS * 0.78)]
-    d.polygon(pts, fill=(170, 120, 220, 255))
-    d.line([(SS * 0.40, SS * 0.22), (SS * 0.30, SS * 0.78)], fill=GOLD, width=3)
-    d.line([(SS * 0.60, SS * 0.22), (SS * 0.70, SS * 0.78)], fill=GOLD, width=3)
-    d.line([(SS * 0.46, SS * 0.34), (SS * 0.54, SS * 0.34)], fill=GOLD, width=3)
+    cx = SS // 2
+    d.polygon([(cx - 26, 70), (cx, 34), (cx + 26, 70)], fill=(120, 90, 175, 255))     # 兜帽
+    d.polygon([(cx - 22, 68), (cx + 22, 68), (cx + 36, 152), (cx - 36, 152)],
+              fill=(150, 110, 210, 255))                                              # 身
+    d.polygon([(cx - 10, 66), (cx + 10, 66), (cx + 15, 152), (cx - 15, 152)],
+              fill=(196, 160, 235, 255))                                              # 前襟
+    d.line([(cx - 22, 68), (cx - 36, 152), (cx + 36, 152), (cx + 22, 68)], fill=GOLD, width=4)  # 侧金边
+    d.line([(cx - 26, 70), (cx, 34), (cx + 26, 70)], fill=GOLD, width=4)              # 帽金边
+    d.line([(cx - 12, 66), (cx + 12, 66)], fill=GOLD, width=5)                        # 领口
+    d.ellipse([cx - 8, 92, cx + 8, 108], fill=CYAN)                                   # 胸前宝石
+    d.ellipse([cx - 3, 95, cx + 3, 101], fill=(255, 255, 255, 180))
     save("robe", im)
+
+
+def sword():
+    im = new(); d = ImageDraw.Draw(im)
+    cx = SS // 2
+    d.polygon([(cx - 7, 100), (cx + 7, 100), (cx + 4, 44), (cx - 4, 44)], fill=(205, 210, 224, 255))  # 刃
+    d.polygon([(cx - 4, 44), (cx + 4, 44), (cx, 24)], fill=(205, 210, 224, 255))                        # 尖
+    d.polygon([(cx - 7, 100), (cx, 100), (cx, 44), (cx - 4, 44)], fill=(245, 248, 255, 255))            # 高光
+    d.line([(cx, 44), (cx, 100)], fill=(150, 158, 178, 255), width=2)                                    # 血槽
+    d.rectangle([cx - 30, 100, cx + 30, 116], fill=GOLD)                                                  # 护手
+    d.rectangle([cx - 30, 100, cx + 30, 116], outline=(180, 140, 20, 255), width=3)
+    d.rectangle([cx - 7, 116, cx + 7, 150], fill=(150, 110, 60, 255))                                     # 握把
+    for y in (124, 134, 144):
+        d.line([(cx - 7, y), (cx + 7, y)], fill=(110, 80, 40, 255), width=3)                             # 缠绳
+    d.ellipse([cx - 11, 150, cx + 11, 172], fill=GOLD)                                                    # 圆头
+    d.ellipse([cx - 11, 150, cx + 11, 172], outline=(180, 140, 20, 255), width=3)
+    save("sword", im)
+
+
+def staff():
+    im = new(); d = ImageDraw.Draw(im)
+    cx = SS // 2
+    d.rectangle([cx - 5, 40, cx + 5, 162], fill=(150, 110, 60, 255))                                      # 杖身
+    d.line([(cx - 5, 40), (cx - 5, 162)], fill=(110, 80, 40, 255), width=2)
+    d.ellipse([cx - 18, 22, cx + 18, 58], fill=(120, 200, 245, 255))                                       # 顶珠
+    d.ellipse([cx - 18, 22, cx + 18, 58], outline=GOLD, width=4)
+    d.ellipse([cx - 9, 28, cx + 4, 41], fill=(255, 255, 255, 180))                                        # 高光
+    d.rectangle([cx - 9, 58, cx + 9, 66], fill=GOLD)                                                      # 金环
+    d.ellipse([cx + 20, 30, cx + 26, 36], fill=GOLD)                                                      # 火花
+    d.ellipse([cx - 26, 40, cx - 20, 46], fill=GOLD)
+    save("staff", im)
+
+
+def potion():
+    im = new(); d = ImageDraw.Draw(im)
+    cx = SS // 2
+    d.rectangle([cx - 11, 36, cx + 11, 78], fill=(170, 200, 220, 120))                                     # 瓶颈
+    d.rectangle([cx - 11, 28, cx + 11, 42], fill=(150, 110, 60, 255))                                      # 塞
+    d.line([(cx - 11, 42), (cx + 11, 42)], fill=GOLD, width=3)
+    d.ellipse([cx - 30, 70, cx + 30, 150], fill=(170, 200, 220, 130))                                      # 瓶身玻璃
+    d.ellipse([cx - 30, 70, cx + 30, 150], outline=GOLD, width=4)
+    d.chord([cx - 28, 96, cx + 28, 148], start=0, end=180, fill=(90, 200, 210, 235))                       # 液体
+    d.rectangle([cx - 28, 118, cx + 28, 148], fill=(90, 200, 210, 235))
+    d.line([(cx - 22, 108), (cx + 22, 108)], fill=(200, 255, 255, 200), width=3)                           # 液面
+    d.arc([cx - 26, 76, cx + 2, 144], start=200, end=320, fill=(255, 255, 255, 160), width=5)              # 玻璃高光
+    save("potion", im)
 
 
 def crystal():
@@ -311,6 +363,7 @@ def seal():
 
 
 for fn in (book, orb, crown, map, gate, herb, heart, shield, coin, paw, bolt,
-           star, bed, flask, hammer, robe, crystal, gear, bag, scroll, bone, seal):
+           star, bed, flask, hammer, robe, crystal, gear, bag, scroll, bone, seal,
+           sword, staff, potion):
     fn()
 print("done")

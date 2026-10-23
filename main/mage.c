@@ -142,6 +142,19 @@ static lv_obj_t *g_frame_title = NULL;  /* 标题文字（左上，金色） */
 static lv_obj_t *g_dex_box = NULL;      /* 图鉴立绘盒 (86,36,68,58) */
 static lv_obj_t *g_part_card = NULL;    /* 伙伴立绘卡 (68,30,104,96) 描金双框 */
 
+/* 伙伴 4×2 立绘网格（设计感细化：替代旧纯文字列表，参考社区网格布局）。
+ * build 期一次性建 8 格（每格=立绘+名+角标），刷新只改 src/text/pos/style；
+ * 立绘用烘焙期缩好的 sp_<type>_thumb（运行期禁止 LVGL 缩放）。 */
+#define PART_GRID_N 8
+static lv_obj_t *g_part_root = NULL;                 /* 网格容器（仅伙伴页显示） */
+static lv_obj_t *g_part_cell[PART_GRID_N];           /* 8 个格子容器 */
+static lv_obj_t *g_part_img[PART_GRID_N];            /* 每格立绘 lv_img */
+static lv_obj_t *g_part_name[PART_GRID_N];           /* 每格名字 */
+static lv_obj_t *g_part_tag[PART_GRID_N];            /* 每格角标（资质/等级） */
+static lv_obj_t *g_part_sel_tri = NULL;              /* 选中三角（单对象，刷新时移动） */
+static lv_obj_t *g_part_info = NULL;                 /* 选中伙伴情报条 */
+static int g_part_sig = -1;                            /* 网格脏标：记录(npartners,sel,active) */
+
 /* 菜单卡片列表（魔法学院/野外试炼/冒险者公会）：每条 = 图标+名称+副文+右标。
  * 替代原先「单一大 label + 16px 中文无断行点冲出金框」的方案（用户反馈超框+无图标）。
  * 改用 12px 卡片式布局，与 HTML 1:1；LVGL 对象 build 期一次性建好，刷新仅改 text/src。 */
@@ -158,6 +171,7 @@ static lv_obj_t *g_row_ico[MENU_ROWS];
 static lv_obj_t *g_row_name[MENU_ROWS];
 static lv_obj_t *g_row_sub[MENU_ROWS];
 static lv_obj_t *g_row_rgt[MENU_ROWS];
+static lv_obj_t *g_row_tri[MENU_ROWS];   /* 选中三角（替代 ▶ 文字符号，避免字体缺字形豆腐块） */
 static int menu_list_dirty = 1;
 static int menu_last_key = -1;
 /* 渲染数据源（由三个 scene 的刷新分支填充） */
@@ -442,6 +456,72 @@ static void build_ui(void) {
         lv_obj_set_style_radius(pin, 0, 0);
         lv_obj_add_flag(g_part_card, LV_OBJ_FLAG_HIDDEN);
     }
+
+    /* ---- 伙伴 4×2 立绘网格（仅在 SC_PARTNERS 显示，替代旧纯文字列表）----
+     * 全对象 build 期一次性创建；刷新只改 src/text/pos/style（防每帧重绘卡死）。 */
+    {
+        g_part_root = lv_obj_create(g_scene_grp);
+        lv_obj_remove_style_all(g_part_root);
+        lv_obj_set_size(g_part_root, 220, 250);
+        lv_obj_set_pos(g_part_root, 10, 26);
+        lv_obj_set_style_bg_opa(g_part_root, LV_OPA_TRANSP, 0);
+        lv_obj_remove_flag(g_part_root, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(g_part_root, LV_OBJ_FLAG_HIDDEN);
+
+        const int cw = 54, ch = 100;
+        for (int i = 0; i < PART_GRID_N; i++) {
+            int col = i % 4, rowi = i / 4;
+            lv_obj_t *c = lv_obj_create(g_part_root);
+            lv_obj_remove_style_all(c);
+            lv_obj_set_size(c, cw - 4, ch - 4);
+            lv_obj_set_pos(c, 2 + col * cw, 2 + rowi * ch);
+            lv_obj_set_style_bg_color(c, lv_color_hex(0x231b42), 0);
+            lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_width(c, 1, 0);
+            lv_obj_set_style_border_color(c, C_GRAY, 0);
+            lv_obj_set_style_radius(c, 0, 0);
+            lv_obj_remove_flag(c, LV_OBJ_FLAG_SCROLLABLE);
+            g_part_cell[i] = c;
+            /* 立绘（脚底中心锚点，刷新时按实际宽高重定位居中） */
+            lv_obj_t *img = lv_img_create(c);
+            lv_obj_remove_style_all(img);
+            lv_obj_set_pos(img, 8, 20);
+            g_part_img[i] = img;
+            lv_obj_t *nm = lv_label_create(c);
+            use_cjk(nm);
+            lv_obj_set_style_text_color(nm, C_WHITE, 0);
+            lv_obj_set_style_text_font(nm, &mage_cjk_12, 0);
+            lv_obj_set_width(nm, cw - 8);
+            lv_obj_set_style_text_align(nm, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_pos(nm, 2, 66);
+            g_part_name[i] = nm;
+            lv_obj_t *tg = lv_label_create(c);
+            use_cjk(tg);
+            lv_obj_set_style_text_color(tg, C_GOLD, 0);
+            lv_obj_set_style_text_font(tg, &mage_cjk_12, 0);
+            lv_obj_set_width(tg, cw - 8);
+            lv_obj_set_style_text_align(tg, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_pos(tg, 2, 82);
+            g_part_tag[i] = tg;
+            lv_obj_add_flag(c, LV_OBJ_FLAG_HIDDEN);
+        }
+        /* 选中三角（替代 ▶ 豆腐块）：单对象，刷新时移动到选中格 */
+        g_part_sel_tri = lv_img_create(g_part_root);
+        lv_obj_remove_style_all(g_part_sel_tri);
+        const lv_image_dsc_t *td = mage_img("sp_tri");
+        if (td) lv_img_set_src(g_part_sel_tri, td);
+        lv_obj_set_size(g_part_sel_tri, 10, 12);
+        lv_obj_add_flag(g_part_sel_tri, LV_OBJ_FLAG_HIDDEN);
+        /* 选中伙伴情报条（保留关键可读信息，替代旧密集 IV 列表） */
+        g_part_info = lv_label_create(g_scene_grp);
+        use_cjk(g_part_info);
+        lv_obj_set_style_text_color(g_part_info, C_DIM, 0);
+        lv_obj_set_style_text_font(g_part_info, &mage_cjk_12, 0);
+        lv_obj_set_style_text_align(g_part_info, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_width(g_part_info, SCR_W - 16);
+        lv_obj_set_pos(g_part_info, 8, 280);
+        lv_obj_add_flag(g_part_info, LV_OBJ_FLAG_HIDDEN);
+    }
     /* 图鉴/伙伴/角色立绘层：按 sp_<type> 原生尺寸展示（位于金框之上、文字之下），
      * 周期刷新用状态记忆（场景+物种键比对）防每帧重设 src 触发重绘。 */
     g_scene_img = lv_image_create(g_scene_grp);
@@ -484,23 +564,32 @@ static void build_ui(void) {
         lv_obj_set_style_radius(b, 0, 0);
         lv_obj_remove_flag(b, LV_OBJ_FLAG_SCROLLABLE);
         g_row_box[i] = b;
+        /* 选中三角（替代 ▶ 文字符号；置于行首，与预览一致） */
+        lv_obj_t *tri = lv_img_create(b);
+        lv_obj_remove_style_all(tri);
+        const lv_image_dsc_t *td = mage_img("sp_tri");
+        if (td) lv_img_set_src(tri, td);
+        lv_obj_set_size(tri, 10, 12);
+        lv_obj_align(tri, LV_ALIGN_LEFT_MID, 4, 0);
+        lv_obj_add_flag(tri, LV_OBJ_FLAG_HIDDEN);
+        g_row_tri[i] = tri;
         lv_obj_t *ic = lv_img_create(b);
         lv_obj_set_size(ic, 22, 22);
-        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 4, 0);
+        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 18, 0);
         g_row_ico[i] = ic;
         lv_obj_t *nm = lv_label_create(b);
         use_cjk(nm);
         lv_obj_set_style_text_color(nm, C_WHITE, 0);
         lv_obj_set_style_text_font(nm, &mage_cjk_12, 0);
-        lv_obj_set_width(nm, 150);
-        lv_obj_set_pos(nm, 32, 3);
+        lv_obj_set_width(nm, 140);
+        lv_obj_set_pos(nm, 46, 3);
         g_row_name[i] = nm;
         lv_obj_t *sb = lv_label_create(b);
         use_cjk(sb);
         lv_obj_set_style_text_color(sb, C_DIM, 0);
         lv_obj_set_style_text_font(sb, &mage_cjk_12, 0);
-        lv_obj_set_width(sb, 150);
-        lv_obj_set_pos(sb, 32, 16);
+        lv_obj_set_width(sb, 140);
+        lv_obj_set_pos(sb, 46, 16);
         g_row_sub[i] = sb;
         lv_obj_t *rg = lv_label_create(b);
         use_cjk(rg);
@@ -579,7 +668,8 @@ static void build_ui(void) {
      *   error: initializer element is not constant
      * 用局部（自动存储期）数组即可。 */
     s_hidden_cnt = 0;
-    lv_obj_t *init_hidden[] = { g_title_grp, g_name_grp, g_hud, g_toast };
+    lv_obj_t *init_hidden[] = { g_title_grp, g_name_grp, g_hud, g_toast,
+                               g_part_root, g_part_info };
     for (size_t k = 0; k < sizeof(init_hidden)/sizeof(init_hidden[0]); k++) {
         if (s_hidden_cnt >= HIDDEN_TRACK_MAX) { break; }
         /* 【必须先真的设 flag 再登记】这些对象创建时并没有加 HIDDEN
@@ -642,9 +732,91 @@ static void menu_list_render(void) {
             lv_obj_set_style_text_color(g_row_name[i], C_WHITE, 0);
             lv_obj_set_style_text_color(g_row_sub[i], C_DIM, 0);
             lv_obj_set_style_text_color(g_row_rgt[i], isSel ? C_GOLD : C_DIM, 0);
+            set_hidden(g_row_tri[i], !isSel);   /* 选中三角替代 ▶ 豆腐块 */
         } else {
             lv_obj_add_flag(g_row_box[i], LV_OBJ_FLAG_HIDDEN);
+            set_hidden(g_row_tri[i], true);
         }
+    }
+}
+
+/* ===================== 伙伴 4×2 网格渲染 ===================== */
+/* 全部对象在 build_ui 一次性建好；本函数只改 src/text/pos/style。
+ * 脏标守卫：sig=(npartners,sel,active) 变化才碰 LVGL，防每 60ms 重绘卡死。 */
+static void partners_grid_render(void) {
+    int np = (g.npartners > PART_GRID_N) ? PART_GRID_N : g.npartners;
+    int sel = (np > 0) ? clampi(partIdx, 0, np - 1) : 0;
+    int sig = ((np & 0xff) << 16) | ((sel & 0xff) << 8) | (g.activePartner & 0xff);
+    if (sig == g_part_sig) return;
+    g_part_sig = sig;
+
+    if (np == 0) {
+        for (int i = 0; i < PART_GRID_N; i++) {
+            lv_obj_add_flag(g_part_cell[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(g_part_img[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_add_flag(g_part_sel_tri, LV_OBJ_FLAG_HIDDEN);
+        lv_label_set_text(g_part_info, "还没有伙伴 · 去野外打到虚弱再收服");
+        return;
+    }
+
+    for (int i = 0; i < PART_GRID_N; i++) {
+        bool owned = (i < np);
+        if (owned) {
+            char pn[40];
+            snprintf(pn, sizeof(pn), "sp_%s_thumb", ENEMY[g.partners[i].typeIdx].type);
+            const lv_image_dsc_t *d = mage_img(pn);
+            if (d) {
+                lv_img_set_src(g_part_img[i], d);
+                int w = (int)d->header.w, h = (int)d->header.h;
+                lv_obj_set_pos(g_part_img[i], (54 - 4 - w) / 2, 60 - h);
+                lv_obj_clear_flag(g_part_img[i], LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(g_part_img[i], LV_OBJ_FLAG_HIDDEN);
+            }
+            lv_label_set_text(g_part_name[i], g.partners[i].name);
+            int ivs0 = g.partners[i].ivs[0] < 0 ? 0 : g.partners[i].ivs[0];
+            int ivs1 = g.partners[i].ivs[1] < 0 ? 0 : g.partners[i].ivs[1];
+            int ivs2 = g.partners[i].ivs[2] < 0 ? 0 : g.partners[i].ivs[2];
+            int total = ivs0 + ivs1 + ivs2;
+            const char *grade = total >= 40 ? "S" : total >= 33 ? "A" : total >= 26 ? "B" : "C";
+            char tg[24];
+            snprintf(tg, sizeof(tg), "%s Lv%d", grade, g.partners[i].level);
+            lv_label_set_text(g_part_tag[i], tg);
+            lv_obj_clear_flag(g_part_cell[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(g_part_img[i], LV_OBJ_FLAG_HIDDEN);
+            lv_label_set_text(g_part_name[i], "?");
+            lv_label_set_text(g_part_tag[i], "未解锁");
+            lv_obj_clear_flag(g_part_cell[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        bool isSel = (i == sel);
+        lv_obj_set_style_border_color(g_part_cell[i], isSel ? C_GOLD : C_GRAY, 0);
+        lv_obj_set_style_border_width(g_part_cell[i], isSel ? 2 : 1, 0);
+        lv_obj_set_style_bg_color(g_part_cell[i],
+            isSel ? lv_color_hex(0x3a2c5c) : lv_color_hex(0x231b42), 0);
+    }
+
+    /* 选中三角移动到选中格左上 */
+    {
+        int col = sel % 4, rowi = sel / 4;
+        lv_obj_set_pos(g_part_sel_tri, 2 + col * 54 + 4, 2 + rowi * 100 + 5);
+        lv_obj_clear_flag(g_part_sel_tri, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    /* 选中伙伴情报条（保留关键可读信息，替代旧密集 IV 列表） */
+    {
+        Partner *p = &g.partners[sel];
+        int ivs0 = p->ivs[0] < 0 ? 0 : p->ivs[0];
+        int ivs1 = p->ivs[1] < 0 ? 0 : p->ivs[1];
+        int ivs2 = p->ivs[2] < 0 ? 0 : p->ivs[2];
+        int total = ivs0 + ivs1 + ivs2;
+        const char *grade = total >= 40 ? "S" : total >= 33 ? "A" : total >= 26 ? "B" : "C";
+        char buf[64];
+        snprintf(buf, sizeof(buf), "%s%s 资质%s(%d/45) · Lv%d%s",
+            p->name, g.activePartner == sel ? " ★" : "",
+            grade, total, p->level, g.activePartner == sel ? " · 出战" : "");
+        lv_label_set_text(g_part_info, buf);
     }
 }
 
@@ -688,8 +860,8 @@ static void refresh_ui(void) {
         }
         lv_obj_set_style_text_color(g_menu0, g_titleSel == 0 ? C_GOLD : C_GRAY, 0);
         lv_obj_set_style_text_color(g_menu1, g_titleSel == 1 ? C_GOLD : C_GRAY, 0);
-        lv_label_set_text(g_menu0, g_titleSel == 0 ? "▶ 继续冒险" : "  继续冒险");
-        lv_label_set_text(g_menu1, g_titleSel == 1 ? "▶ 新的旅程" : "  新的旅程");
+        lv_label_set_text(g_menu0, g_titleSel == 0 ? "继续冒险" : "  继续冒险");
+        lv_label_set_text(g_menu1, g_titleSel == 1 ? "新的旅程" : "    新的旅程");
         return;
     }
     if (naming) {
@@ -757,13 +929,13 @@ static void refresh_ui(void) {
         if (g.cityMode == 0) {
             for (int i = 0; i < 7; i++)
                 g_menu.rows[i] = (MenuRow){ CITY_LOC_ICON[i], LOCATIONS[i].n, LOCATIONS[i].d,
-                                           i == locSel ? "▶" : "" };
+                                           i == locSel ? "" : "" };
             g_menu.n = 7; g_menu.sel = locSel;
             lv_label_set_text(g_scene_hint, "↑↓ 选地点 · OK 进入 · 长按 功能栏");
         } else {
             for (int i = 0; i < 8; i++)
                 g_menu.rows[i] = (MenuRow){ CITY_FUNC_ICON[i], FUNCS[i].n, "",
-                                           i == funcSel ? "▶" : "" };
+                                           i == funcSel ? "" : "" };
             g_menu.n = 8; g_menu.sel = funcSel;
             lv_label_set_text(g_scene_hint, "↑↓ 选功能 · OK 打开 · 长按 回地图");
         }
@@ -885,44 +1057,14 @@ static void refresh_ui(void) {
     }
     case SC_PARTNERS: {
         if (g.npartners == 0) {
-            g_menu.n = 1; g_menu.sel = 0;
-            g_menu.rows[0] = (MenuRow){"sp_icon_paw", "还没有伙伴", "去野外打到虚弱再收服", ""};
+            g_menu.n = 0;
             lv_label_set_text(g_scene_hint, "长按 返回");
-            menu_list_dirty = 1;
             break;
         }
-        partIdx = clampi(partIdx, 0, g.npartners - 1);
-        Partner *p = &g.partners[partIdx];
-        MobDef *bd = &ENEMY[p->typeIdx];
-        int ivs0 = p->ivs[0] < 0 ? 0 : p->ivs[0];
-        int ivs1 = p->ivs[1] < 0 ? 0 : p->ivs[1];
-        int ivs2 = p->ivs[2] < 0 ? 0 : p->ivs[2];
-        int total = ivs0 + ivs1 + ivs2;
-        const char *grade = total >= 40 ? "S" : total >= 33 ? "A" : total >= 26 ? "B" : "C";
-        g_menu.n = 0;
-        snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "%s%s 资质%s(%d/45)",
-                 g.activePartner == partIdx ? "★ " : "", bd->n, grade, total);
-        g_menu.rows[0] = (MenuRow){"sp_icon_paw", p->name, g_menu_sub[0], ""};
-        snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "Lv%d", p->level);
-        g_menu.rows[1] = (MenuRow){"sp_icon_star", "物种", g_menu_sub[1], ""};
-        snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "%s · %s",
-                 SKILLS[p->skillIdx < 7 ? p->skillIdx : 0].n,
-                 TRAITS[p->traitIdx < 7 ? p->traitIdx : 0].n);
-        g_menu.rows[2] = (MenuRow){"sp_icon_book", "技能/特性", g_menu_sub[2], ""};
-        snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "攻%d 防%d 速%d", ivs0, ivs1, ivs2);
-        g_menu.rows[3] = (MenuRow){"sp_icon_bolt", "三维", g_menu_sub[3], ""};
-        if (bd->hasEvo) {
-            snprintf(g_menu_sub[4], sizeof(g_menu_sub[4]), "Lv%d 可进化%s",
-                     bd->evo.lvl, p->evolved ? "(已进化)" : bd->evo.title);
-            g_menu.rows[4] = (MenuRow){"sp_icon_staff", "进化", g_menu_sub[4], ""};
-            g_menu.n = 5;
-        } else {
-            g_menu.n = 4;
-        }
-        g_menu.sel = 0;
+        partIdx = clampi(partIdx, 0, (g.npartners > PART_GRID_N ? PART_GRID_N - 1 : g.npartners - 1));
+        g_menu.n = 0;   /* 伙伴页改用 4×2 立绘网格（g_part_root），不再用文字列表 */
         lv_label_set_text(g_scene_hint, partMenuOpen || partRelConf ? "↓ 选 · OK 确定"
                          : "OK 出战 · ↓ 切换 · 长按 菜单");
-        menu_list_dirty = 1;
         break;
     }
     case SC_MENU: {
@@ -937,7 +1079,7 @@ static void refresh_ui(void) {
             else if (i == 1) val = g.autoCapture ? "开" : "关";
             else if (i == 2) val = g.sound ? "开" : "关";
             else if (i == 3) val = diffC()->n;
-            g_menu.rows[i] = (MenuRow){micon[i], mname[i], val, i == menuIdx ? "▶" : ""};
+            g_menu.rows[i] = (MenuRow){micon[i], mname[i], val, i == menuIdx ? "" : ""};
         }
         lv_label_set_text(g_scene_hint, "OK 执行 · ↓ 切换 · 长按 返回");
         menu_list_dirty = 1;
@@ -946,9 +1088,9 @@ static void refresh_ui(void) {
     case SC_HOME: {
         homeSel = clampi(homeSel, 0, 2);
         g_menu.n = 3; g_menu.sel = homeSel;
-        g_menu.rows[0] = (MenuRow){"sp_icon_bed",   "休息",     "恢复全部状态",       homeSel==0?"▶":""};
-        g_menu.rows[1] = (MenuRow){"sp_icon_flask", "炼金台",   "炼制药剂与捕捉球",   homeSel==1?"▶":""};
-        g_menu.rows[2] = (MenuRow){"sp_icon_book",  "魔法研究", "消耗材料升魔法等级", homeSel==2?"▶":""};
+        g_menu.rows[0] = (MenuRow){"sp_icon_bed",   "休息",     "恢复全部状态",       homeSel==0?"":""};
+        g_menu.rows[1] = (MenuRow){"sp_icon_flask", "炼金台",   "炼制药剂与捕捉球",   homeSel==1?"":""};
+        g_menu.rows[2] = (MenuRow){"sp_icon_book",  "魔法研究", "消耗材料升魔法等级", homeSel==2?"":""};
         lv_label_set_text(g_scene_hint, "OK 选择 · ↓ 切换 · 长按 返回");
         menu_list_dirty = 1;
         break;
@@ -993,8 +1135,8 @@ static void refresh_ui(void) {
         int lw = g.weaponLv, la = g.armorLv;
         snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "%d级 · %d金+兽骨x%d", lw + 1, 30 * (lw + 1), 2 * (lw + 1));
         snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "%d级 · %d金+兽骨x%d", la + 1, 30 * (la + 1), 2 * (la + 1));
-        g_menu.rows[0] = (MenuRow){"sp_icon_sword", "锻造武器", g_menu_sub[0], forgeSel==0?"▶":"攻击+2"};
-        g_menu.rows[1] = (MenuRow){"sp_icon_robe",  "锻造法袍", g_menu_sub[1], forgeSel==1?"▶":"生命+8"};
+        g_menu.rows[0] = (MenuRow){"sp_icon_sword", "锻造武器", g_menu_sub[0], "攻击+2"};
+        g_menu.rows[1] = (MenuRow){"sp_icon_robe",  "锻造法袍", g_menu_sub[1], "生命+8"};
         lv_label_set_text(g_scene_hint, "OK 锻造 · ↓ 切换 · 长按 返回");
         menu_list_dirty = 1;
         break;
@@ -1018,7 +1160,7 @@ static void refresh_ui(void) {
             else
                 snprintf(g_menu_sub[i], sizeof(g_menu_sub[i]), "随机魔法 · %d金", MARKET[i].price);
             g_menu.rows[i] = (MenuRow){mkicon[i], MARKET[i].n, g_menu_sub[i],
-                                       i == marketIdx ? "▶" : ""};
+                                       i == marketIdx ? "" : ""};
         }
         lv_label_set_text(g_scene_hint, "OK 购买 · ↓ 切换 · 长按 返回");
         menu_list_dirty = 1;
@@ -1040,7 +1182,7 @@ static void refresh_ui(void) {
             if (r->cC) { int l = (int)strlen(cost); snprintf(cost + l, sizeof(cost) - l, "晶%d", r->cC); }
             if (r->makeStone) { int l = (int)strlen(cost); snprintf(cost + l, sizeof(cost) - l, "→%s", STONE_NAMES[r->makeStone]); }
             snprintf(g_menu_sub[i], sizeof(g_menu_sub[i]), "%s", cost);
-            g_menu.rows[i] = (MenuRow){ic, r->n, g_menu_sub[i], i == alcIdx ? "▶" : "炼制"};
+            g_menu.rows[i] = (MenuRow){ic, r->n, g_menu_sub[i], "炼制"};
         }
         lv_label_set_text(g_scene_hint, "OK 炼制 · ↓ 切换 · 长按 返回");
         menu_list_dirty = 1;
@@ -1079,9 +1221,9 @@ static void refresh_ui(void) {
         int key = spell_key(g.spell[0], g.spell[1], g.spell[2]);
         const char *cic[3] = {"sp_icon_staff","sp_icon_bolt","sp_icon_crystal"};
         g_menu.n = 4;
-        g_menu.rows[0] = (MenuRow){cic[0], "形态", FORMS[g.spell[0]].n,  craftSlot==0?"▶":"OK切"};
-        g_menu.rows[1] = (MenuRow){cic[1], "元素", ELEMS[g.spell[1]].n,  craftSlot==1?"▶":"OK切"};
-        g_menu.rows[2] = (MenuRow){cic[2], "修饰", MODS[g.spell[2]].n,   craftSlot==2?"▶":"OK切"};
+        g_menu.rows[0] = (MenuRow){cic[0], "形态", FORMS[g.spell[0]].n,  "OK切"};
+        g_menu.rows[1] = (MenuRow){cic[1], "元素", ELEMS[g.spell[1]].n,  "OK切"};
+        g_menu.rows[2] = (MenuRow){cic[2], "修饰", MODS[g.spell[2]].n,   "OK切"};
         snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "威力%d 耗%d", spellPower(key), spellCost(key));
         g_menu.rows[3] = (MenuRow){"sp_icon_star", spellName(key), g_menu_sub[3], "预览"};
         g_menu.sel = craftSlot;
@@ -1118,7 +1260,7 @@ static void refresh_ui(void) {
                 else stat[0] = 0;
                 const char *ic = (it->slot == 'w') ? "sp_icon_sword" : (it->slot == 'a') ? "sp_icon_robe" : "sp_icon_staff";
                 snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]), "%s", stat);
-                g_menu.rows[g_menu.n] = (MenuRow){ic, it->name, g_menu_sub[g_menu.n], i == eqSel ? "▶" : ""};
+                g_menu.rows[g_menu.n] = (MenuRow){ic, it->name, g_menu_sub[g_menu.n], i == eqSel ? "" : ""};
                 g_menu.n++;
             }
             g_menu.sel = eqBase + clampi(eqSel - start, 0, g.nebag - start - 1);
@@ -1235,25 +1377,29 @@ static void refresh_ui(void) {
         bool fon = is_frame_scene(g_scene);
         if (last_frame_scene != g_scene) {
             last_frame_scene = g_scene;
+            bool pg = (g_scene == SC_PARTNERS);
             set_hidden(g_frame, !fon);
             set_hidden(g_frame_bar, !fon);
             set_hidden(g_frame_title, !fon);
             set_hidden(g_scene_title, fon);          /* 金框标题条替代旧居中标题 */
             set_hidden(g_dex_box, !fon || g_scene != SC_DEX);
-            set_hidden(g_part_card, !fon || g_scene != SC_PARTNERS);
-            /* 所有框架页统一用带图标的卡片列表（g_list），隐藏旧纯文字 body */
+            set_hidden(g_part_card, true);           /* 旧单卡被 4×2 网格取代 */
+            /* 所有框架页统一用带图标的卡片列表（g_list），隐藏旧纯文字 body；
+             * 伙伴页改用 4×2 立绘网格（g_part_root），隐藏列表 */
             set_hidden(g_scene_body, fon);
-            set_hidden(g_list, !fon);
+            set_hidden(g_list, !(fon && !pg));
+            set_hidden(g_part_root, !(fon && pg && g.npartners > 0));
+            set_hidden(g_part_info, !(fon && pg));
             /* 详情页：卡片列表下移到立绘下方，立绘盒居中；并把立绘置顶，
              * 彻底根治「文字/卡片压住立绘」的遮挡问题（用户问题④）。 */
             if (g_scene == SC_DEX)            g_list_y0 = 96;
-            else if (g_scene == SC_PARTNERS)  g_list_y0 = 130;
+            else if (g_scene == SC_PARTNERS)  g_list_y0 = ROW_Y0;
             else if (g_scene == SC_STATUS)    g_list_y0 = 88;
             else                              g_list_y0 = ROW_Y0;
             if (fon) {
                 lv_label_set_text(g_frame_title, s_ttl[0] ? s_ttl : SCENE_NAME[g_scene]);
                 if (g_scene == SC_DEX)           { lv_obj_move_foreground(g_dex_box);   lv_obj_move_foreground(g_scene_img); }
-                else if (g_scene == SC_PARTNERS) { lv_obj_move_foreground(g_part_card); lv_obj_move_foreground(g_scene_img); }
+                else if (g_scene == SC_PARTNERS) { lv_obj_move_foreground(g_part_root); }
                 else if (g_scene == SC_STATUS)    { lv_obj_move_foreground(g_scene_img); }
             } else {
                 lv_obj_set_pos(g_scene_body, 10, 38);
@@ -1261,13 +1407,17 @@ static void refresh_ui(void) {
                 lv_obj_set_style_text_font(g_scene_body, &mage_cjk_16, 0);
                 lv_obj_set_style_text_align(g_scene_body, 0, LV_TEXT_ALIGN_LEFT);
                 set_hidden(g_list, true);            /* 离帧场景（含战斗）确保列表隐藏 */
+                set_hidden(g_part_root, true);
+                set_hidden(g_part_info, true);
             }
         }
     }
 
-    /* 菜单卡片列表渲染（仅场景/选择/数据变化时触碰 LVGL，避免周期重绘卡死） */
-    if (is_frame_scene(g_scene))
-        menu_list_render();
+    /* 菜单卡片列表渲染 / 伙伴网格渲染（仅场景/选择/数据变化时触碰 LVGL，避免周期重绘卡死） */
+    if (is_frame_scene(g_scene)) {
+        if (g_scene == SC_PARTNERS) partners_grid_render();
+        else menu_list_render();
+    }
 
     /* 图鉴/伙伴/角色立绘：按 sp_<type> 原生尺寸展示，脚底中心锚点对齐 HTML 布局
      * （图鉴 foot=120,90；伙伴卡 foot=120,118；角色页 sp_hero foot=120,88）。
@@ -1283,9 +1433,6 @@ static void refresh_ui(void) {
                 int t = enemyIndex(DEXORDER[di]);
                 if (t >= 0) { typeName = ENEMY[t].type; footY = 90; }
             }
-        } else if (g_scene == SC_PARTNERS && g.npartners > 0) {
-            int t = g.partners[clampi(partIdx, 0, g.npartners - 1)].typeIdx;
-            if (t >= 0) { typeName = ENEMY[t].type; footY = 118; }
         } else if (g_scene == SC_STATUS) {
             typeName = "hero"; footY = 88;       /* HTML portrait('hero',...) */
         }
@@ -2577,7 +2724,7 @@ static void battle_render(void) {
             int k = lo[i];
             int idx = cn++;
             snprintf(cbuf[idx], sizeof(cbuf[idx]), "%s%s  威力%d 耗%d",
-                     (i == bt.magicIdx) ? "▶ " : "  ",
+                     (i == bt.magicIdx) ? "> " : "  ",
                      spellName(k), spellPower(k), spellCost(k));
             clines[idx] = cbuf[idx];
         }
@@ -2593,7 +2740,7 @@ static void battle_render(void) {
             int kind = item_opt_kind(i);
             int idx = cn++;
             snprintf(cbuf[idx], sizeof(cbuf[idx]), "%s%s  ×%d",
-                     (i == bt.itemIdx) ? "▶ " : "  ",
+                     (i == bt.itemIdx) ? "> " : "  ",
                      kn[kind], cnt[kind]);
             clines[idx] = cbuf[idx];
         }

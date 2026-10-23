@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>魔法帝之路 · 交付清单（图标卡片化 + 战斗优化）</title>
+<style>
+  :root{
+    --bg:#0f1220; --panel:#171b2e; --line:#2a3050; --txt:#e8ebf5; --sub:#9aa3c4;
+    --ok:#3ecf8e; --accent:#7c9cff; --warn:#ffb454;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:var(--bg);color:var(--txt);line-height:1.6;padding:28px}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:24px;margin-bottom:4px}
+  .meta{color:var(--sub);font-size:13px;margin-bottom:20px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+  h2{font-size:17px;margin-bottom:12px;color:var(--accent);border-left:3px solid var(--accent);padding-left:10px}
+  table{width:100%;border-collapse:collapse;font-size:14px}
+  th,td{text-align:left;padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--sub);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.5px}
+  td code{background:#0c0f1c;padding:1px 6px;border-radius:5px;color:#ffd479;font-size:12px}
+  .ok{color:var(--ok);font-weight:700}
+  .tag{display:inline-block;background:#0c0f1c;border:1px solid var(--line);border-radius:6px;padding:1px 8px;font-size:12px;color:var(--sub);margin-right:4px}
+  pre{background:#0c0f1c;border:1px solid var(--line);border-radius:8px;padding:12px 14px;overflow:auto;font-size:12.5px;color:#c7f0d8}
+  ul{margin:8px 0 0 18px}
+  li{margin:4px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media(max-width:680px){.grid{grid-template-columns:1fr}}
+  .kbd{font-family:monospace;background:#0c0f1c;border:1px solid var(--line);border-radius:5px;padding:1px 7px;color:#ffd479}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>魔法帝之路 · 交付清单</h1>
+  <div class="meta">版本：mage-game 分支 · 提交 <code>6f0782e</code>（功能）→ <code>230137e</code>（编译修复）· CI run 38708388423 结论 success · 烧录 COM6 Hash verified · 2026-10-15</div>
+
+  <div class="card">
+    <h2>一、你提的 8 条反馈 — 逐条闭环</h2>
+    <table>
+      <thead><tr><th style="width:8%">#</th><th style="width:30%">反馈</th><th style="width:14%">状态</th><th>怎么干的</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>1</td><td>战斗退出自动后，按 ↑ 切不回自动</td>
+          <td class="ok">已修复</td>
+          <td>新增 <code>ACT_LUP</code>（长按 ↑）输入，并在 <code>battle_handle</code> 加分支：长按 UP 即切回自动模式。按键映射：<span class="kbd">OK</span>攻击 / <span class="kbd">↓</span>魔法 / <span class="kbd">↑</span>道具 / <span class="kbd">长按OK</span>返回 / <span class="kbd">长按↑</span>切回自动。</td>
+        </tr>
+        <tr>
+          <td>2</td><td>布局太空旷</td>
+          <td class="ok">已修复</td>
+          <td>全部场景由「纯文字/大段 label」改为「金框面板 + 图标卡片列表」，卡片填满屏幕、左图标右文，信息密度拉满。</td>
+        </tr>
+        <tr>
+          <td>3</td><td>每个板块必须有设计图标</td>
+          <td class="ok">已修复</td>
+          <td>新增 25 个手绘图标（<code>bag/bed/bolt/bone/book/coin/crown/crystal/flask/gate/gear/hammer/heart/herb/map/orb/paw/potion/robe/scroll/seal/shield/staff/star/sword</code>），用 <code>tools/gen_menu_icons.py</code>（PIL 手绘 44×44）编入精灵表，覆盖主菜单/住宅/研究/锻造/黑市/炼金/装备/升级/拼装/晋升/状态/背包/委托/伙伴等所有板块。</td>
+        </tr>
+        <tr>
+          <td>4</td><td>图鉴文字压立绘（遮挡没修）</td>
+          <td class="ok">已修复</td>
+          <td>立绘对象 <code>lv_obj_move_foreground</code> 置顶，文字层在其下，不再互相遮盖。</td>
+        </tr>
+        <tr>
+          <td>5</td><td>委托/任务页只用文字敷衍</td>
+          <td class="ok">已修复</td>
+          <td>GUILD（委托）改为图标卡片列表 + 立绘卡，任务项带图标与状态标。</td>
+        </tr>
+        <tr>
+          <td>6</td><td>伙伴页只用文字敷衍</td>
+          <td class="ok">已修复</td>
+          <td>PARTNERS（伙伴）改为图标卡片列表 + 立绘卡，每只伙伴有头像卡与属性卡。</td>
+        </tr>
+        <tr>
+          <td>7</td><td>交付时要出清单（干了哪些、怎么干）</td>
+          <td class="ok">本文件</td>
+          <td>就是这份清单。</td>
+        </tr>
+        <tr>
+          <td>8</td><td>战斗主角不动、看不出魔法特效区别</td>
+          <td class="ok">已修复</td>
+          <td>演出改为<b>真实时间节流</b>（约 5.5fps，原 60ms 刷新下仅 ~1.3fps 导致突进一帧结束→看着完全不动）；英雄突进 0.5s 并<b>强制立即渲染</b>；按元素色（<code>ELEMS[e].c</code> 的 hex）给魔法阵/聚能球/命中环<b>着色</b>，不同魔法一眼区分。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>二、改动怎么落地的（方法）</h2>
+    <div class="grid">
+      <div>
+        <b>卡片列表系统</b>
+        <ul>
+          <li><code>MenuRow{icon,name,sub,rgt}</code> + <code>g_menu</code> 全局表</li>
+          <li><code>menu_list_render()</code> 带 <code>(scene&lt;&lt;8|sel)</code> 脏标守卫：仅内容变化时碰 LVGL，避免每 60ms 全屏 invalidate 触发看门狗（ESP32-C3 单核铁律）</li>
+          <li><code>is_frame_scene()</code> 扩充 HOME/FORGE/MARKET/PROMOTE，统一走金框面板</li>
+        </ul>
+      </div>
+      <div>
+        <b>图标与精灵</b>
+        <ul>
+          <li><code>tools/gen_menu_icons.py</code> PIL 手绘 44×44，编入 <code>assets/mage_sprites.c</code>（共 92 张贴图）</li>
+          <li>菜单渲染经 <code>mage_img()</code> 安全查表，未知名直接跳过不崩</li>
+        </ul>
+      </div>
+      <div>
+        <b>编译纪律（-Werror 环境）</b>
+        <ul>
+          <li><code>g_menu_sub</code> 扩到 56B、<code>cost</code> 扩到 40B，防 <code>format-truncation</code></li>
+          <li>MARKET 长格式串改 if/else，避免三元格式串参数计数告警</li>
+          <li>修 2 个真实错误：<code>lv_label_set_text</code>→<code>set_text_fmt</code>；<code>hex2col</code> 加前向声明消类型冲突</li>
+        </ul>
+      </div>
+      <div>
+        <b>CI / 烧录</b>
+        <ul>
+          <li><code>firmware-checks.yml</code> 对 mage-game push 触发，两轮：首轮 FAIL（3 错）→ 修 → 次轮 PASS</li>
+          <li>esptool 5.5.0 写 COM6（MAC <code>4c:11:ae:30:f5:fc</code>），<code>Hash verified</code></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>三、设备启动日志（已抓 COM6，干净无报错）</h2>
+    <pre>I (691) mage: 魔法帝之路 固件启动 (M2)
+I (705) mage_draw: 贴图 title 240x320
+I (707) mage_draw: 贴图 sp_hero 36x46
+I (967) button: IoT Button Version: 4.2.0
+I (967) bsp_btn: 按键就绪:ADC1_CH0 三键分压
+I (969) main_task: Returned from app_main()</pre>
+    <p style="color:var(--sub);font-size:13px;margin-top:8px"><code>Returned from app_main()</code> = 启动正常返回，无崩溃、无 task watchdog 重启。</p>
+  </div>
+
+  <div class="card">
+    <h2>四、改动文件清单</h2>
+    <p>
+      <span class="tag">main/mage.c</span>
+      <span class="tag">tools/gen_menu_icons.py</span>
+      <span class="tag">tools/preview_mage_battle.py</span>
+      <span class="tag">assets/mage_sprites.c/.h</span>
+      <span class="tag">25 张 sp_icon PNG</span>
+      <span class="tag">13 张 PC 预览图</span>
+      <span class="tag">capture_com6.py（日志抓取）</span>
+    </p>
+    <p style="color:var(--sub);font-size:13px;margin-top:10px">提交：<code>6f0782e</code>（全部板块图标卡片化 + 战斗可切回自动 + 演出提速）→ <code>230137e</code>（修 CI 编译错误）。共 45 文件、+8156/−1700。</p>
+  </div>
+
+  <div class="card">
+    <h2>五、你在设备上这样验收</h2>
+    <ul>
+      <li><b>各功能页</b>：主菜单/住宅/研究/锻造/黑市/炼金/装备/升级/拼装/晋升/状态/背包，均应看到「图标 + 卡片列表」，不再是纯文字。</li>
+      <li><b>委托页 / 伙伴页</b>：带立绘卡的图标卡片布局，文字不压立绘。</li>
+      <li><b>战斗</b>：<span class="kbd">OK</span>攻击、<span class="kbd">↓</span>魔法、<span class="kbd">↑</span>道具、<span class="kbd">长按OK</span>返回、<span class="kbd">长按↑</span>切回自动。</li>
+      <li><b>魔法特效</b>：施放不同元素魔法时，脚下魔法阵/聚能光球颜色不同，主角有明显突进动作。</li>
+      <li><b>稳定性</b>：连玩几分钟不卡死、不发烫、不反复重启（看门狗）。</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>
