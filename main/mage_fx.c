@@ -325,6 +325,7 @@ static void fx_build(void)
     ESP_LOGI("mage_fx", "FXB evtbox-done");
     F.evtIcon = lv_image_create(F.evtBox);
     lv_obj_set_pos(F.evtIcon, (SCR_W - 40) / 2 - 28, 2);   /* 56x56 图标，水平居中，上移避免压标题 */
+    ESP_LOGI("mage_fx", "FXB evticon-done");
 
     F.evtName = lv_label_create(F.evtBox);
     use_cjk(F.evtName);
@@ -333,6 +334,7 @@ static void fx_build(void)
     lv_obj_set_width(F.evtName, SCR_W - 40);
     lv_label_set_text(F.evtName, "");
     lv_obj_set_pos(F.evtName, 0, 56);
+    ESP_LOGI("mage_fx", "FXB name-done");
 
     F.evtDesc = lv_label_create(F.evtBox);
     use_cjk(F.evtDesc);
@@ -341,6 +343,7 @@ static void fx_build(void)
     lv_obj_set_width(F.evtDesc, SCR_W - 40);
     lv_label_set_text(F.evtDesc, "");
     lv_obj_set_pos(F.evtDesc, 0, 72);
+    ESP_LOGI("mage_fx", "FXB desc-done");
 
     F.evtHint = lv_label_create(F.evtBox);
     use_cjk(F.evtHint);
@@ -349,6 +352,7 @@ static void fx_build(void)
     lv_obj_set_width(F.evtHint, SCR_W - 40);
     lv_label_set_text(F.evtHint, "C 绕开");
     lv_obj_set_pos(F.evtHint, 0, 86);
+    ESP_LOGI("mage_fx", "FXB hint-done");
 
     /* 远征汇总附加标签（HTML drawExpoSummary）：副标题 + 左右对齐的收益行。
      * 仅 expo 面板使用，默认隐藏；左行 x=16（HTML 名目 x=30 - box.x14），
@@ -361,6 +365,7 @@ static void fx_build(void)
     lv_label_set_text(F.evtSub, "");
     lv_obj_set_pos(F.evtSub, 0, 34);
     lv_obj_add_flag(F.evtSub, LV_OBJ_FLAG_HIDDEN);
+    ESP_LOGI("mage_fx", "FXB sub-done");
 
     F.evtRowL = lv_label_create(F.evtBox);
     use_cjk(F.evtRowL);
@@ -370,6 +375,7 @@ static void fx_build(void)
     lv_label_set_text(F.evtRowL, "");
     lv_obj_set_pos(F.evtRowL, 16, 54);
     lv_obj_add_flag(F.evtRowL, LV_OBJ_FLAG_HIDDEN);
+    ESP_LOGI("mage_fx", "FXB rowl-done");
 
     F.evtRowR = lv_label_create(F.evtBox);
     use_cjk(F.evtRowR);
@@ -379,6 +385,7 @@ static void fx_build(void)
     lv_label_set_text(F.evtRowR, "");
     lv_obj_set_pos(F.evtRowR, 16, 54);
     lv_obj_add_flag(F.evtRowR, LV_OBJ_FLAG_HIDDEN);
+    ESP_LOGI("mage_fx", "FXB rowr-done");
 
     F.built = true;
     ESP_LOGI("mage_fx", "FXB pre-built");
