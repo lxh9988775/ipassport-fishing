@@ -822,6 +822,7 @@ static void partners_grid_render(void) {
 
 /* ===================== 刷新（按场景拼装正文） ===================== */
 static void refresh_ui(void) {
+    ESP_LOGI(TAG, "REFRESH enter g_scene=%d bt.active=%d", g_scene, bt.active ? 1 : 0);
     bool title  = (g_scene == SC_TITLE);
     bool naming = (g_scene == SC_NAME);
     bool hud_on = !title && !naming;
@@ -1464,6 +1465,7 @@ static void refresh_ui(void) {
      * 只有状态真正翻转时才动手。 */
     {
         const bool in_bt = (g_scene == SC_BATTLE) && bt.active;
+        ESP_LOGI(TAG, "FX g_scene=%d bt.active=%d in_bt=%d", g_scene, bt.active ? 1 : 0, in_bt ? 1 : 0);
         /* 结算/战利品面板（BP_RESULT / BP_LOOT）需完整露出，故隐藏底部动作卡 */
         mage_hud_show(in_bt && bt.phase != BP_RESULT && bt.phase != BP_LOOT && bt.phase != BP_INTRO);
         /* 战斗演出层（含 battle_bg 背景图）必须随战斗状态显隐：
@@ -2699,6 +2701,7 @@ static void battle_force_render(void) { g_fx_force = true; }
  * 这里只保留必要信息，且必须能塞进底部 196..320 这 124px 面板内，
  * 否则会把画面顶出去导致「纯文字看不到战斗」。 */
 static void battle_render(void) {
+    ESP_LOGI(TAG, "BATTLE_RENDER enter g_scene=%d bt.active=%d enemyCount=%d", g_scene, bt.active ? 1 : 0, bt.enemyCount);
     /* 1:1 复刻 HTML drawBattle()：画面占满，文字只在顶部血条与底部动作卡上，
      * **战斗画面上不出现任何大段文字**（此前用一个大 label 把文字铺满屏幕，
      * 是「看起来是纯文字游戏 + 看不到战斗画面」的根因）。 */
@@ -2939,6 +2942,7 @@ void mage_app_start(void) {
     if (bsp_lvgl_lock(1000)) {
         mage_new_game();
         g_scene = SC_CITY; g.cityMode = 0; g_need_refresh = 1;
+        ESP_LOGI(TAG, "DEBUG auto-city: g_scene=%d", g_scene);
         refresh_ui();
         bsp_lvgl_unlock();
     }

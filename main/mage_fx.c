@@ -839,6 +839,7 @@ void mage_fx_attach(lv_obj_t *parent)
 
 void mage_fx_show(bool on)
 {
+    ESP_LOGI("mage_fx", "FX_SHOW on=%d bt.active=%d", on ? 1 : 0, bt.active ? 1 : 0);
     if (!g_fx_parent) return;
     /* 状态记忆：本函数在 refresh_ui 里每 60ms 被调一次，
      * 无条件 add/remove_flag 会持续触发 invalidate —— 与主界面卡死同源。
