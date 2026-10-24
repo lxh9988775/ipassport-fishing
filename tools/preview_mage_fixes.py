@@ -207,11 +207,14 @@ def draw_battle_menu(d, im, label):
 
 
 def load_monster(type_key, th=40, max_w=44):
-    """读取源怪物 PNG（mage-game/assets/sp_<type>.png）并按烘焙期 make_thumb 同口径缩放。
+    """读取源怪物 PNG（mage-game/assets/sp_<type>.png，优先抠好透明底的 _k 版）
+    并按烘焙期 make_thumb 同口径缩放。
 
     与固件 assets/mage_sprites.c 烘焙同源：scale=min(th/h, max_w/w) 限宽 44、高 40。
     """
-    p = os.path.join(ICON_DIR, "sp_%s.png" % type_key)
+    p = os.path.join(ICON_DIR, "sp_%s_k.png" % type_key)
+    if not os.path.exists(p):
+        p = os.path.join(ICON_DIR, "sp_%s.png" % type_key)
     im = Image.open(p).convert("RGBA")
     w, h = im.size
     scale = min(th / h, max_w / w)
@@ -226,14 +229,24 @@ ACADEMY_ROWS = [
     ("sp_icon_book",  "学属性魔法",   "已学 12/135 种魔法",      "45金"),
     ("sp_icon_crown", "职业晋升考核", "需击杀/委托达标",         ""),
 ]
-# 角色页：6 行属性（g_menu.n=6），旧右列 56px 裁「见习魔法师」。
-STATUS_ROWS = [
+# 角色页【旧版】6 行（板上现状）：职级塞等级行右列，与长 sub 互相压字 + 顶部立绘占 88px
+STATUS_ROWS_OLD = [
     ("sp_icon_heart", "生命", "104 / 104", ""),
     ("sp_icon_bolt",  "魔力", "59 / 62",   ""),
     ("sp_icon_star",  "等级", "Lv7 · 经验210/320", "见习魔法师"),
     ("sp_icon_sword", "攻击", "29（装+3）", ""),
     ("sp_icon_shield","护甲", "减伤 6",   ""),
     ("sp_icon_coin",  "金币", "1860 · 击杀 142", ""),
+]
+# 角色页【新版】7 行（对齐 HTML 原版：职级·Lv 独立信息、经验独立成行、无右列冲突）
+STATUS_ROWS_NEW = [
+    ("sp_icon_heart",  "生命", "104 / 104",          ""),
+    ("sp_icon_bolt",   "魔力", "59 / 62",            ""),
+    ("sp_icon_star",   "等级", "见习魔法师 · Lv7",   ""),
+    ("sp_icon_scroll", "经验", "210 / 320",          ""),
+    ("sp_icon_sword",  "攻击", "29（装+3）",         ""),
+    ("sp_icon_shield", "护甲", "减伤 6",             ""),
+    ("sp_icon_coin",   "金币", "1860 · 击杀 142",    ""),
 ]
 # 伙伴网格：8 个真实物种（cat/fox/frog/deer/bat/boar/goblin/treant 均有源 PNG）。
 PARTNERS = [
@@ -281,6 +294,7 @@ def draw_list_row(d, im, x, y, w, h, icon, name, sub, rgt,
 
 
 # ---------------- 列表铺满（问题⑤：学院 3 行） ----------------
+# 场景内不放任何标注文字（诚实渲染固件输出），说明放总览图的独立说明条。
 def draw_academy(d, im, before):
     d.rectangle([0, 0, W, H], fill=C_BG)
     if before:
@@ -289,9 +303,6 @@ def draw_academy(d, im, before):
         y0, pitch, row_h = 27, 34, 33
         for i, (ic, nm, sub, rgt) in enumerate(ACADEMY_ROWS):
             draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt, sel=(i == 0))
-        # 标注空白区
-        d.rectangle([ROW_X, 140, ROW_X + ROW_W, 280], outline=(90, 80, 130), width=1)
-        d.text((W // 2, 200), "旧：下方大片空白（170px 空）", font=F9, fill=(150, 140, 180), anchor="mm")
     else:
         # 新：pitch=(294-27)/3≈89→cap88，rowH=87，框高随内容自适应到 284
         pitch = (294 - 27) // len(ACADEMY_ROWS)
@@ -308,27 +319,45 @@ def draw_academy(d, im, before):
     d.text((W // 2, H - 12), "OK 确定 · ↓ 切换 · 长按 返回", font=F9, fill=C_CYAN, anchor="mm")
 
 
-# ---------------- 角色页右列裁切（问题⑥：见习魔法师被裁） ----------------
+# ---------------- 角色页（问题⑥：职级压字 + 显示不全） ----------------
 def draw_status(d, im, before):
     d.rectangle([0, 0, W, H], fill=C_BG)
-    # 新几何：pitch=(294-27)/6≈44，rowH=43，框高自适应；右列 76px @ ROW_W-80
-    pitch = (294 - 27) // len(STATUS_ROWS)
-    if pitch > 88:
-        pitch = 88
-    row_h = pitch - 1
-    fb = 27 + len(STATUS_ROWS) * pitch + 3
-    if fb > 298:
-        fb = 298
-    frame_h = fb - 10
-    draw_frame(d, frame_h, "角色")
-    for i, (ic, nm, sub, rgt) in enumerate(STATUS_ROWS):
-        if before and rgt:
-            # 旧：右列 56px @ ROW_W-60 → 「见习魔法师」(60px) 被裁
-            draw_list_row(d, im, ROW_X, 27 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt,
-                          rgt_w=56, rgt_xoff=60, sel=(i == 0), clip_rgt=True)
-        else:
-            draw_list_row(d, im, ROW_X, 27 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt,
-                          rgt_w=76, rgt_xoff=80, sel=(i == 0))
+    if before:
+        # 旧：立绘占顶部 88px（列表 y0=88）+ 6 行 + 职级塞右列与长 sub 压字
+        rows = STATUS_ROWS_OLD
+        y0 = 88
+        pitch = (294 - y0) // len(rows)
+        if pitch < ROW_H:
+            pitch = ROW_H
+        row_h = pitch - 1
+        fb = y0 + len(rows) * pitch + 3
+        if fb > 298:
+            fb = 298
+        draw_frame(d, fb - 10, "角色")
+        # 立绘 = foreground 对象（在框体之上），必须在 draw_frame 之后粘贴
+        try:
+            hero = load_monster("hero", th=58, max_w=54)
+            im.paste(hero, (W // 2 - hero.size[0] // 2, 88 - hero.size[1]), hero)
+        except Exception:
+            pass
+        for i, (ic, nm, sub, rgt) in enumerate(rows):
+            draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt, sel=(i == 0))
+    else:
+        # 新：去立绘、y0=27、7 行动态铺满，职级·Lv 并入等级行 sub，经验独立成行
+        rows = STATUS_ROWS_NEW
+        y0 = 27
+        pitch = (294 - y0) // len(rows)
+        if pitch > 88:
+            pitch = 88
+        if pitch < ROW_H:
+            pitch = ROW_H
+        row_h = pitch - 1
+        fb = y0 + len(rows) * pitch + 3
+        if fb > 298:
+            fb = 298
+        draw_frame(d, fb - 10, "角色")
+        for i, (ic, nm, sub, rgt) in enumerate(rows):
+            draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt, sel=(i == 0))
     d.text((W // 2, H - 12), "伙伴 3 只 · OK/长按 回城 · ↓ 管理装备", font=F9, fill=C_CYAN, anchor="mm")
 
 
@@ -360,10 +389,6 @@ def draw_partners(d, im, before):
         d.text((cx + cell_inner_w // 2, cy + 66), nm, font=F9, fill=C_WHITE, anchor="mm")
         d.text((cx + cell_inner_w // 2, cy + 82), tag, font=F9, fill=C_GOLD, anchor="mm")
     d.text((W // 2, 280), "OK 出战 · ↓ 切换 · 长按 菜单", font=F9, fill=C_CYAN, anchor="mm")
-    if before:
-        d.text((W // 2, 296), "修复前：烘焙只 8 个 thumb，多数 NULL 空白格", font=F9, fill=(255, 120, 120), anchor="mm")
-    else:
-        d.text((W // 2, 296), "修复后：遍历全部魔物烘 84 个 thumb，8 格全有立绘", font=F9, fill=(127, 220, 138), anchor="mm")
 
 
 def make_cell(fn, *a):
@@ -427,26 +452,41 @@ def main():
         im.save(os.path.join(OUT, "mage_sixth_%s_240x320.png" % k))
         up2x(im).save(os.path.join(OUT, "mage_sixth_%s_2x.png" % k))
 
-    # 3×2 总览（720×640）
-    ov6 = Image.new("RGB", (W * 3, H * 2), C_BG)
+    # 3×2 总览：每格 = 240x320 场景 + 下方 30px 独立说明条（不压场景）
+    CAP_H = 30
+    labels6 = {
+        "academy_before":  ("修复前", "3 行挤在顶部，下方大片空白"),
+        "academy_after":   ("修复后", "行距动态铺满整框，无空白"),
+        "status_before":   ("修复前", "职级塞右列，与经验数字压字"),
+        "status_after":    ("修复后", "职级并入等级行，经验独立行"),
+        "partners_before": ("修复前", "只烘 8 个缩略图，多数空白格"),
+        "partners_after":  ("修复后", "全部 84 只魔物都有缩略图"),
+    }
+    cap_color = {"修复前": (255, 120, 120), "修复后": (127, 220, 138)}
+    OW, OH = W * 3, (H + CAP_H) * 2
+    ov6 = Image.new("RGB", (OW, OH), (16, 12, 32))
+    dd = ImageDraw.Draw(ov6)
+    dd.rectangle([0, 0, OW, 22], fill=(42, 35, 72))
+    dd.text((OW // 2, 11), "魔法帝之路 · 第六批界面修复对比（240x320 与固件同坐标）",
+            font=F12, fill=C_GOLD, anchor="mm")
     order6 = ["academy_before", "academy_after",
               "status_before", "status_after",
               "partners_before", "partners_after"]
     for idx, k in enumerate(order6):
-        cell = sixth[k].resize((W, H))
-        x = (idx % 3) * W
-        y = (idx // 3) * H
-        ov6.paste(cell, (x, y))
-        dd = ImageDraw.Draw(ov6)
-        dd.rectangle([x, y, x + W - 1, y + H - 1], outline=C_GOLD, width=2)
-        labels6 = {
-            "academy_before": "⑤列表不铺满·旧", "academy_after": "⑤列表铺满·新",
-            "status_before": "⑥右列裁切·旧", "status_after": "⑥右列完整·新",
-            "partners_before": "⑦伙伴无图·旧", "partners_after": "⑦伙伴有图·新",
-        }
-        dd.text((x + 4, y + 4), labels6[k], font=F9, fill=C_WHITE)
-    ov6.save(os.path.join(OUT, "mage_sixth_overview_720x640.png"))
-    print("written:", os.path.join(OUT, "mage_sixth_overview_720x640.png"))
+        col, row = idx % 3, idx // 3
+        x, y = col * W, 24 + row * (H + CAP_H)
+        ov6.paste(sixth[k], (x, y))
+        dd.rectangle([x, y, x + W - 1, y + H - 1], outline=C_GOLD, width=1)
+        # 说明条：深底 + 金顶线 + 徽章色前缀
+        cy = y + H
+        dd.rectangle([x, cy, x + W - 1, cy + CAP_H - 1], fill=(24, 18, 44))
+        dd.line([x, cy, x + W - 1, cy], fill=C_GOLD, width=1)
+        tag, desc = labels6[k]
+        dd.text((x + 6, cy + 8), tag, font=F9, fill=cap_color[tag])
+        tw = dd.textlength(tag, font=F9)
+        dd.text((x + 12 + tw, cy + 8), desc, font=F9, fill=C_WHITE)
+    ov6.save(os.path.join(OUT, "mage_sixth_overview_720x704.png"))
+    print("written:", os.path.join(OUT, "mage_sixth_overview_720x704.png"))
 
 
 if __name__ == "__main__":

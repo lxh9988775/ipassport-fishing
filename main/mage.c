@@ -992,15 +992,19 @@ static void refresh_ui(void) {
         g_menu.rows[0] = (MenuRow){"sp_icon_heart", "生命", g_menu_sub[0], ""};
         snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "%d / %d", g.mp, g.maxMp);
         g_menu.rows[1] = (MenuRow){"sp_icon_bolt", "魔力", g_menu_sub[1], ""};
-        snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "Lv%d · 经验%d/%d", g.level, g.exp, expNeed());
-        g_menu.rows[2] = (MenuRow){"sp_icon_star", "等级", g_menu_sub[2], RANKS[g.rank]};
-        snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "%d（装+%d）", atk, eqAtk());
-        g_menu.rows[3] = (MenuRow){"sp_icon_sword", "攻击", g_menu_sub[3], ""};
-        snprintf(g_menu_sub[4], sizeof(g_menu_sub[4]), "减伤 %d", eqDef());
-        g_menu.rows[4] = (MenuRow){"sp_icon_shield", "护甲", g_menu_sub[4], ""};
-        snprintf(g_menu_sub[5], sizeof(g_menu_sub[5]), "%d · 击杀%d", g.gold, g.kills);
-        g_menu.rows[5] = (MenuRow){"sp_icon_coin", "金币", g_menu_sub[5], ""};
-        g_menu.n = 6; g_menu.sel = 0;
+        /* 职级·Lv 合并进等级行 sub（HTML 原版同款：职级是独立信息行，不占右列，
+         * 否则长 sub「Lv7 · 经验210/320」会和右列「见习魔法师」互相压字） */
+        snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "%s · Lv%d", RANKS[g.rank], g.level);
+        g_menu.rows[2] = (MenuRow){"sp_icon_star", "等级", g_menu_sub[2], ""};
+        snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "%d / %d", g.exp, expNeed());
+        g_menu.rows[3] = (MenuRow){"sp_icon_scroll", "经验", g_menu_sub[3], ""};
+        snprintf(g_menu_sub[4], sizeof(g_menu_sub[4]), "%d（装+%d）", atk, eqAtk());
+        g_menu.rows[4] = (MenuRow){"sp_icon_sword", "攻击", g_menu_sub[4], ""};
+        snprintf(g_menu_sub[5], sizeof(g_menu_sub[5]), "减伤 %d", eqDef());
+        g_menu.rows[5] = (MenuRow){"sp_icon_shield", "护甲", g_menu_sub[5], ""};
+        snprintf(g_menu_sub[6], sizeof(g_menu_sub[6]), "%d · 击杀%d", g.gold, g.kills);
+        g_menu.rows[6] = (MenuRow){"sp_icon_coin", "金币", g_menu_sub[6], ""};
+        g_menu.n = 7; g_menu.sel = 0;
         lv_label_set_text_fmt(g_scene_hint, "伙伴 %d 只 · OK/长按 回城 · ↓ 管理装备", g.cats);
         menu_list_dirty = 1;
         break;
@@ -1437,13 +1441,11 @@ static void refresh_ui(void) {
              * 彻底根治「文字/卡片压住立绘」的遮挡问题（用户问题④）。 */
             if (g_scene == SC_DEX)            g_list_y0 = 96;
             else if (g_scene == SC_PARTNERS)  g_list_y0 = ROW_Y0;
-            else if (g_scene == SC_STATUS)    g_list_y0 = 88;
-            else                              g_list_y0 = ROW_Y0;
+            else                              g_list_y0 = ROW_Y0;   /* 状态页 7 行铺满：与普通列表同 y0 */
             if (fon) {
                 lv_label_set_text(g_frame_title, s_ttl[0] ? s_ttl : SCENE_NAME[g_scene]);
                 if (g_scene == SC_DEX)           { lv_obj_move_foreground(g_dex_box);   lv_obj_move_foreground(g_scene_img); }
                 else if (g_scene == SC_PARTNERS) { lv_obj_move_foreground(g_part_root); }
-                else if (g_scene == SC_STATUS)    { lv_obj_move_foreground(g_scene_img); }
             } else {
                 lv_obj_set_pos(g_scene_body, 10, 38);
                 lv_obj_set_width(g_scene_body, SCR_W - 16);
@@ -1476,9 +1478,9 @@ static void refresh_ui(void) {
                 int t = enemyIndex(DEXORDER[di]);
                 if (t >= 0) { typeName = ENEMY[t].type; footY = 90; }
             }
-        } else if (g_scene == SC_STATUS) {
-            typeName = "hero"; footY = 88;       /* HTML portrait('hero',...) */
         }
+        /* 状态页改为 7 行属性列表（职级·Lv/经验各占一行），不再画立绘：
+         * 立绘会占掉 88px 顶部空间，7 行两行块放不下且行距过挤。 */
         if (typeName && typeName[0]) {
             snprintf(key, sizeof(key), "%d:%s", (int)g_scene, typeName);
             if (strcmp(lastKey, key) != 0) {
