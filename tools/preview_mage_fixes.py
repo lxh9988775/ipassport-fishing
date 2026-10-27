@@ -225,8 +225,14 @@ def load_monster(type_key, th=40, max_w=44):
 # ---------------- 第六批数据（与固件真实文案/物种一一对应） ----------------
 # 学院页：3 行（g_menu.n=3），旧几何留下大片空白；新几何铺满。
 ACADEMY_ROWS = [
-    ("sp_icon_orb",   "魔力修行",     "魔力上限 +5（当前 104）", "20金"),
-    ("sp_icon_book",  "学属性魔法",   "已学 12/135 种魔法",      "45金"),
+    ("sp_icon_orb",   "魔力修行 · 20金",  "魔力上限 +5（当前 104）", ""),
+    ("sp_icon_book",  "学习属性魔法 · 45金", "已学 12/135 种魔法",    ""),
+    ("sp_icon_crown", "职业晋升考核",      "需击杀/委托达标",         ""),
+]
+# 旧固件（修复前）数据：价格误占右列 + 副标题过长，二者互相压字
+ACADEMY_ROWS_OLD = [
+    ("sp_icon_orb",   "魔力修行",   "魔力上限 +5（当前 104）", "20金"),
+    ("sp_icon_book",  "学属性魔法", "已学 12/135 种魔法",      "45金"),
     ("sp_icon_crown", "职业晋升考核", "需击杀/委托达标",         ""),
 ]
 # 角色页【旧版】6 行（板上现状）：职级塞等级行右列，与长 sub 互相压字 + 顶部立绘占 88px
@@ -270,7 +276,7 @@ def draw_frame(d, frame_h, title):
 
 
 def draw_list_row(d, im, x, y, w, h, icon, name, sub, rgt,
-                  rgt_w=76, rgt_xoff=80, sel=False, clip_rgt=False):
+                  rgt_w=76, rgt_xoff=80, sel=False, clip_rgt=False, truncate=True):
     if sel:
         round_rect(d, [x, y, x + w, y + h], 0, fill=(58, 44, 92), outline=C_GOLD, width=2)
         d.polygon([(x + 4, y + 10), (x + 4, y + 22), (x + 14, y + 16)], fill=C_GOLD)
@@ -281,8 +287,18 @@ def draw_list_row(d, im, x, y, w, h, icon, name, sub, rgt,
     im.paste(ic, (x + 18, iy), ic)
     top = y + (h - 31) // 2
     d.text((x + 46, top + 1), name, font=F12, fill=C_WHITE)
-    d.text((x + 46, top + 17), sub, font=F12, fill=C_SUB)
+    # 副标题超宽保护：有右列时收紧到 72px（46→118，给右列留位），超出加「…」，
+    # 严格镜像固件 lv_label_set_long_mode(LONG_DOT)——任何行都不会压到右列价格/动作。
+    sub_draw = sub
     rx = x + w - rgt_xoff
+    if rgt and truncate:
+        avail = (rx - 6) - (x + 46)
+        if F12.getlength(sub) > avail:
+            s = sub
+            while s and F12.getlength(s + "…") > avail:
+                s = s[:-1]
+            sub_draw = s + "…"
+    d.text((x + 46, top + 17), sub_draw, font=F12, fill=C_SUB)
     ry = y + (h - 15) // 2
     if clip_rgt:
         # 模拟旧右列裁切：先画，再用单元格底色盖掉溢出部分，并画红裁切线标出旧 56px 边界
@@ -298,13 +314,16 @@ def draw_list_row(d, im, x, y, w, h, icon, name, sub, rgt,
 def draw_academy(d, im, before):
     d.rectangle([0, 0, W, H], fill=C_BG)
     if before:
-        # 旧：frame 固定 270 高，pitch 固定 34，3 行挤在顶部，下方大片空白
+        # 旧：frame 固定 270 高，pitch 固定 34，3 行挤在顶部，下方大片空白；
+        # 价格误占右列 + 副标题过长 → 互相压字（truncate=False 忠实复现旧 bug）
         draw_frame(d, 270, "魔法学院")
         y0, pitch, row_h = 27, 34, 33
-        for i, (ic, nm, sub, rgt) in enumerate(ACADEMY_ROWS):
-            draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt, sel=(i == 0))
+        for i, (ic, nm, sub, rgt) in enumerate(ACADEMY_ROWS_OLD):
+            draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt,
+                          sel=(i == 0), truncate=False)
     else:
-        # 新：pitch=(294-27)/3≈89→cap88，rowH=87，框高随内容自适应到 284
+        # 新：pitch=(294-27)/3≈89→cap88，rowH=87，框高随内容自适应到 284；
+        # 价格按 HTML 原版并入名字（'魔力修行 · 20金'），右列清空，无任何压字
         pitch = (294 - 27) // len(ACADEMY_ROWS)
         if pitch > 88:
             pitch = 88
@@ -341,7 +360,8 @@ def draw_status(d, im, before):
         except Exception:
             pass
         for i, (ic, nm, sub, rgt) in enumerate(rows):
-            draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt, sel=(i == 0))
+            draw_list_row(d, im, ROW_X, y0 + i * pitch, ROW_W, row_h, ic, nm, sub, rgt,
+                          sel=(i == 0), truncate=False)  # 忠实复现旧版职级压字
     else:
         # 新：去立绘、y0=27、7 行动态铺满，职级·Lv 并入等级行 sub，经验独立成行
         rows = STATUS_ROWS_NEW
@@ -452,39 +472,45 @@ def main():
         im.save(os.path.join(OUT, "mage_sixth_%s_240x320.png" % k))
         up2x(im).save(os.path.join(OUT, "mage_sixth_%s_2x.png" % k))
 
-    # 3×2 总览：每格 = 240x320 场景 + 下方 30px 独立说明条（不压场景）
-    CAP_H = 30
-    labels6 = {
-        "academy_before":  ("修复前", "3 行挤在顶部，下方大片空白"),
-        "academy_after":   ("修复后", "行距动态铺满整框，无空白"),
-        "status_before":   ("修复前", "职级塞右列，与经验数字压字"),
-        "status_after":    ("修复后", "职级并入等级行，经验独立行"),
-        "partners_before": ("修复前", "只烘 8 个缩略图，多数空白格"),
-        "partners_after":  ("修复后", "全部 84 只魔物都有缩略图"),
-    }
-    cap_color = {"修复前": (255, 120, 120), "修复后": (127, 220, 138)}
-    OW, OH = W * 3, (H + CAP_H) * 2
+    # 总览：每行一对「修复前 | 修复后」并排对比，行首标题写明修的是哪一项。
+    # 这样「修复后是否干净」一目了然，不会再被交错的布局误读成还有遮挡。
+    CAP_H = 28
+    pairs = [
+        ("① 学院页：列表铺满 + 价格并入名字",
+         "academy_before", "academy_after",
+         "3 行挤顶部+价格压副标题", "动态铺满+价格进名字无压字"),
+        ("② 角色页：职级不再压字（7 行）",
+         "status_before", "status_after",
+         "职级塞右列压经验数字", "职级并等级行·经验独立行"),
+        ("③ 伙伴图鉴：全量立绘",
+         "partners_before", "partners_after",
+         "只烘 8 图·多数空白格", "84 只魔物全有缩略图"),
+    ]
+    OW = W * 2
+    OH = 26 + len(pairs) * (H + CAP_H)
     ov6 = Image.new("RGB", (OW, OH), (16, 12, 32))
     dd = ImageDraw.Draw(ov6)
     dd.rectangle([0, 0, OW, 22], fill=(42, 35, 72))
-    dd.text((OW // 2, 11), "魔法帝之路 · 第六批界面修复对比（240x320 与固件同坐标）",
-            font=F12, fill=C_GOLD, anchor="mm")
-    order6 = ["academy_before", "academy_after",
-              "status_before", "status_after",
-              "partners_before", "partners_after"]
-    for idx, k in enumerate(order6):
-        col, row = idx % 3, idx // 3
-        x, y = col * W, 24 + row * (H + CAP_H)
-        ov6.paste(sixth[k], (x, y))
-        dd.rectangle([x, y, x + W - 1, y + H - 1], outline=C_GOLD, width=1)
-        # 说明条：深底 + 金顶线 + 徽章色前缀
-        cy = y + H
-        dd.rectangle([x, cy, x + W - 1, cy + CAP_H - 1], fill=(24, 18, 44))
-        dd.line([x, cy, x + W - 1, cy], fill=C_GOLD, width=1)
-        tag, desc = labels6[k]
-        dd.text((x + 6, cy + 8), tag, font=F9, fill=cap_color[tag])
-        tw = dd.textlength(tag, font=F9)
-        dd.text((x + 12 + tw, cy + 8), desc, font=F9, fill=C_WHITE)
+    dd.text((OW // 2, 11), "魔法帝之路 · 界面修复对比（左=修复前 / 右=修复后，240x320 与固件同坐标）",
+            font=F9, fill=C_GOLD, anchor="mm")
+    for ri, (title, kb, ka, db, da) in enumerate(pairs):
+        ry = 24 + ri * (H + CAP_H)
+        # 行标题
+        dd.rectangle([0, ry, OW, ry + 18], fill=(30, 24, 54))
+        dd.text((OW // 2, ry + 9), title, font=F9, fill=C_WHITE, anchor="mm")
+        yy = ry + 20
+        for ci, (k, d) in enumerate([(kb, db), (ka, da)]):
+            x = ci * W
+            ov6.paste(sixth[k], (x, yy))
+            dd.rectangle([x, yy, x + W - 1, yy + H - 1], outline=C_GOLD, width=1)
+            cy = yy + H
+            dd.rectangle([x, cy, x + W - 1, cy + CAP_H - 1], fill=(24, 18, 44))
+            dd.line([x, cy, x + W - 1, cy], fill=C_GOLD, width=1)
+            tag = "修复前" if ci == 0 else "修复后"
+            col = (255, 120, 120) if ci == 0 else (127, 220, 138)
+            dd.text((x + 6, cy + 8), tag, font=F9, fill=col)
+            tw = dd.textlength(tag, font=F9)
+            dd.text((x + 12 + tw, cy + 8), d, font=F9, fill=C_WHITE)
     ov6.save(os.path.join(OUT, "mage_sixth_overview_720x704.png"))
     print("written:", os.path.join(OUT, "mage_sixth_overview_720x704.png"))
 

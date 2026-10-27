@@ -591,7 +591,8 @@ static void build_ui(void) {
         use_cjk(sb);
         lv_obj_set_style_text_color(sb, C_SUB, 0);
         lv_obj_set_style_text_font(sb, &mage_cjk_12, 0);
-        lv_obj_set_width(sb, 140);
+        lv_obj_set_width(sb, 150);
+        lv_label_set_long_mode(sb, LV_LABEL_LONG_DOT);   /* 超宽自动省略号，绝不压到右列 */
         lv_obj_set_pos(sb, 46, 17);
         g_row_sub[i] = sb;
         lv_obj_t *rg = lv_label_create(b);
@@ -746,6 +747,11 @@ static void menu_list_render(void) {
             lv_label_set_text(g_row_name[i], r->name);
             lv_label_set_text(g_row_sub[i], r->sub ? r->sub : "");
             lv_label_set_text(g_row_rgt[i], r->rgt ? r->rgt : "");
+            /* 副标题宽度约束：有右列内容时收紧到 72px（46→118，给右列留位），
+             * 无右列时放宽到整行；超出一律省略号，永不压到右列价格/动作。 */
+            bool has_rgt = (r->rgt && r->rgt[0]);
+            lv_obj_set_width(g_row_sub[i], has_rgt ? ((ROW_W - 80) - 46 - 6) : (ROW_W - 46 - 6));
+            lv_label_set_long_mode(g_row_sub[i], LV_LABEL_LONG_DOT);
             int y = g_list_y0 + i * pitch;
             lv_obj_set_size(g_row_box[i], ROW_W, rowH);
             lv_obj_set_pos(g_row_box[i], ROW_X, y);
@@ -1238,17 +1244,19 @@ static void refresh_ui(void) {
     case SC_ACAD: {
         acadIdx = clampi(acadIdx, 0, 2);
         int tc = 20 + g.studyCnt * 15;
+        /* 价格按 HTML 原版并入名字（'魔力修行 · 20金'），不另占右列——
+         * 否则右列价格会与下方副标题互相压字（设备实测重叠）。 */
+        char nm0[32], nm1[32];
+        snprintf(nm0, sizeof(nm0), "魔力修行 · %d金", tc);
+        snprintf(nm1, sizeof(nm1), "学习属性魔法 · 45金");
         snprintf(g_menu_sub[0], sizeof(g_menu_sub[0]), "魔力上限 +5（当前 %d）", g.maxMp);
-        snprintf(g_menu_rgt[0], sizeof(g_menu_rgt[0]), "%d金", tc);
         snprintf(g_menu_sub[1], sizeof(g_menu_sub[1]), "已学 %d/135 种魔法", discoveredCount());
-        snprintf(g_menu_rgt[1], sizeof(g_menu_rgt[1]), "45金");
         snprintf(g_menu_sub[2], sizeof(g_menu_sub[2]), "%s",
                  promoteReady() ? "已达考核标准" : "需击杀/委托达标");
-        snprintf(g_menu_rgt[2], sizeof(g_menu_rgt[2]), "%s", promoteReady() ? "A 考核" : "");
         g_menu.n = 3; g_menu.sel = acadIdx;
-        g_menu.rows[0] = (MenuRow){"sp_icon_orb", "魔力修行", g_menu_sub[0], g_menu_rgt[0]};
-        g_menu.rows[1] = (MenuRow){"sp_icon_book", "学属性魔法", g_menu_sub[1], g_menu_rgt[1]};
-        g_menu.rows[2] = (MenuRow){"sp_icon_crown", "职业晋升考核", g_menu_sub[2], g_menu_rgt[2]};
+        g_menu.rows[0] = (MenuRow){"sp_icon_orb", nm0, g_menu_sub[0], ""};
+        g_menu.rows[1] = (MenuRow){"sp_icon_book", nm1, g_menu_sub[1], ""};
+        g_menu.rows[2] = (MenuRow){"sp_icon_crown", "职业晋升考核", g_menu_sub[2], ""};
         lv_label_set_text(g_scene_hint, "OK 确定 · ↓ 切换 · 长按 返回");
         s_b[0] = '\0';
         menu_list_dirty = 1;
