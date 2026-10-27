@@ -271,8 +271,8 @@ C_CELL = (35, 27, 66)        # 0x231b42 网格单元底（与固件 lv_color_hex
 
 def draw_frame(d, frame_h, title):
     d.rectangle([10, 10, 230, 10 + frame_h], fill=C_CELL, outline=(201, 162, 39))
-    d.rectangle([10, 9, 230, 25], fill=(42, 35, 72), outline=(201, 162, 39))
-    d.text((18, 14), title, font=F12, fill=C_GOLD)
+    d.rectangle([10, 8, 230, 26], fill=(42, 35, 72), outline=(201, 162, 39))
+    d.text((18, 11), title, font=F12, fill=C_GOLD)
 
 
 def draw_list_row(d, im, x, y, w, h, icon, name, sub, rgt,
@@ -385,8 +385,8 @@ def draw_status(d, im, before):
 def draw_partners(d, im, before):
     d.rectangle([0, 0, W, H], fill=C_BG)
     # 镜像固件 g_part_root(10,26,220,250) + 4×2 单元(cw54,ch100,size50×96,pos(2+col*54,2+rowi*100))
-    d.rectangle([10, 9, 230, 25], fill=(42, 35, 72), outline=(201, 162, 39))
-    d.text((18, 14), "伙伴", font=F12, fill=C_GOLD)
+    d.rectangle([10, 8, 230, 26], fill=(42, 35, 72), outline=(201, 162, 39))
+    d.text((18, 11), "伙伴", font=F12, fill=C_GOLD)
     cw, ch, cell_inner_w = 54, 100, 50
     for i, (typ, nm, tag) in enumerate(PARTNERS):
         col = i % 4
@@ -406,7 +406,13 @@ def draw_partners(d, im, before):
             mx = cx + (cell_inner_w - mw) // 2
             my = cy + 8 + (40 - mh) // 2
             im.paste(mon, (mx, my), mon)
-        d.text((cx + cell_inner_w // 2, cy + 66), nm, font=F9, fill=C_WHITE, anchor="mm")
+        nm_draw = nm
+        if F9.getlength(nm) > cell_inner_w - 4:
+            s = nm
+            while s and F9.getlength(s + "…") > cell_inner_w - 4:
+                s = s[:-1]
+            nm_draw = s + "…"
+        d.text((cx + cell_inner_w // 2, cy + 66), nm_draw, font=F9, fill=C_WHITE, anchor="mm")
         d.text((cx + cell_inner_w // 2, cy + 82), tag, font=F9, fill=C_GOLD, anchor="mm")
     d.text((W // 2, 280), "OK 出战 · ↓ 切换 · 长按 菜单", font=F9, fill=C_CYAN, anchor="mm")
 
@@ -513,6 +519,25 @@ def main():
             dd.text((x + 12 + tw, cy + 8), d, font=F9, fill=C_WHITE)
     ov6.save(os.path.join(OUT, "mage_sixth_overview_720x704.png"))
     print("written:", os.path.join(OUT, "mage_sixth_overview_720x704.png"))
+
+    # ---------------- 最终效果大图（烧录前确认用） ----------------
+    # 只出 after（最终界面），2x 放大，场景内零标注；底部一行极简说明本次改动。
+    # 不再用 before/after 拼图作为主交付——用户要的是直接看「固件最终长什么样」。
+    FINAL_NOTE = {
+        "academy_after":  "魔法学院：列表动态铺满 + 价格并入名字（对齐 HTML 原版），副标题超宽自动省略号",
+        "status_after":   "角色页：职级并入等级行、经验独立成行，7 行动态铺满，无任何压字",
+        "partners_after": "伙伴图鉴：遍历全部 84 只魔物烘缩略图，8 格全有真实立绘",
+    }
+    for k, note in FINAL_NOTE.items():
+        base = sixth[k].resize((W * 2, H * 2), Image.LANCZOS)
+        out = Image.new("RGB", (W * 2, H * 2 + 36), (16, 12, 32))
+        out.paste(base, (0, 0))
+        dd = ImageDraw.Draw(out)
+        dd.rectangle([0, H * 2, W * 2, H * 2 + 35], fill=(24, 18, 44))
+        dd.line([0, H * 2, W * 2, H * 2], fill=C_GOLD, width=1)
+        dd.text((12, H * 2 + 11), note, font=F9, fill=C_WHITE)
+        out.save(os.path.join(OUT, "mage_final_%s.png" % k))
+        print("written:", os.path.join(OUT, "mage_final_%s.png" % k))
 
 
 if __name__ == "__main__":

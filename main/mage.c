@@ -494,7 +494,8 @@ static void build_ui(void) {
             use_cjk(nm);
             lv_obj_set_style_text_color(nm, C_WHITE, 0);
             lv_obj_set_style_text_font(nm, &mage_cjk_12, 0);
-            lv_obj_set_width(nm, cw - 8);
+            lv_obj_set_width(nm, cw - 4);
+            lv_label_set_long_mode(nm, LV_LABEL_LONG_DOT);
             lv_obj_set_style_text_align(nm, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_pos(nm, 2, 66);
             g_part_name[i] = nm;
@@ -502,7 +503,8 @@ static void build_ui(void) {
             use_cjk(tg);
             lv_obj_set_style_text_color(tg, C_GOLD, 0);
             lv_obj_set_style_text_font(tg, &mage_cjk_12, 0);
-            lv_obj_set_width(tg, cw - 8);
+            lv_obj_set_width(tg, cw - 4);
+            lv_label_set_long_mode(tg, LV_LABEL_LONG_DOT);
             lv_obj_set_style_text_align(tg, LV_TEXT_ALIGN_CENTER, 0);
             lv_obj_set_pos(tg, 2, 82);
             g_part_tag[i] = tg;
