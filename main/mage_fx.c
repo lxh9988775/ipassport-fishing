@@ -64,7 +64,7 @@ typedef struct {
     lv_obj_t *foeBarSlot[FOE_MAX], *foeBar[FOE_MAX];
     lv_obj_t *foeLv[FOE_MAX];
     lv_obj_t *foeElite[FOE_MAX];
-    lv_obj_t *hero, *heroShadow, *cat, *catShadow;
+    lv_obj_t *hero, *heroShadow, *heroImg, *cat, *catShadow;
     lv_obj_t *catImg;        /* 伙伴立绘实体（F.cat 容器里的 image 子对象） */
     int16_t   catW, catH;    /* 当前伙伴立绘尺寸（脚底中心锚点定位用） */
     int16_t   partnerSig;    /* 伙伴物种签名：0=默认猫灵，>0=typeIdx+1（只在变化时切图） */
@@ -245,7 +245,10 @@ static void fx_build(void)
     F.hero = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.hero);
     lv_obj_set_size(F.hero, 36, 46);
-    mage_draw_bg(F.hero, mage_hero_sprite_for_rank(g.rank), 0, 0, 36, 46);
+    /* 关键修复：mage_draw_bg 往 F.hero 容器里画的是「image 子对象」，
+     * 必须拿它的指针才能改 src；直接 lv_image_set_src(F.hero,...) 作用在容器上
+     * 会越界写坏 LVGL 实例内存 -> 延迟几帧后 Guru 崩溃（进战斗即崩的根因）。 */
+    mage_draw_bg_ret(F.hero, mage_hero_sprite_for_rank(g.rank), 0, 0, 36, 46, &F.heroImg);
     F.heroRankSig = -1;   /* 首帧由 render 按当前职级再校准（晋升后重进战斗也能更新） */
 
     /* 前景草丛：HTML 画两组三角，这里用一排深绿小三角块近似（视差 1.3） */
@@ -727,20 +730,21 @@ void mage_fx_render(void)
     /* 主角分级立绘：职级变化时按签名切 src（不重建对象，避免卡死） */
     if (F.heroRankSig != g.rank) {
         const lv_image_dsc_t *hd = mage_img(mage_hero_sprite_for_rank(g.rank));
-        if (hd) { lv_image_set_src(F.hero, hd); F.heroRankSig = g.rank; }
+        if (hd && F.heroImg) { lv_image_set_src(F.heroImg, hd); F.heroRankSig = g.rank; }
     }
     lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 18,
                    (int)(250.0f + hBob) - 46);
     /* 主角受击闪白：只在状态翻转的那一帧设置。
-     * 每帧无条件设 img_opa 会持续触发 invalidate -> 卡死。 */
+     * 每帧无条件设 img_opa 会持续触发 invalidate -> 卡死。
+     * 作用在 image 子对象 F.heroImg（容器 F.hero 设 img_opa 不生效）。 */
     if (bt.hurtT > 0.0f) {
         if (F.heroHurt == 0) {
             F.heroHurt = 1;
-            lv_obj_set_style_img_opa(F.hero, LV_OPA_60, 0);
+            if (F.heroImg) lv_obj_set_style_img_opa(F.heroImg, LV_OPA_60, 0);
         }
     } else if (F.heroHurt == 1) {
         F.heroHurt = 0;
-        lv_obj_set_style_img_opa(F.hero, LV_OPA_COVER, 0);
+        if (F.heroImg) lv_obj_set_style_img_opa(F.heroImg, LV_OPA_COVER, 0);
     }
     lv_obj_set_pos(F.heroShadow, (int)(70 - (int)bt.cam + lunge) - 7, 250 - 2);
 
