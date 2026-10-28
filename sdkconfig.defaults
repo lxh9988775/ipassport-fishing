@@ -21,6 +21,8 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 CONFIG_LV_COLOR_DEPTH_16=y
 # 真机串口截屏协议 FAP_SCREENSHOT_V1 需要 LVGL snapshot 支持（社区投稿截图）。
 CONFIG_LV_USE_SNAPSHOT=y
+# 内存监视：开启后 lv_mem_monitor() 可用，并周期性打印 LV_MEM 用量（调试进战斗白屏用）
+CONFIG_LV_USE_MEM_MONITOR=y
 # 20 ms display refresh period targets up to 50 FPS when rendering and SPI
 # transfer complete within the same budget.
 CONFIG_LV_DEF_REFR_PERIOD=20
