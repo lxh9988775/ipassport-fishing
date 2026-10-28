@@ -225,6 +225,10 @@ static void fx_build(void)
         for (int i = 0; i < FOE_MAX; i++) {
             lv_obj_t *o = lv_image_create(g_fx_parent);
             lv_obj_remove_style_all(o);   /* 关键：去掉 lv_image 默认背景样式，否则透明像素处露出白底（稀疏怪物显成白矩形框） */
+            /* 双保险：显式清零背景/边框/内边距（主题首帧重应用时 remove_style_all 可能被覆盖） */
+            lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(o, 0, 0);
+            lv_obj_set_style_pad_all(o, 0, 0);
             lv_image_set_src(o, mage_img("sp_goblin"));   /* 占位图，首帧按签名切换 */
             lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_user_data(o, (void *)(intptr_t)0);  /* 0 = 未初始化 */
@@ -237,6 +241,8 @@ static void fx_build(void)
     lv_obj_set_style_bg_opa(F.catShadow, LV_OPA_50, 0);
     F.cat = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.cat);
+    lv_obj_set_style_bg_opa(F.cat, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(F.cat, 0, 0);
     lv_obj_set_size(F.cat, 29, 32);
     mage_draw_bg_ret(F.cat, "cat_partner", 0, 0, 29, 32, &F.catImg);
     F.catW = 29; F.catH = 32; F.partnerSig = 0;   /* 默认猫灵，与上面的初始图一致 */
@@ -245,6 +251,8 @@ static void fx_build(void)
     lv_obj_set_style_bg_opa(F.heroShadow, LV_OPA_50, 0);
     F.hero = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.hero);
+    lv_obj_set_style_bg_opa(F.hero, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(F.hero, 0, 0);
     lv_obj_set_size(F.hero, 36, 46);
     /* 关键修复：mage_draw_bg 往 F.hero 容器里画的是「image 子对象」，
      * 必须拿它的指针才能改 src；直接 lv_image_set_src(F.hero,...) 作用在容器上
@@ -324,6 +332,10 @@ static void fx_build(void)
     lv_obj_remove_flag(F.evtBox, LV_OBJ_FLAG_SCROLLABLE);
 
     F.evtIcon = lv_image_create(F.evtBox);
+    lv_obj_remove_style_all(F.evtIcon);
+    lv_obj_set_style_bg_opa(F.evtIcon, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(F.evtIcon, 0, 0);
+    lv_obj_set_style_pad_all(F.evtIcon, 0, 0);
     lv_obj_set_pos(F.evtIcon, (SCR_W - 40) / 2 - 28, 2);   /* 56x56 图标，水平居中，上移避免压标题 */
 
     F.evtName = lv_label_create(F.evtBox);

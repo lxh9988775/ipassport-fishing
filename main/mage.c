@@ -497,6 +497,10 @@ static void build_ui(void) {
             /* 立绘（脚底中心锚点，刷新时按实际宽高重定位居中） */
             lv_obj_t *img = lv_img_create(c);
             lv_obj_remove_style_all(img);
+            /* 双保险：显式清零背景/边框/内边距，避免透明像素露默认主题白底 */
+            lv_obj_set_style_bg_opa(img, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(img, 0, 0);
+            lv_obj_set_style_pad_all(img, 0, 0);
             lv_obj_set_pos(img, 8, 20);
             g_part_img[i] = img;
             lv_obj_t *nm = lv_label_create(c);
@@ -522,6 +526,9 @@ static void build_ui(void) {
         /* 选中三角（替代 ▶ 豆腐块）：单对象，刷新时移动到选中格 */
         g_part_sel_tri = lv_img_create(g_part_root);
         lv_obj_remove_style_all(g_part_sel_tri);
+        lv_obj_set_style_bg_opa(g_part_sel_tri, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(g_part_sel_tri, 0, 0);
+        lv_obj_set_style_pad_all(g_part_sel_tri, 0, 0);
         const lv_image_dsc_t *td = mage_img("sp_tri");
         if (td) lv_img_set_src(g_part_sel_tri, td);
         lv_obj_set_size(g_part_sel_tri, 10, 12);
@@ -573,6 +580,9 @@ static void build_ui(void) {
         }
         g_part_menu_tri = lv_img_create(g_part_menu);
         lv_obj_remove_style_all(g_part_menu_tri);
+        lv_obj_set_style_bg_opa(g_part_menu_tri, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(g_part_menu_tri, 0, 0);
+        lv_obj_set_style_pad_all(g_part_menu_tri, 0, 0);
         const lv_image_dsc_t *mtd = mage_img("sp_tri");
         if (mtd) lv_img_set_src(g_part_menu_tri, mtd);
         lv_obj_set_size(g_part_menu_tri, 10, 12);
@@ -610,6 +620,10 @@ static void build_ui(void) {
      * 周期刷新用状态记忆（场景+物种键比对）防每帧重设 src 触发重绘。 */
     g_scene_img = lv_image_create(g_scene_grp);
     lv_obj_remove_style_all(g_scene_img);
+    /* 双保险：显式清零背景/边框/内边距，避免透明像素露默认主题白底 */
+    lv_obj_set_style_bg_opa(g_scene_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(g_scene_img, 0, 0);
+    lv_obj_set_style_pad_all(g_scene_img, 0, 0);
     lv_obj_set_pos(g_scene_img, 150, 52);
     lv_obj_add_flag(g_scene_img, LV_OBJ_FLAG_HIDDEN);
 
@@ -651,6 +665,9 @@ static void build_ui(void) {
         /* 选中三角（替代 ▶ 文字符号；置于行首，与预览一致） */
         lv_obj_t *tri = lv_img_create(b);
         lv_obj_remove_style_all(tri);
+        lv_obj_set_style_bg_opa(tri, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(tri, 0, 0);
+        lv_obj_set_style_pad_all(tri, 0, 0);
         const lv_image_dsc_t *td = mage_img("sp_tri");
         if (td) lv_img_set_src(tri, td);
         lv_obj_set_size(tri, 10, 12);
@@ -661,6 +678,10 @@ static void build_ui(void) {
         lv_obj_set_size(ic, 22, 22);
         lv_obj_align(ic, LV_ALIGN_LEFT_MID, 18, 0);
         g_row_ico[i] = ic;
+        lv_obj_remove_style_all(ic);
+        lv_obj_set_style_bg_opa(ic, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(ic, 0, 0);
+        lv_obj_set_style_pad_all(ic, 0, 0);
         lv_obj_t *nm = lv_label_create(b);
         use_cjk(nm);
         lv_obj_set_style_text_color(nm, C_WHITE, 0);

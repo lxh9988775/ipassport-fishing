@@ -73,6 +73,12 @@ bool mage_draw_sprite_ret(lv_obj_t *parent, const char *name,
 
     lv_obj_t *o = lv_image_create(parent);
     lv_obj_remove_style_all(o);   /* 去掉默认背景样式，避免透明像素处露出白底 */
+    /* 双保险：显式把背景/边框/内边距清零。本项目用的 LVGL 构建里
+     * remove_style_all 不一定能压掉默认主题背景（主题会在首帧重应用），
+     * 显式设 LV_OPA_TRANSP 才能确保透明像素透出底图而非露白。 */
+    lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
     if (!o) {
         return false;
     }
@@ -130,6 +136,10 @@ bool mage_draw_bg_ret(lv_obj_t *parent, const char *name, int x, int y, int w, i
     }
     lv_obj_t *o = lv_image_create(parent);
     lv_obj_remove_style_all(o);   /* 去掉默认背景样式，透明背景图不会露白底 */
+    /* 双保险：显式清零背景/边框/内边距（同 mage_draw_sprite_ret 说明） */
+    lv_obj_set_style_bg_opa(o, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
     if (!o) {
         return false;
     }
