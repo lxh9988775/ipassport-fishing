@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
+#include <unistd.h>
 
 #include "mage_state.h"
 #include "mage_data.h"
@@ -3003,6 +3004,33 @@ void battle_tick(void) {
 }
 
 /* ===================== 入口 ===================== */
+/* 调试指令任务（USB-CDC stdin，fd 0）：远程复现/诊断用，不影响正常玩法。
+ * 支持指令：wild=进野外战斗 boss=进BOSS战 mem=读LV_MEM rank=看职级 up=职级+1 */
+static void mage_dbg_task(void *arg) {
+    (void)arg;
+    char buf[64]; int n = 0; char c;
+    ESP_LOGI(TAG, "dbg: 串口指令就绪 (wild/boss/mem/rank/up)");
+    while (1) {
+        ssize_t r = read(0, &c, 1);
+        if (r <= 0) { vTaskDelay(pdMS_TO_TICKS(30)); continue; }
+        if (c == '\n' || c == '\r') {
+            if (n > 0) {
+                buf[n] = '\0';
+                if      (strcmp(buf, "wild") == 0) { battle_start_wild(0); ESP_LOGI(TAG, "dbg: -> wild battle"); }
+                else if (strcmp(buf, "boss") == 0) { battle_start_boss(0); ESP_LOGI(TAG, "dbg: -> boss battle"); }
+                else if (strcmp(buf, "mem")  == 0) { ESP_LOGI(TAG, "dbg MEM free=%u used=%u",
+                                                          (unsigned)lv_mem_get_free_size(),
+                                                          (unsigned)lv_mem_get_used_size()); }
+                else if (strcmp(buf, "rank") == 0) { ESP_LOGI(TAG, "dbg rank=%d", g.rank); }
+                else if (strcmp(buf, "up")   == 0) { g.rank = (g.rank + 1) % 7; ESP_LOGI(TAG, "dbg rank->%d", g.rank); }
+                n = 0;
+            }
+        } else if (n < (int)sizeof(buf) - 1) {
+            buf[n++] = c;
+        }
+    }
+}
+
 void mage_app_start(void) {
     ESP_LOGI(TAG, "魔法帝之路 固件启动 (M2)");
     s_btn_q = xQueueCreate(16, sizeof(btn_ev_t));
@@ -3014,4 +3042,5 @@ void mage_app_start(void) {
     }
     bsp_button_init(mage_on_key, NULL);
     xTaskCreate(game_task, "mage", 12288, NULL, 5, NULL);
+    xTaskCreate(mage_dbg_task, "magedbg", 3072, NULL, 4, NULL);
 }
