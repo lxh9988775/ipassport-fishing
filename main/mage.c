@@ -156,7 +156,7 @@ static lv_obj_t *g_part_sel_tri = NULL;              /* 选中三角（单对象
 static lv_obj_t *g_part_info = NULL;                 /* 选中伙伴情报条 */
 static int g_part_sig = -1;                            /* 网格脏标：记录(npartners,sel,active,menu) */
 /* 长按 OK 弹出的伙伴操作菜单（必须可见，杜绝误删） */
-#define PART_MENU_MAX 4
+#define PART_MENU_MAX 6   /* 出战/进化/放生/返回城市/关闭菜单 = 最多 5 项，留 1 余量 */
 static lv_obj_t *g_part_menu = NULL;                 /* 操作菜单面板（覆盖在网格之上） */
 static lv_obj_t *g_part_menu_title = NULL;           /* 菜单标题 */
 static lv_obj_t *g_part_menu_opt[PART_MENU_MAX];     /* 选项文本（最多 4 项） */
@@ -543,15 +543,15 @@ static void build_ui(void) {
         lv_obj_set_pos(g_part_info, 8, 280);
         lv_obj_add_flag(g_part_info, LV_OBJ_FLAG_HIDDEN);
     }
-    /* ---- 伙伴操作菜单（长按 OK 弹出，必须可见，杜绝误删）----
-     * 以前伙伴页只有 4×2 网格，长按开的菜单逻辑存在却从不渲染，
-     * 导致菜单"看不见"且默认项落在"放生"上，连按 OK 直接删伙伴。
-     * 现改为：弹出可见菜单面板，默认选中"关闭菜单"（安全项），
-     * "放生"需二次确认面板才生效。 */
+    /* ---- 伙伴操作菜单（短按 OK 弹出，必须可见，杜绝误删）----
+     * 以前伙伴页长按 OK 既想开菜单又想退出，造成"退出不了"——长按OK只弹出菜单，
+     * 必须再翻到"返回城市"短按OK才能离开，连按只会开关菜单。
+     * 现改为：网格态【短按OK=打开此菜单】【长按OK=直接退出到城市】(与其他界面一致)；
+     * 菜单首项为"出战"(安全默认，短按OK即设出战，落点再不会误删)；"放生"需二次确认面板才生效。 */
     {
         g_part_menu = lv_obj_create(g_scene_grp);
         lv_obj_remove_style_all(g_part_menu);
-        lv_obj_set_size(g_part_menu, 200, 150);
+        lv_obj_set_size(g_part_menu, 200, 160);
         lv_obj_set_pos(g_part_menu, 20, 78);
         lv_obj_set_style_bg_color(g_part_menu, lv_color_hex(0x140d28), 0);
         lv_obj_set_style_bg_opa(g_part_menu, LV_OPA_COVER, 0);
@@ -900,6 +900,7 @@ static void menu_list_render(void) {
 static int partner_menu_nopts(Partner *p) {
     MobDef *bd = &ENEMY[p->typeIdx];
     int n = 0;
+    n += 1;  /* 出战（菜单首项，安全默认，短按OK即设出战） */
     if (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) n++;  /* 进化 */
     n += 3;  /* 放生 / 返回城市 / 关闭菜单 */
     return n;
@@ -946,6 +947,7 @@ static void partners_grid_render(void) {
         MobDef *bb = &ENEMY[pp->typeIdx];
         char opts[PART_MENU_MAX][20];
         int nopts = 0;
+        snprintf(opts[nopts], sizeof(opts[nopts]), "出战"); nopts++;   /* 菜单首项：设当前伙伴出战 */
         if (bb->hasEvo && !pp->evolved && pp->level >= bb->evo.lvl) {
             snprintf(opts[nopts], sizeof(opts[nopts]), "进化"); nopts++;
         }
@@ -1870,10 +1872,11 @@ static void scene_handle(int act) {
         Partner *p = &g.partners[partIdx];
         MobDef *bd = &ENEMY[p->typeIdx];
         int nopts = partner_menu_nopts(p);
-        int evoOpt  = (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) ? 0 : -1;
-        int relOpt  = evoOpt + 1;   /* 放生 */
-        int cityOpt = evoOpt + 2;   /* 返回城市 */
-        int closeOpt = nopts - 1;    /* 关闭菜单（安全默认项，防误删） */
+        int setOpt  = 0;                                                 /* 出战（菜单首项，安全默认） */
+        int evoOpt  = (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) ? 1 : -1;
+        int relOpt  = (evoOpt >= 0) ? evoOpt + 1 : 1;                     /* 放生 */
+        int cityOpt = relOpt + 1;                                         /* 返回城市 */
+        int closeOpt = nopts - 1;                                         /* 关闭菜单（末项） */
 
         if (partRelConf) {
             if (act == ACT_OK) {
@@ -1894,17 +1897,19 @@ static void scene_handle(int act) {
             if (act == ACT_NEXT) partMenu = (partMenu + 1) % nopts;
             else if (act == ACT_PREV) partMenu = (partMenu + nopts - 1) % nopts;
             else if (act == ACT_OK) {
-                if (partMenu == evoOpt) { doEvolve(p); partMenuOpen = 0; }
+                if (partMenu == setOpt) { g.activePartner = partIdx; mage_persist(); toast("出战：%s", p->name); partMenuOpen = 0; }
+                else if (partMenu == evoOpt) { doEvolve(p); partMenuOpen = 0; }
                 else if (partMenu == relOpt) { partRelConf = 1; }   /* 进入二次确认，绝不秒删 */
                 else if (partMenu == cityOpt) { partMenuOpen = 0; mage_set_scene(SC_CITY); g.cityMode = 1; }
                 else { partMenuOpen = 0; }   /* 关闭菜单 / 越界 */
-            } else if (act == ACT_BACK) { partMenuOpen = 0; }
+            } else if (act == ACT_BACK) { partMenuOpen = 0; }   /* 菜单内长按OK=关菜单回网格 */
             g_need_refresh = 1; break;
         }
-        if (act == ACT_OK) { g.activePartner = partIdx; mage_persist(); toast("出战：%s", p->name); }
+        /* 网格态：短按OK=打开伙伴菜单（出战/进化/放生/返回城市/关闭）；长按OK(BACK)=直接退出到城市 */
+        if (act == ACT_OK) { partMenuOpen = 1; partMenu = setOpt; }
         else if (act == ACT_NEXT) { partIdx = (partIdx + 1) % g.npartners; }
         else if (act == ACT_PREV) { partIdx = (partIdx + g.npartners - 1) % g.npartners; }
-        else if (act == ACT_BACK) { partMenuOpen = 1; partMenu = closeOpt; }  /* 默认选中"关闭菜单"，杜绝误删 */
+        else if (act == ACT_BACK) { mage_set_scene(SC_CITY); g.cityMode = 1; }  /* 修复：伙伴界面长按OK直接退出，不再陷入菜单 */
         g_need_refresh = 1;
         break;
     }
