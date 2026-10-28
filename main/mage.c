@@ -675,13 +675,17 @@ static void build_ui(void) {
         lv_obj_add_flag(tri, LV_OBJ_FLAG_HIDDEN);
         g_row_tri[i] = tri;
         lv_obj_t *ic = lv_img_create(b);
-        lv_obj_set_size(ic, 22, 22);
-        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 18, 0);
-        g_row_ico[i] = ic;
+        /* 顺序铁律：remove_style_all 必须在 set_size 之前。
+         * lv_obj_set_size 把尺寸写进对象本地样式，remove_style_all 会清空整份
+         * 本地样式（含尺寸）——若先 set_size 再 remove，尺寸约束被剥掉，图标按
+         * 源图原生像素显示而放大、压住文字（57174b1 引入的回归，已修正）。 */
         lv_obj_remove_style_all(ic);
         lv_obj_set_style_bg_opa(ic, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(ic, 0, 0);
         lv_obj_set_style_pad_all(ic, 0, 0);
+        lv_obj_set_size(ic, 22, 22);
+        lv_obj_align(ic, LV_ALIGN_LEFT_MID, 18, 0);
+        g_row_ico[i] = ic;
         lv_obj_t *nm = lv_label_create(b);
         use_cjk(nm);
         lv_obj_set_style_text_color(nm, C_WHITE, 0);
