@@ -224,6 +224,7 @@ static void fx_build(void)
     {
         for (int i = 0; i < FOE_MAX; i++) {
             lv_obj_t *o = lv_image_create(g_fx_parent);
+            lv_obj_remove_style_all(o);   /* 关键：去掉 lv_image 默认背景样式，否则透明像素处露出白底（稀疏怪物显成白矩形框） */
             lv_image_set_src(o, mage_img("sp_goblin"));   /* 占位图，首帧按签名切换 */
             lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
             lv_obj_set_user_data(o, (void *)(intptr_t)0);  /* 0 = 未初始化 */

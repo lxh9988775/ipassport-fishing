@@ -72,6 +72,7 @@ bool mage_draw_sprite_ret(lv_obj_t *parent, const char *name,
     }
 
     lv_obj_t *o = lv_image_create(parent);
+    lv_obj_remove_style_all(o);   /* 去掉默认背景样式，避免透明像素处露出白底 */
     if (!o) {
         return false;
     }
@@ -128,6 +129,7 @@ bool mage_draw_bg_ret(lv_obj_t *parent, const char *name, int x, int y, int w, i
         return false;
     }
     lv_obj_t *o = lv_image_create(parent);
+    lv_obj_remove_style_all(o);   /* 去掉默认背景样式，透明背景图不会露白底 */
     if (!o) {
         return false;
     }
