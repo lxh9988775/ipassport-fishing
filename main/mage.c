@@ -28,6 +28,7 @@
 #include <stdarg.h>
 #include <stdbool.h>
 #include <unistd.h>
+#include <sys/types.h>
 
 #include "mage_state.h"
 #include "mage_data.h"
@@ -3018,9 +3019,10 @@ static void mage_dbg_task(void *arg) {
                 buf[n] = '\0';
                 if      (strcmp(buf, "wild") == 0) { battle_start_wild(0); ESP_LOGI(TAG, "dbg: -> wild battle"); }
                 else if (strcmp(buf, "boss") == 0) { battle_start_boss(0); ESP_LOGI(TAG, "dbg: -> boss battle"); }
-                else if (strcmp(buf, "mem")  == 0) { ESP_LOGI(TAG, "dbg MEM free=%u used=%u",
-                                                          (unsigned)lv_mem_get_free_size(),
-                                                          (unsigned)lv_mem_get_used_size()); }
+                else if (strcmp(buf, "mem")  == 0) { lv_mem_monitor_t mon; lv_mem_monitor(&mon);
+                                                          ESP_LOGI(TAG, "dbg MEM total=%u used=%u free=%u",
+                                                          (unsigned)mon.total_size, (unsigned)mon.used_size,
+                                                          (unsigned)mon.free_size); }
                 else if (strcmp(buf, "rank") == 0) { ESP_LOGI(TAG, "dbg rank=%d", g.rank); }
                 else if (strcmp(buf, "up")   == 0) { g.rank = (g.rank + 1) % 7; ESP_LOGI(TAG, "dbg rank->%d", g.rank); }
                 n = 0;
