@@ -151,3 +151,13 @@ bool mage_draw_icon(lv_obj_t *parent, const char *name, int x, int y, int size)
 {
     return mage_draw_bg(parent, name, x, y, size, size);
 }
+
+/* 主角立绘按职级分级：见习学徒(t0)→魔法师(t1)→大魔法师(t2)→魔法帝(t3)。
+ * 与 RANKS[7] 对应：rank 0-1→t0，2-3→t1，4-5→t2，6→t3。 */
+const char *mage_hero_sprite_for_rank(int rank)
+{
+    if (rank >= 6) return "sp_hero_t3";
+    if (rank >= 4) return "sp_hero_t2";
+    if (rank >= 2) return "sp_hero_t1";
+    return "sp_hero_t0";
+}

@@ -344,8 +344,8 @@ static void build_ui(void) {
     lv_obj_t *t_bg = NULL, *t_hero = NULL;
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
-    /* 标题页主角：与 HTML/战斗一致按 sp_hero 原生 36x46 绘制（1:1 免缩放） */
-    mage_draw_sprite_ret(g_title_grp, "sp_hero", SCR_W / 2, 268, 46, 1.0f, 0.0f, &t_hero);
+    /* 标题页主角：按当前职级显示分级形象（见习学徒→魔法帝），1:1 免缩放 */
+    mage_draw_sprite_ret(g_title_grp, mage_hero_sprite_for_rank(g.rank), SCR_W / 2, 268, 46, 1.0f, 0.0f, &t_hero);
     if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
 
     /* 命名组 */
@@ -2852,17 +2852,28 @@ static void battle_render(void) {
         s_add("遭遇 %s", bt.eventKind >= 0 ? ev[bt.eventKind] : "?");
         break;
     }
-    case BP_FAINT:
-        s_add("魔力耗尽，力竭…");
+    case BP_FAINT: {
+        /* 战败结算面板（对等 BP_RESULT）：展示本场收益 + 力竭回城叙事（无惩罚，回城恢复 50% 状态） */
+        char b0[48], b1[40], b2[40], b3[40], b4[40], b5[40];
+        const char *lp[8]; int nl = 0;
+        snprintf(b0, sizeof(b0), "魔力耗尽，力竭撤退…");
+        if (bt.goldGain) { snprintf(b1, sizeof(b1), "金币 +%d", bt.goldGain); lp[nl++] = b1; }
+        if (bt.expGain)  { snprintf(b2, sizeof(b2), "经验 +%d", bt.expGain); lp[nl++] = b2; }
+        if (bt.herbGain) { snprintf(b3, sizeof(b3), "月光草 +%d", bt.herbGain); lp[nl++] = b3; }
+        if (bt.matGain)  { snprintf(b4, sizeof(b4), "兽骨 +%d", bt.matGain); lp[nl++] = b4; }
+        if (bt.potGain)  { snprintf(b5, sizeof(b5), "药水 +%d", bt.potGain); lp[nl++] = b5; }
+        if (nl == 0) lp[nl++] = "未获得战利品（下次留意魔力）";
+        mage_fx_result(0, b0, "OK 回城休整 · 长按返回", lp, nl);
         break;
+    }
     default:
         break;
     }
 
-    /* 战利品/结算面板（BP_RESULT / BP_LOOT）与事件面板（BP_EVENT）各自显示，
-     * 其余阶段用 g_toast 提示（BP_INTRO 显示"遭遇战"横幅、BP_FAINT 走顶部提示，
-     * 避免遮挡战斗画面）。 */
-    if (bt.phase == BP_INTRO || bt.phase == BP_FAINT) {
+    /* 战利品/结算面板（BP_RESULT / BP_LOOT / BP_FAINT）各自显示完整面板，
+     * 其余阶段用 g_toast 提示（仅 BP_INTRO 显示"遭遇战"横幅，避免遮挡战斗画面）。
+     * 注：BP_FAINT 现由上方 case 调用 mage_fx_result 接管结算面板，不再走顶部提示。 */
+    if (bt.phase == BP_INTRO) {
         const char *msg = (bt.phase == BP_FAINT) ? s_b : "★ 遭遇战开始！";
         if (strcmp(g_toast_t, msg) != 0) {
             size_t n = strlen(msg); if (n >= sizeof(g_toast_t)) n = sizeof(g_toast_t) - 1;

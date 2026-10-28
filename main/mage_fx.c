@@ -68,6 +68,7 @@ typedef struct {
     lv_obj_t *catImg;        /* 伙伴立绘实体（F.cat 容器里的 image 子对象） */
     int16_t   catW, catH;    /* 当前伙伴立绘尺寸（脚底中心锚点定位用） */
     int16_t   partnerSig;    /* 伙伴物种签名：0=默认猫灵，>0=typeIdx+1（只在变化时切图） */
+    int       heroRankSig;   /* 主角职级签名：-1=未初始化；g.rank 变化时切分级立绘（不重建对象） */
     lv_obj_t *grassFg;         /* 前景草丛 */
     lv_obj_t *dim;             /* 活动带压暗层 */
     lv_obj_t *fx[16];          /* 粒子 */
@@ -244,7 +245,8 @@ static void fx_build(void)
     F.hero = lv_obj_create(g_fx_parent);
     lv_obj_remove_style_all(F.hero);
     lv_obj_set_size(F.hero, 36, 46);
-    mage_draw_bg(F.hero, "sp_hero", 0, 0, 36, 46);
+    mage_draw_bg(F.hero, mage_hero_sprite_for_rank(g.rank), 0, 0, 36, 46);
+    F.heroRankSig = -1;   /* 首帧由 render 按当前职级再校准（晋升后重进战斗也能更新） */
 
     /* 前景草丛：HTML 画两组三角，这里用一排深绿小三角块近似（视差 1.3） */
     F.grassFg = lv_obj_create(g_fx_parent);
@@ -722,6 +724,11 @@ void mage_fx_render(void)
     float hTilt = (bt.lungeT > 0.0f) ? 0.1f : sinf(bt.walkF * 0.8f) * 0.05f;
     (void)hTilt;   /* 不用旋转，倾斜效果由 lunge 位移近似 */
     /* 主角：不使用 transform 旋转，同样只改 pos（零软件变换） */
+    /* 主角分级立绘：职级变化时按签名切 src（不重建对象，避免卡死） */
+    if (F.heroRankSig != g.rank) {
+        const lv_image_dsc_t *hd = mage_img(mage_hero_sprite_for_rank(g.rank));
+        if (hd) { lv_image_set_src(F.hero, hd); F.heroRankSig = g.rank; }
+    }
     lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 18,
                    (int)(250.0f + hBob) - 46);
     /* 主角受击闪白：只在状态翻转的那一帧设置。
