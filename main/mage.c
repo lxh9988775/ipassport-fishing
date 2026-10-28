@@ -27,8 +27,6 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdbool.h>
-#include <unistd.h>
-#include <sys/types.h>
 
 #include "mage_state.h"
 #include "mage_data.h"
@@ -3005,30 +3003,26 @@ void battle_tick(void) {
 }
 
 /* ===================== 入口 ===================== */
-/* 调试指令任务（USB-CDC stdin，fd 0）：远程复现/诊断用，不影响正常玩法。
- * 支持指令：wild=进野外战斗 boss=进BOSS战 mem=读LV_MEM rank=看职级 up=职级+1 */
+/* 调试指令任务（USB-CDC stdin）：远程复现/诊断用，不影响正常玩法。
+ * 支持指令：wild=进野外战斗 boss=进BOSS战 rank=看职级 up=职级+1 */
 static void mage_dbg_task(void *arg) {
     (void)arg;
-    char buf[64]; int n = 0; char c;
-    ESP_LOGI(TAG, "dbg: 串口指令就绪 (wild/boss/mem/rank/up)");
+    char buf[64]; int n = 0; int c;
+    ESP_LOGI(TAG, "dbg: 串口指令就绪 (wild/boss/rank/up)");
     while (1) {
-        ssize_t r = read(0, &c, 1);
-        if (r <= 0) { vTaskDelay(pdMS_TO_TICKS(30)); continue; }
+        c = getchar();
+        if (c == EOF) { vTaskDelay(pdMS_TO_TICKS(30)); continue; }
         if (c == '\n' || c == '\r') {
             if (n > 0) {
                 buf[n] = '\0';
                 if      (strcmp(buf, "wild") == 0) { battle_start_wild(0); ESP_LOGI(TAG, "dbg: -> wild battle"); }
                 else if (strcmp(buf, "boss") == 0) { battle_start_boss(0); ESP_LOGI(TAG, "dbg: -> boss battle"); }
-                else if (strcmp(buf, "mem")  == 0) { lv_mem_monitor_t mon; lv_mem_monitor(&mon);
-                                                          ESP_LOGI(TAG, "dbg MEM total=%u used=%u free=%u",
-                                                          (unsigned)mon.total_size, (unsigned)mon.used_size,
-                                                          (unsigned)mon.free_size); }
                 else if (strcmp(buf, "rank") == 0) { ESP_LOGI(TAG, "dbg rank=%d", g.rank); }
                 else if (strcmp(buf, "up")   == 0) { g.rank = (g.rank + 1) % 7; ESP_LOGI(TAG, "dbg rank->%d", g.rank); }
                 n = 0;
             }
         } else if (n < (int)sizeof(buf) - 1) {
-            buf[n++] = c;
+            buf[n++] = (char)c;
         }
     }
 }
