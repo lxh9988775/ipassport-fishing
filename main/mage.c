@@ -154,7 +154,16 @@ static lv_obj_t *g_part_name[PART_GRID_N];           /* 每格名字 */
 static lv_obj_t *g_part_tag[PART_GRID_N];            /* 每格角标（资质/等级） */
 static lv_obj_t *g_part_sel_tri = NULL;              /* 选中三角（单对象，刷新时移动） */
 static lv_obj_t *g_part_info = NULL;                 /* 选中伙伴情报条 */
-static int g_part_sig = -1;                            /* 网格脏标：记录(npartners,sel,active) */
+static int g_part_sig = -1;                            /* 网格脏标：记录(npartners,sel,active,menu) */
+/* 长按 OK 弹出的伙伴操作菜单（必须可见，杜绝误删） */
+#define PART_MENU_MAX 4
+static lv_obj_t *g_part_menu = NULL;                 /* 操作菜单面板（覆盖在网格之上） */
+static lv_obj_t *g_part_menu_title = NULL;           /* 菜单标题 */
+static lv_obj_t *g_part_menu_opt[PART_MENU_MAX];     /* 选项文本（最多 4 项） */
+static lv_obj_t *g_part_menu_tri = NULL;             /* 菜单内选择器三角 */
+static lv_obj_t *g_part_conf = NULL;                 /* 放生二次确认面板 */
+static lv_obj_t *g_part_conf_txt = NULL;             /* 确认文字（含伙伴名） */
+static lv_obj_t *g_part_conf_hint = NULL;            /* 确认操作提示 */
 
 /* 菜单卡片列表（魔法学院/野外试炼/冒险者公会）：每条 = 图标+名称+副文+右标。
  * 替代原先「单一大 label + 16px 中文无断行点冲出金框」的方案（用户反馈超框+无图标）。
@@ -527,6 +536,76 @@ static void build_ui(void) {
         lv_obj_set_pos(g_part_info, 8, 280);
         lv_obj_add_flag(g_part_info, LV_OBJ_FLAG_HIDDEN);
     }
+    /* ---- 伙伴操作菜单（长按 OK 弹出，必须可见，杜绝误删）----
+     * 以前伙伴页只有 4×2 网格，长按开的菜单逻辑存在却从不渲染，
+     * 导致菜单"看不见"且默认项落在"放生"上，连按 OK 直接删伙伴。
+     * 现改为：弹出可见菜单面板，默认选中"关闭菜单"（安全项），
+     * "放生"需二次确认面板才生效。 */
+    {
+        g_part_menu = lv_obj_create(g_scene_grp);
+        lv_obj_remove_style_all(g_part_menu);
+        lv_obj_set_size(g_part_menu, 200, 150);
+        lv_obj_set_pos(g_part_menu, 20, 78);
+        lv_obj_set_style_bg_color(g_part_menu, lv_color_hex(0x140d28), 0);
+        lv_obj_set_style_bg_opa(g_part_menu, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(g_part_menu, C_GOLD, 0);
+        lv_obj_set_style_border_width(g_part_menu, 2, 0);
+        lv_obj_remove_flag(g_part_menu, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(g_part_menu, LV_OBJ_FLAG_HIDDEN);
+
+        g_part_menu_title = lv_label_create(g_part_menu);
+        use_cjk(g_part_menu_title);
+        lv_obj_set_style_text_color(g_part_menu_title, C_GOLD, 0);
+        lv_obj_set_style_text_font(g_part_menu_title, &mage_cjk_12, 0);
+        lv_obj_set_width(g_part_menu_title, 200);
+        lv_obj_set_style_text_align(g_part_menu_title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(g_part_menu_title, 0, 8);
+
+        for (int i = 0; i < PART_MENU_MAX; i++) {
+            g_part_menu_opt[i] = lv_label_create(g_part_menu);
+            use_cjk(g_part_menu_opt[i]);
+            lv_obj_set_style_text_color(g_part_menu_opt[i], C_WHITE, 0);
+            lv_obj_set_style_text_font(g_part_menu_opt[i], &mage_cjk_12, 0);
+            lv_obj_set_width(g_part_menu_opt[i], 200);
+            lv_obj_set_style_text_align(g_part_menu_opt[i], LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_pos(g_part_menu_opt[i], 0, 32 + i * 26);
+            lv_obj_add_flag(g_part_menu_opt[i], LV_OBJ_FLAG_HIDDEN);
+        }
+        g_part_menu_tri = lv_img_create(g_part_menu);
+        lv_obj_remove_style_all(g_part_menu_tri);
+        const lv_image_dsc_t *mtd = mage_img("sp_tri");
+        if (mtd) lv_img_set_src(g_part_menu_tri, mtd);
+        lv_obj_set_size(g_part_menu_tri, 10, 12);
+        lv_obj_add_flag(g_part_menu_tri, LV_OBJ_FLAG_HIDDEN);
+
+        /* 放生二次确认面板（红框警示，必须显式 OK 才生效） */
+        g_part_conf = lv_obj_create(g_scene_grp);
+        lv_obj_remove_style_all(g_part_conf);
+        lv_obj_set_size(g_part_conf, 200, 92);
+        lv_obj_set_pos(g_part_conf, 20, 108);
+        lv_obj_set_style_bg_color(g_part_conf, lv_color_hex(0x2a0d18), 0);
+        lv_obj_set_style_bg_opa(g_part_conf, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_color(g_part_conf, lv_color_hex(0xff5555), 0);
+        lv_obj_set_style_border_width(g_part_conf, 2, 0);
+        lv_obj_remove_flag(g_part_conf, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(g_part_conf, LV_OBJ_FLAG_HIDDEN);
+
+        g_part_conf_txt = lv_label_create(g_part_conf);
+        use_cjk(g_part_conf_txt);
+        lv_obj_set_style_text_color(g_part_conf_txt, C_WHITE, 0);
+        lv_obj_set_style_text_font(g_part_conf_txt, &mage_cjk_12, 0);
+        lv_obj_set_width(g_part_conf_txt, 200);
+        lv_obj_set_style_text_align(g_part_conf_txt, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(g_part_conf_txt, 0, 16);
+
+        g_part_conf_hint = lv_label_create(g_part_conf);
+        use_cjk(g_part_conf_hint);
+        lv_obj_set_style_text_color(g_part_conf_hint, C_SUB, 0);
+        lv_obj_set_style_text_font(g_part_conf_hint, &mage_cjk_12, 0);
+        lv_obj_set_width(g_part_conf_hint, 200);
+        lv_obj_set_style_text_align(g_part_conf_hint, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_pos(g_part_conf_hint, 0, 58);
+    }
     /* 图鉴/伙伴/角色立绘层：按 sp_<type> 原生尺寸展示（位于金框之上、文字之下），
      * 周期刷新用状态记忆（场景+物种键比对）防每帧重设 src 触发重绘。 */
     g_scene_img = lv_image_create(g_scene_grp);
@@ -675,7 +754,7 @@ static void build_ui(void) {
      * 用局部（自动存储期）数组即可。 */
     s_hidden_cnt = 0;
     lv_obj_t *init_hidden[] = { g_title_grp, g_name_grp, g_hud, g_toast,
-                               g_part_root, g_part_info };
+                               g_part_root, g_part_info, g_part_menu, g_part_conf };
     for (size_t k = 0; k < sizeof(init_hidden)/sizeof(init_hidden[0]); k++) {
         if (s_hidden_cnt >= HIDDEN_TRACK_MAX) { break; }
         /* 【必须先真的设 flag 再登记】这些对象创建时并没有加 HIDDEN
@@ -791,15 +870,83 @@ static void menu_list_render(void) {
     }
 }
 
+/* 计算某伙伴操作菜单选项数：可进化 + 放生 + 返回城市 + 关闭菜单。
+ * 与 scene_handle 共用，保证渲染与按键逻辑一致。 */
+static int partner_menu_nopts(Partner *p) {
+    MobDef *bd = &ENEMY[p->typeIdx];
+    int n = 0;
+    if (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) n++;  /* 进化 */
+    n += 3;  /* 放生 / 返回城市 / 关闭菜单 */
+    return n;
+}
+
 /* ===================== 伙伴 4×2 网格渲染 ===================== */
 /* 全部对象在 build_ui 一次性建好；本函数只改 src/text/pos/style。
- * 脏标守卫：sig=(npartners,sel,active) 变化才碰 LVGL，防每 60ms 重绘卡死。 */
+ * 脏标守卫：sig 含 (active,sel,np,菜单开关,菜单选择,确认) 变化才碰 LVGL，
+ * 防每 60ms 重绘卡死。菜单/确认面板为独立可见层，杜绝"看不见的菜单误删"。 */
 static void partners_grid_render(void) {
     int np = (g.npartners > PART_GRID_N) ? PART_GRID_N : g.npartners;
     int sel = (np > 0) ? clampi(partIdx, 0, np - 1) : 0;
-    int sig = ((np & 0xff) << 16) | ((sel & 0xff) << 8) | (g.activePartner & 0xff);
+    int sig = (g.activePartner & 0xff)
+            | ((sel & 0xf) << 8)
+            | ((np & 0xf) << 12)
+            | (partMenuOpen ? (1 << 16) : 0)
+            | ((partMenu & 0x3) << 17)
+            | (partRelConf ? (1 << 19) : 0);
     if (sig == g_part_sig) return;
     g_part_sig = sig;
+
+    /* ---- 放生二次确认面板（红框警示，必须显式 OK 才生效）---- */
+    if (partRelConf) {
+        set_hidden(g_part_root, true);
+        set_hidden(g_part_info, true);
+        set_hidden(g_part_menu, true);
+        set_hidden(g_part_conf, false);
+        lv_obj_move_foreground(g_part_conf);
+        char b[48];
+        snprintf(b, sizeof(b), "放生 %s？", g.partners[sel].name);
+        lv_label_set_text(g_part_conf_txt, b);
+        lv_label_set_text(g_part_conf_hint, "OK 确认放生 · 返回 取消");
+        return;
+    }
+    /* ---- 伙伴操作菜单（可见面板）---- */
+    if (partMenuOpen) {
+        set_hidden(g_part_root, true);
+        set_hidden(g_part_info, true);
+        set_hidden(g_part_conf, true);
+        set_hidden(g_part_menu, false);
+        lv_obj_move_foreground(g_part_menu);
+        lv_label_set_text(g_part_menu_title, "伙伴菜单");
+        Partner *pp = &g.partners[sel];
+        MobDef *bb = &ENEMY[pp->typeIdx];
+        char opts[PART_MENU_MAX][20];
+        int nopts = 0;
+        if (bb->hasEvo && !pp->evolved && pp->level >= bb->evo.lvl) {
+            snprintf(opts[nopts], sizeof(opts[nopts]), "进化"); nopts++;
+        }
+        snprintf(opts[nopts], sizeof(opts[nopts]), "放生");    nopts++;
+        snprintf(opts[nopts], sizeof(opts[nopts]), "返回城市"); nopts++;
+        snprintf(opts[nopts], sizeof(opts[nopts]), "关闭菜单"); nopts++;
+        for (int i = 0; i < PART_MENU_MAX; i++) {
+            if (i < nopts) {
+                lv_label_set_text(g_part_menu_opt[i], opts[i]);
+                lv_obj_set_style_text_color(g_part_menu_opt[i],
+                    (i == partMenu) ? C_GOLD : C_WHITE, 0);
+                lv_obj_clear_flag(g_part_menu_opt[i], LV_OBJ_FLAG_HIDDEN);
+            } else {
+                lv_obj_add_flag(g_part_menu_opt[i], LV_OBJ_FLAG_HIDDEN);
+            }
+        }
+        lv_obj_set_pos(g_part_menu_tri, 26, 32 + partMenu * 26 + 2);
+        lv_obj_clear_flag(g_part_menu_tri, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    /* ---- 正常：4×2 网格 ---- */
+    set_hidden(g_part_menu, true);
+    set_hidden(g_part_conf, true);
+    set_hidden(g_part_root, !(np > 0));
+    set_hidden(g_part_info, false);
 
     if (np == 0) {
         for (int i = 0; i < PART_GRID_N; i++) {
@@ -1118,8 +1265,10 @@ static void refresh_ui(void) {
         }
         partIdx = clampi(partIdx, 0, (g.npartners > PART_GRID_N ? PART_GRID_N - 1 : g.npartners - 1));
         g_menu.n = 0;   /* 伙伴页改用 4×2 立绘网格（g_part_root），不再用文字列表 */
-        lv_label_set_text(g_scene_hint, partMenuOpen || partRelConf ? "↓ 选 · OK 确定"
-                         : "OK 出战 · ↓ 切换 · 长按 菜单");
+        lv_label_set_text(g_scene_hint,
+            partRelConf ? "OK 确认放生 · 返回 取消"
+            : partMenuOpen ? "↑↓ 选择 · OK 确定 · 返回 关闭"
+            : "OK 出战 · ↓ 切换 · 长按 菜单");
         break;
     }
     case SC_MENU: {
@@ -1520,8 +1669,10 @@ static void refresh_ui(void) {
     {
         const bool in_bt = (g_scene == SC_BATTLE) && bt.active;
         ESP_LOGI(TAG, "FX g_scene=%d bt.active=%d in_bt=%d", g_scene, bt.active ? 1 : 0, in_bt ? 1 : 0);
-        /* 结算/战利品面板（BP_RESULT / BP_LOOT）需完整露出，故隐藏底部动作卡 */
-        mage_hud_show(in_bt && bt.phase != BP_LOOT && bt.phase != BP_INTRO);
+        /* 结算/战利品/晕厥面板（BP_RESULT / BP_LOOT / BP_FAINT / BP_INTRO）需完整露出，
+         * 隐藏顶部血条/状态栏，否则会压住结算面板顶部的文字（用户实测：战斗结束字体被遮挡）。 */
+        mage_hud_show(in_bt && bt.phase != BP_LOOT && bt.phase != BP_INTRO
+                            && bt.phase != BP_RESULT && bt.phase != BP_FAINT);
         /* 底部三卡只在可交互阶段（主菜单/魔法/道具选择）显示；
          * 结算面板底边 286、远征总结算底边 290 都压在卡区(y=276..316)上，
          * 卡不藏就会盖住 footer（用户实测照片：结算栏被操作栏挡住）。 */
@@ -1693,8 +1844,15 @@ static void scene_handle(int act) {
         partIdx = clampi(partIdx, 0, g.npartners - 1);
         Partner *p = &g.partners[partIdx];
         MobDef *bd = &ENEMY[p->typeIdx];
+        int nopts = partner_menu_nopts(p);
+        int evoOpt  = (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) ? 0 : -1;
+        int relOpt  = evoOpt + 1;   /* 放生 */
+        int cityOpt = evoOpt + 2;   /* 返回城市 */
+        int closeOpt = nopts - 1;    /* 关闭菜单（安全默认项，防误删） */
+
         if (partRelConf) {
             if (act == ACT_OK) {
+                char nm[40]; snprintf(nm, sizeof(nm), "%s", p->name);  /* 先记名，再移位 */
                 /* 收敛出战位 */
                 if (g.activePartner >= g.npartners) g.activePartner = 0;
                 /* 删除伙伴 */
@@ -1703,30 +1861,25 @@ static void scene_handle(int act) {
                 if (g.activePartner >= g.npartners) g.activePartner = 0;
                 if (partIdx >= g.npartners) partIdx = 0;
                 partRelConf = 0; partMenuOpen = 0; mage_persist();
-                toast("已放生 %s", p->name);
+                toast("已放生 %s", nm);
             } else if (act == ACT_BACK) { partRelConf = 0; }
             g_need_refresh = 1; break;
         }
         if (partMenuOpen) {
-            int nopts = 0;
-            if (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) nopts++;
-            nopts += 3;
             if (act == ACT_NEXT) partMenu = (partMenu + 1) % nopts;
             else if (act == ACT_PREV) partMenu = (partMenu + nopts - 1) % nopts;
             else if (act == ACT_OK) {
-                int oi = 0; int evoOpt = -1;
-                if (bd->hasEvo && !p->evolved && p->level >= bd->evo.lvl) { evoOpt = oi++; }
                 if (partMenu == evoOpt) { doEvolve(p); partMenuOpen = 0; }
-                else if (partMenu == evoOpt + 1) { partRelConf = 1; }
-                else if (partMenu == evoOpt + 2) { partMenuOpen = 0; mage_set_scene(SC_CITY); g.cityMode = 1; }
-                else { partMenuOpen = 0; }
+                else if (partMenu == relOpt) { partRelConf = 1; }   /* 进入二次确认，绝不秒删 */
+                else if (partMenu == cityOpt) { partMenuOpen = 0; mage_set_scene(SC_CITY); g.cityMode = 1; }
+                else { partMenuOpen = 0; }   /* 关闭菜单 / 越界 */
             } else if (act == ACT_BACK) { partMenuOpen = 0; }
             g_need_refresh = 1; break;
         }
         if (act == ACT_OK) { g.activePartner = partIdx; mage_persist(); toast("出战：%s", p->name); }
         else if (act == ACT_NEXT) { partIdx = (partIdx + 1) % g.npartners; }
         else if (act == ACT_PREV) { partIdx = (partIdx + g.npartners - 1) % g.npartners; }
-        else if (act == ACT_BACK) { partMenuOpen = 1; partMenu = 0; }
+        else if (act == ACT_BACK) { partMenuOpen = 1; partMenu = closeOpt; }  /* 默认选中"关闭菜单"，杜绝误删 */
         g_need_refresh = 1;
         break;
     }
