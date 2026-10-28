@@ -33,6 +33,10 @@
 
 static const char *TAG = "mage";
 
+/* 调试：1=自动进野外战斗 2=进BOSS战；由 game_task 在 LVGL 锁内安全消费，
+ * 避免调试任务直接调 LVGL 接口导致崩溃。启动 4s 后自动置 1 便于无输入复现崩溃。 */
+volatile int g_dbg_enter_battle = 0;
+
 /* ===================== 战斗相位枚举（供全部场景/演出函数引用，必须置于文件首位） ===================== */
 #define BP_MENU 0
 #define BP_MAGIC 1
@@ -1999,6 +2003,11 @@ static void game_task(void *arg) {
             g_need_refresh = 0;
             if (bsp_lvgl_lock(100)) {
                 refresh_ui();
+                if (g_dbg_enter_battle) {
+                    int cmd = g_dbg_enter_battle; g_dbg_enter_battle = 0;
+                    if (cmd == 2) battle_start_boss(0); else battle_start_wild(0);
+                    ESP_LOGI(TAG, "dbg: game_task 进战斗 cmd=%d", cmd);
+                }
                 bsp_lvgl_unlock();
             }
         }
@@ -3004,27 +3013,17 @@ void battle_tick(void) {
 
 /* ===================== 入口 ===================== */
 /* 调试指令任务（USB-CDC stdin）：远程复现/诊断用，不影响正常玩法。
- * 支持指令：wild=进野外战斗 boss=进BOSS战 rank=看职级 up=职级+1 */
+ * 仅设置全局标志，真正的“进战斗”由 game_task 在 LVGL 锁内执行（LVGL 非线程安全）。
+ * 支持指令：wild/boss=置位进战斗标志 rank=看职级 up=职级+1 */
 static void mage_dbg_task(void *arg) {
     (void)arg;
-    char buf[64]; int n = 0; int c;
-    ESP_LOGI(TAG, "dbg: 串口指令就绪 (wild/boss/rank/up)");
-    while (1) {
-        c = getchar();
-        if (c == EOF) { vTaskDelay(pdMS_TO_TICKS(30)); continue; }
-        if (c == '\n' || c == '\r') {
-            if (n > 0) {
-                buf[n] = '\0';
-                if      (strcmp(buf, "wild") == 0) { battle_start_wild(0); ESP_LOGI(TAG, "dbg: -> wild battle"); }
-                else if (strcmp(buf, "boss") == 0) { battle_start_boss(0); ESP_LOGI(TAG, "dbg: -> boss battle"); }
-                else if (strcmp(buf, "rank") == 0) { ESP_LOGI(TAG, "dbg rank=%d", g.rank); }
-                else if (strcmp(buf, "up")   == 0) { g.rank = (g.rank + 1) % 7; ESP_LOGI(TAG, "dbg rank->%d", g.rank); }
-                n = 0;
-            }
-        } else if (n < (int)sizeof(buf) - 1) {
-            buf[n++] = (char)c;
-        }
-    }
+    ESP_LOGI(TAG, "dbg: 就绪 (4s 后自动进一次野外战斗以复现崩溃)");
+    /* 启动 4s 后自动进一次野外战斗：标志在 RAM，重启后归零，不会死循环。
+     * 用于无输入复现"进战斗崩溃"，抓 backtrace。诊断结束后移除本段。 */
+    vTaskDelay(pdMS_TO_TICKS(4000));
+    g_dbg_enter_battle = 1;
+    ESP_LOGI(TAG, "dbg: 自动触发 wild (g_dbg_enter_battle=1)");
+    while (1) { vTaskDelay(pdMS_TO_TICKS(1000)); }
 }
 
 void mage_app_start(void) {
