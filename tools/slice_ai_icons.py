@@ -62,6 +62,48 @@ def is_navy(r, g, b):
     return r < 62 and g < 72 and b < 104 and abs(r - g) < 26
 
 
+def flood_transparent(im, tol=44):
+    """从四边做泛洪填充，把与四角背景色相近的像素变透明。
+    比单纯判深蓝更通用：可同时处理深蓝面板底、灰底、白底，
+    且能保留图标内部的浅色高光（内部浅色不与边框背景连通）。"""
+    W, H = im.size
+    px = im.load()
+    corners = [px[2, 2][:3], px[W - 3, 2][:3], px[2, H - 3][:3], px[W - 3, H - 3][:3]]
+    br = sum(c[0] for c in corners) // 4
+    bg = sum(c[1] for c in corners) // 4
+    bb = sum(c[2] for c in corners) // 4
+
+    def close(c):
+        return abs(c[0] - br) + abs(c[1] - bg) + abs(c[2] - bb) <= tol * 3
+
+    from collections import deque
+    vis = [[False] * W for _ in range(H)]
+    dq = deque()
+    for x in range(W):
+        for y in (0, H - 1):
+            if not vis[y][x] and close(px[x, y][:3]):
+                vis[y][x] = True
+                dq.append((x, y))
+    for y in range(H):
+        for x in (0, W - 1):
+            if not vis[y][x] and close(px[x, y][:3]):
+                vis[y][x] = True
+                dq.append((x, y))
+    while dq:
+        x, y = dq.popleft()
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < W and 0 <= ny < H and not vis[ny][nx] and close(px[nx, ny][:3]):
+                vis[ny][nx] = True
+                dq.append((nx, ny))
+    for y in range(H):
+        for x in range(W):
+            if vis[y][x]:
+                r, g, b, a = px[x, y]
+                px[x, y] = (r, g, b, 0)
+    return im
+
+
 def extract(region):
     W, H = region.size
     px = region.load()
@@ -87,6 +129,32 @@ def extract(region):
     return region
 
 
+def clean_bg(im, tol=25):
+    """先去深蓝面板底（网格图标）；再以「四角背景色」做逐像素抠除：
+    四角取平均作为背景色，把与之相近的像素整片变透明。
+    网格图标去蓝后四角已透明 -> 跳过；其余(灰/白/渐变底)按四角色抠，保留图标内部浅色高光。"""
+    im = im.convert("RGBA")
+    W, H = im.size
+    px = im.load()
+    for y in range(H):
+        for x in range(W):
+            r, g, b, a = px[x, y]
+            if is_navy(r, g, b):
+                px[x, y] = (r, g, b, 0)
+    cs = [px[3, 3], px[W - 4, 3], px[3, H - 4], px[W - 4, H - 4]]
+    if all(c[3] == 0 for c in cs):
+        return im  # 四角已透明（网格去蓝后）→ 无需再抠
+    br = sum(c[0] for c in cs) // 4
+    bgc = sum(c[1] for c in cs) // 4
+    bb = sum(c[2] for c in cs) // 4
+    for y in range(H):
+        for x in range(W):
+            r, g, b, a = px[x, y]
+            if a > 10 and abs(r - br) + abs(g - bgc) + abs(b - bb) <= tol * 3:
+                px[x, y] = (r, g, b, 0)
+    return im
+
+
 def get(name, sheet, col, row):
     if name in OVERRIDE:
         im = Image.open(os.path.join(BASE, OVERRIDE[name])).convert("RGBA")
@@ -94,15 +162,8 @@ def get(name, sheet, col, row):
         m = int(min(W, H) * 0.12)
         im = im.crop((m, m, W - m, H - m))
     else:
-        im = extract(cell(sheet, col, row)).convert("RGBA")
-    # 去深蓝面板底 -> 透明（图标本身深色描边，浅色内部保留）
-    px = im.load()
-    W, H = im.size
-    for y in range(H):
-        for x in range(W):
-            r, g, b, a = px[x, y]
-            if is_navy(r, g, b):
-                px[x, y] = (r, g, b, 0)
+        im = cell(sheet, col, row).convert("RGBA")
+    im = clean_bg(im)
     bbox = im.getbbox()
     if bbox:
         im = im.crop(bbox)

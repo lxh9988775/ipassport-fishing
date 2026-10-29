@@ -5,6 +5,7 @@
          map(野外章节) / gate(遗迹秘境&随机副本) / herb(采药委托)
 """
 import os
+import math
 from PIL import Image, ImageDraw
 
 S = 44          # 最终尺寸
@@ -362,8 +363,112 @@ def seal():
     save("seal", im)
 
 
+# ---- 属性元素图标（火/水/雷/风/土/冰/光/暗/虚无），与 ELEMS[9] 顺序/配色一致 ----
+# 颜色取自 main/mage_data.c：火#ff6b3d 水#4db8ff 雷#ffe14d 风#7cfc9b
+#                      土#c89b6b 冰#aee7ff 光#fff3b0 暗#b06bff 虚无#ff6bd6
+def fire():
+    im = new(); d = ImageDraw.Draw(im); cx = SS // 2
+    col = (255, 107, 61, 255); col2 = (255, 205, 90, 255)
+    d.polygon([(cx, SS * 0.14), (cx + SS * 0.22, SS * 0.46), (cx + SS * 0.11, SS * 0.60),
+               (cx + SS * 0.24, SS * 0.82), (cx - SS * 0.24, SS * 0.82),
+               (cx - SS * 0.11, SS * 0.60), (cx - SS * 0.22, SS * 0.46)], fill=col)
+    d.polygon([(cx, SS * 0.36), (cx + SS * 0.11, SS * 0.58), (cx, SS * 0.80),
+               (cx - SS * 0.11, SS * 0.58)], fill=col2)
+    save("fire", im)
+
+
+def water():
+    im = new(); d = ImageDraw.Draw(im); cx = SS // 2
+    col = (77, 184, 255, 255); col2 = (190, 230, 255, 255)
+    d.polygon([(cx, SS * 0.18), (cx + SS * 0.24, SS * 0.52), (cx + SS * 0.16, SS * 0.72),
+               (cx, SS * 0.82), (cx - SS * 0.16, SS * 0.72), (cx - SS * 0.24, SS * 0.52)], fill=col)
+    d.ellipse([cx - SS * 0.10, SS * 0.40, cx + SS * 0.02, SS * 0.54], fill=col2)
+    save("water", im)
+
+
+def thunder():
+    im = new(); d = ImageDraw.Draw(im)
+    col = (255, 225, 77, 255)
+    pts = [(SS * 0.56, SS * 0.16), (SS * 0.32, SS * 0.56), (SS * 0.48, SS * 0.56),
+           (SS * 0.38, SS * 0.84), (SS * 0.70, SS * 0.40), (SS * 0.52, SS * 0.40)]
+    d.polygon(pts, fill=col)
+    d.line(pts + [pts[0]], fill=(200, 160, 20, 255), width=3)
+    save("thunder", im)
+
+
+def wind():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2)
+    col = (124, 252, 155, 255)
+    d.arc([c[0] - SS * 0.30, c[1] - SS * 0.30, c[0] + SS * 0.30, c[1] + SS * 0.30],
+          start=20, end=200, fill=col, width=int(SS * 0.07))
+    d.arc([c[0] - SS * 0.18, c[1] - SS * 0.18, c[0] + SS * 0.18, c[1] + SS * 0.18],
+          start=40, end=220, fill=col, width=int(SS * 0.07))
+    d.polygon([(c[0] + SS * 0.30, c[1] - SS * 0.06), (c[0] + SS * 0.30, c[1] + SS * 0.06),
+               (c[0] + SS * 0.42, c[1])], fill=col)
+    save("wind", im)
+
+
+def earth():
+    im = new(); d = ImageDraw.Draw(im)
+    col = (200, 155, 107, 255); col2 = (150, 110, 60, 255)
+    d.polygon([(SS * 0.20, SS * 0.80), (SS * 0.38, SS * 0.42), (SS * 0.52, SS * 0.66),
+               (SS * 0.66, SS * 0.36), (SS * 0.82, SS * 0.80)], fill=col)
+    d.polygon([(SS * 0.38, SS * 0.42), (SS * 0.45, SS * 0.54), (SS * 0.32, SS * 0.54)], fill=col2)
+    d.polygon([(SS * 0.66, SS * 0.36), (SS * 0.73, SS * 0.52), (SS * 0.60, SS * 0.52)], fill=col2)
+    save("earth", im)
+
+
+def ice():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); col = (174, 231, 255, 255)
+    import math
+    for k in range(6):
+        a = k * math.pi / 3
+        x2 = c[0] + SS * 0.32 * math.cos(a); y2 = c[1] + SS * 0.32 * math.sin(a)
+        d.line([(c[0], c[1]), (x2, y2)], fill=col, width=int(SS * 0.06))
+        bx = c[0] + SS * 0.20 * math.cos(a); by = c[1] + SS * 0.20 * math.sin(a)
+        ax = bx + SS * 0.07 * math.cos(a + 0.5); ay = by + SS * 0.07 * math.sin(a + 0.5)
+        cx2 = bx + SS * 0.07 * math.cos(a - 0.5); cy2 = by + SS * 0.07 * math.sin(a - 0.5)
+        d.line([(bx, by), (ax, ay)], fill=col, width=int(SS * 0.05))
+        d.line([(bx, by), (cx2, cy2)], fill=col, width=int(SS * 0.05))
+    save("ice", im)
+
+
+def light():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); col = (255, 243, 176, 255)
+    r = SS * 0.18
+    d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=col)
+    for k in range(8):
+        a = k * math.pi / 4
+        x0 = c[0] + (r + SS * 0.04) * math.cos(a); y0 = c[1] + (r + SS * 0.04) * math.sin(a)
+        x1 = c[0] + (r + SS * 0.20) * math.cos(a); y1 = c[1] + (r + SS * 0.20) * math.sin(a)
+        d.line([(x0, y0), (x1, y1)], fill=col, width=int(SS * 0.05))
+    save("light", im)
+
+
+def dark():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); col = (176, 107, 255, 255)
+    r = SS * 0.28
+    d.ellipse([c[0] - r, c[1] - r, c[0] + r, c[1] + r], fill=col)
+    d.ellipse([c[0] - r * 0.3, c[1] - r * 0.5, c[0] + r * 0.9, c[1] + r * 0.1],
+              fill=(20, 12, 40, 255))
+    save("dark", im)
+
+
+def void():
+    im = new(); d = ImageDraw.Draw(im); c = (SS // 2, SS // 2); col = (255, 107, 214, 255)
+    import math
+    pts = []
+    for i in range(48):
+        a = i * math.pi / 24
+        rad = SS * 0.10 + i * SS * 0.005
+        pts.append((c[0] + rad * math.cos(a), c[1] + rad * math.sin(a)))
+    d.line(pts, fill=col, width=int(SS * 0.05), joint="curve")
+    d.ellipse([c[0] - SS * 0.07, c[1] - SS * 0.07, c[0] + SS * 0.07, c[1] + SS * 0.07], fill=col)
+    save("void", im)
+
+
 for fn in (book, orb, crown, map, gate, herb, heart, shield, coin, paw, bolt,
            star, bed, flask, hammer, robe, crystal, gear, bag, scroll, bone, seal,
-           sword, staff, potion):
+           sword, staff, potion, fire, water, thunder, wind, earth, ice, light, dark, void):
     fn()
 print("done")

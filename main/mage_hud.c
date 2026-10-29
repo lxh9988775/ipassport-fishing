@@ -176,8 +176,9 @@ void mage_hud_build(void)
         }
     }
 
-    /* 回合徽标：HTML box(W/2-lw/2, y-7, lw, 14, '#0d0a1a','#c9a44a') */
-    H.turnBox = mk_panel(H.root, SCR_W / 2 - 30, CARD_Y - 7, 60, 14, 0x0d0a1a, LV_OPA_COVER);
+    /* 回合徽标：移到屏幕上方（紧挨顶部 HUD 条之下），不再贴着底部动作卡。
+     * 用户反馈"回合移动上来不行吗"——原 CARD_Y-7=269 贴底，现改 y=28 居顶。 */
+    H.turnBox = mk_panel(H.root, SCR_W / 2 - 30, 28, 60, 14, 0x0d0a1a, LV_OPA_COVER);
     lv_obj_set_style_border_width(H.turnBox, 1, 0);
     lv_obj_set_style_border_color(H.turnBox, lv_color_hex(0xc9a44a), 0);
     H.turnTx = mk_tx(H.turnBox, "回合 1", 0, 1, 60, 0xffd93d, &mage_cjk_12);

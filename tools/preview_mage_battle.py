@@ -171,13 +171,13 @@ def draw_cards(im, d, turn="回合 1"):
             im.paste(s, (x + CARD_W // 2 - 12, CARD_Y + 2), s)
         # 图标下方功能名（12px 居中）
         txt_c(d, CARD_NAME[i], x + CARD_W // 2, CARD_Y + 28, F12, (0xff, 0xff, 0xff))
-    # 回合徽标
+    # 回合徽标（固件 fix②：移到屏幕上方紧挨顶部 HUD 之下，不再贴着底部动作卡）
     lb = turn
     lw = len(lb) * 6 + 14
     bx = W // 2 - lw // 2
-    d.rectangle([bx, CARD_Y - 7, bx + lw, CARD_Y + 7], fill=(0x0d, 0x0a, 0x1a),
+    d.rectangle([bx, 28, bx + lw, 42], fill=(0x0d, 0x0a, 0x1a),
                 outline=(0xc9, 0xa4, 0x4a))
-    txt_c(d, lb, W / 2, CARD_Y - 5, F8, (0xff, 0xd9, 0x3d))
+    txt_c(d, lb, W / 2, 30, F8, (0xff, 0xd9, 0x3d))
 
 
 # ============ 场景一：战斗 · BOSS 立绘（问题③②⑤）============
@@ -249,27 +249,19 @@ LOCATIONS = ["魔法学院", "野外试炼", "冒险者公会", "住宅",
 
 
 def scene_town(sel=0):
-    im = Image.new("RGB", (W, H), (0x12, 0x0e, 0x22))
-    d = ImageDraw.Draw(im)
-    bg = os.path.join(ASSETS, SRC_TOWN)
-    if os.path.exists(bg):
-        # 与固件 load_rgba 一致：直接 resize 到 240x320（非 cover 裁剪）
-        im.paste(Image.open(bg).convert("RGB").resize((W, H), Image.LANCZOS), (0, 0))
-    # 顶部半透明压暗条，保证标题可读
-    bar = Image.new("RGBA", (W, 40), (0x08, 0x05, 0x14, 150))
-    im.paste(bar, (0, 0), bar)
-    im = im.convert("RGB")
-    d = ImageDraw.Draw(im)
-    txt_c(d, "· 魔法小镇 ·", W / 2, 16, F16, (0xff, 0xd9, 0x3d))   # g_scene_title 金色
-    # 地点列表（g_scene_body 白色，▶ 选中）
-    y = 56
-    for i, name in enumerate(LOCATIONS):
-        prefix = "▶ " if i == sel else "  "
-        txt_l(d, prefix + name, 18, y, F13, (0xff, 0xff, 0xff))
-        y += 30
-    # 底部提示
-    txt_c(d, "↑↓ 选地点 · OK 进入 · 长按 功能栏", W / 2, H - 22, F10, (0xc9, 0xb8, 0xee))
-    return im
+    """魔法小镇主菜单：与固件一致，frameBox 金框 + 地点卡片列表（每项带功能图标）。
+    对应固件 SC_CITY（is_frame_scene=true -> g_list 卡片列表），修复问题①「图标空白」。"""
+    im = _town_dim_base(153)
+    items = [
+        ("sp_icon_book.png",   "魔法学院",   "学魔法 · 晋升考核",   ""),
+        ("sp_icon_map.png",    "野外试炼",   "章节 · 遗迹秘境",     ""),
+        ("sp_icon_sword.png",  "竞技场",     "试炼塔连战",         ""),
+        ("sp_icon_bed.png",    "住宅",       "休息 · 锻造",        ""),
+        ("sp_icon_hammer.png", "锻造房",     "武器 · 法袍",        ""),
+        ("sp_icon_coin.png",   "魔法黑市",   "材料交易",           ""),
+        ("sp_icon_staff.png",  "冒险者公会", "讨伐委托",           ""),
+    ]
+    return draw_menu_cards(im, "魔法小镇", items, sel, "↑↓ 选地点 · OK 进入 · 长按 功能栏")
 
 
 # ============ 场景四：战斗 · HUD 中文（问题⑤）============
@@ -531,12 +523,14 @@ def scene_func_home(sel=0):
     return draw_menu_cards(im, "住宅", items, sel, "OK 选择 · ↓ 切换 · 长按 返回")
 
 def scene_func_research(sel=1):
+    """魔法研究（法术列表）：与固件一致，每行按 spellSplit 的元素 e 用对应属性图标
+    （火/冰/雷/光…），不再千篇一律书本图标（修复问题④「用属性图标！」）。"""
     im = _town_dim_base(179)
     items = [
-        ("sp_icon_book.png", "火球",     "基础 Lv2",         ""),
-        ("sp_icon_book.png", "冰锥",     "基础 Lv2 成60%",   "▶"),
-        ("sp_icon_book.png", "雷击",     "基础 Lv1",         ""),
-        ("sp_icon_book.png", "治愈微风", "初级 Lv1",         ""),
+        ("sp_icon_fire.png",    "火球",     "基础 Lv2",         ""),
+        ("sp_icon_ice.png",     "冰锥",     "基础 Lv2 成60%",   "▶"),
+        ("sp_icon_thunder.png", "雷击",     "基础 Lv1",         ""),
+        ("sp_icon_light.png",   "治愈微风", "初级 Lv1",         ""),
     ]
     return draw_menu_cards(im, "魔法研究", items, sel, "OK 研究 · ↓ 切换 · 长按 返回住宅")
 
@@ -586,9 +580,9 @@ def scene_func_equip(sel=3):
 def scene_func_mupgrade(sel=1):
     im = _town_dim_base(179)
     items = [
-        ("sp_icon_star.png", "火球", "基础 Lv2",            ""),
-        ("sp_icon_star.png", "冰锥", "基础 Lv2→Lv3 · 150金", "▶"),
-        ("sp_icon_star.png", "雷击", "基础 Lv1",            ""),
+        ("sp_icon_fire.png",    "火球", "基础 Lv2",            ""),
+        ("sp_icon_ice.png",     "冰锥", "基础 Lv2→Lv3 · 150金", "▶"),
+        ("sp_icon_thunder.png", "雷击", "基础 Lv1",            ""),
     ]
     return draw_menu_cards(im, "魔法升级", items, sel, "OK 升级 · ↓ 切换 · 长按 返回")
 
@@ -596,9 +590,9 @@ def scene_func_craft(sel=0):
     im = _town_dim_base(179)
     items = [
         ("sp_icon_staff.png",   "形态", "爆发",         "▶"),
-        ("sp_icon_bolt.png",    "元素", "雷",           "OK切"),
-        ("sp_icon_crystal.png", "修饰", "穿透",         "OK切"),
-        ("sp_icon_star.png",    "雷爆·穿透", "威力 28 耗 9", "预览"),
+        ("sp_icon_thunder.png",  "元素", "雷",           "OK切"),
+        ("sp_icon_crystal.png",  "修饰", "穿透",         "OK切"),
+        ("sp_icon_thunder.png",  "雷爆·穿透", "威力 28 耗 9", "预览"),
     ]
     return draw_menu_cards(im, "魔法拼装", items, sel, "OK 切槽 · ↓ 换项 · 长按 装配")
 

@@ -196,8 +196,15 @@ static int g_list_y0 = ROW_Y0;   /* 详情页(图鉴/伙伴/角色)把卡片列�
 static const char *CITY_LOC_ICON[7] = {"sp_icon_book","sp_icon_map","sp_icon_sword",
                                        "sp_icon_bed","sp_icon_hammer","sp_icon_coin","sp_icon_staff"};
 static const char *CITY_FUNC_ICON[8] = {"sp_icon_heart","sp_icon_paw","sp_icon_book",
-                                        "sp_icon_flask","sp_icon_bag","sp_icon_shield",
-                                        "sp_icon_crystal","sp_icon_gear"};
+                                         "sp_icon_flask","sp_icon_bag","sp_icon_shield",
+                                         "sp_icon_crystal","sp_icon_gear"};
+
+/* 属性元素图标：与 ELEMS[9] 顺序一致（火/水/雷/风/土/冰/光/暗/虚无）。
+ * 法术行按 spellSplit 的 e 选对应图标（用户要求"用属性图标"，不再千篇一律书本）。 */
+static const char *ELEM_ICON[9] = {
+    "sp_icon_fire", "sp_icon_water", "sp_icon_thunder", "sp_icon_wind", "sp_icon_earth",
+    "sp_icon_ice", "sp_icon_light", "sp_icon_dark", "sp_icon_void"
+};
 static void menu_list_render(void);
 static lv_obj_t *g_toast = NULL;
 static lv_obj_t *g_stars[14];
@@ -826,7 +833,9 @@ static void menu_list_render(void) {
     /* 【动态行距铺满】行数少的页面(学院3行/住宅3行等)把行拉高填满框体，
      * 不再留大片空白（用户铁律：列表必须铺满界面）。
      * pitch = (LIST_BOTTOM - y0) / n，下限 ROW_H(两行行最小 33，字库行高铁律)，
-     * 上限 PITCH_MAX；框体高度随内容自适应，封顶 298（提示行 302 之上）。 */
+     * 上限 PITCH_MAX；框体高度随内容自适应。
+     * frame_h = 末行底边 + 6px 余量：旧写法 fb-10 让金框比末行矮 6px，末行文字压在
+     * 框下边被裁（用户问题③），现改为框体包住全部行并有安全余量。 */
     int n = g_menu.n;
     int pitch = ROW_PITCH;
     int rowH = ROW_H;
@@ -836,9 +845,10 @@ static void menu_list_render(void) {
         if (pitch > PITCH_MAX) pitch = PITCH_MAX;
         if (pitch < ROW_H) pitch = ROW_H;
         rowH = pitch - 1;
-        int fb = g_list_y0 + n * pitch + 3;
-        if (fb > 298) fb = 298;
-        frame_h = fb - 10;
+        int last_bottom = g_list_y0 + (n - 1) * pitch + rowH;  /* 末行底边(相对 g_list) */
+        int fb = last_bottom + 6;                              /* +6px 安全余量，金框下边不压字 */
+        if (fb > 300) fb = 300;
+        frame_h = fb;
     }
     /* 脏标守卫内执行，仅场景/选中变化时才碰；同值重复 set 无害 */
     lv_obj_set_height(g_frame, frame_h);
@@ -849,7 +859,8 @@ static void menu_list_render(void) {
             MenuRow *r = &g_menu.rows[i];
             lv_obj_clear_flag(g_row_box[i], LV_OBJ_FLAG_HIDDEN);
             const lv_image_dsc_t *dsc = mage_img(r->icon);
-            if (dsc) lv_img_set_src(g_row_ico[i], dsc);
+            if (dsc) { lv_img_set_src(g_row_ico[i], dsc); set_hidden(g_row_ico[i], false); }
+            else { set_hidden(g_row_ico[i], true); }   /* 图标缺失时收起，避免出现破图方块 */
             lv_label_set_text(g_row_name[i], r->name);
             lv_label_set_text(g_row_sub[i], r->sub ? r->sub : "");
             lv_label_set_text(g_row_rgt[i], r->rgt ? r->rgt : "");
@@ -1261,11 +1272,12 @@ static void refresh_ui(void) {
         for (int i = start; i < start + win && i < total && g_menu.n < MENU_ROWS; i++) {
             if (i < n) {
                 int k = discoveredKeyAt(i);
+                int a, e, m; spell_split(k, &a, &e, &m);
                 int inlo = 0; for (int j = 0; j < g.nload; j++) if (g.loadout[j] == k) inlo = 1;
                 snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]), "Lv%d 威力%d", slv(k), spellPower(k));
-                g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_book", spellName(k), g_menu_sub[g_menu.n], inlo ? "★出战" : ""};
+                g_menu.rows[g_menu.n] = (MenuRow){ELEM_ICON[e], spellName(k), g_menu_sub[g_menu.n], inlo ? "★出战" : ""};
             } else {
-                g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_staff", "✚ 研究新魔法", "三槽自由拼装独门魔法", ""};
+                g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_staff", "研究新魔法", "三槽自由拼装独门魔法", ""};
             }
             g_menu.n++;
         }
@@ -1278,7 +1290,7 @@ static void refresh_ui(void) {
             snprintf(hb, sizeof(hb), "%s · %s魔法 Lv%d 威力%d 耗%d%s",
                      spellName(k), TIER_NAMES[m], slv(k), spellPower(k), spellCost(k), inlo ? " ★出战" : "");
         } else {
-            snprintf(hb, sizeof(hb), "✚ 三槽自由拼装 · OK 加入/移出 · ↓ 切换");
+            snprintf(hb, sizeof(hb), "三槽自由拼装 · OK 加入/移出 · ↓ 切换");
         }
         lv_label_set_text(g_scene_hint, hb);
         menu_list_dirty = 1;
@@ -1344,12 +1356,12 @@ static void refresh_ui(void) {
                     int rate = researchRateFor(k);
                     snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
                              "%s Lv%d→%d 成%d%%", TIER_NAMES[m], lv, lv + 1, rate);
-                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_book", spellName(k),
+                    g_menu.rows[g_menu.n] = (MenuRow){ELEM_ICON[e], spellName(k),
                                                      g_menu_sub[g_menu.n], "OK研究"};
                 } else {
                     snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
                              "%s Lv%d", TIER_NAMES[m], lv);
-                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_book", spellName(k),
+                    g_menu.rows[g_menu.n] = (MenuRow){ELEM_ICON[e], spellName(k),
                                                      g_menu_sub[g_menu.n], ""};
                 }
                 g_menu.n++;
@@ -1458,7 +1470,8 @@ static void refresh_ui(void) {
         g_menu.rows[1] = (MenuRow){cic[1], "元素", ELEMS[g.spell[1]].n,  "OK切"};
         g_menu.rows[2] = (MenuRow){cic[2], "修饰", MODS[g.spell[2]].n,   "OK切"};
         snprintf(g_menu_sub[3], sizeof(g_menu_sub[3]), "威力%d 耗%d", spellPower(key), spellCost(key));
-        g_menu.rows[3] = (MenuRow){"sp_icon_star", spellName(key), g_menu_sub[3], "预览"};
+        { int a, e, m; spell_split(key, &a, &e, &m);
+        g_menu.rows[3] = (MenuRow){ELEM_ICON[e], spellName(key), g_menu_sub[3], "预览"}; }
         g_menu.sel = craftSlot;
         lv_label_set_text(g_scene_hint, "OK 切槽 · ↓ 换项 · 长按 装配");
         menu_list_dirty = 1;
@@ -1578,12 +1591,12 @@ static void refresh_ui(void) {
                     snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
                              "%s Lv%d→%d · %d金%s", TIER_NAMES[m], lv, lv + 1, gold,
                              m > 0 ? "+魔石" : "");
-                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_star", spellName(k),
+                    g_menu.rows[g_menu.n] = (MenuRow){ELEM_ICON[e], spellName(k),
                                                      g_menu_sub[g_menu.n], "OK升"};
                 } else {
                     snprintf(g_menu_sub[g_menu.n], sizeof(g_menu_sub[g_menu.n]),
                              "%s Lv%d", TIER_NAMES[m], lv);
-                    g_menu.rows[g_menu.n] = (MenuRow){"sp_icon_star", spellName(k),
+                    g_menu.rows[g_menu.n] = (MenuRow){ELEM_ICON[e], spellName(k),
                                                      g_menu_sub[g_menu.n], ""};
                 }
                 g_menu.n++;
