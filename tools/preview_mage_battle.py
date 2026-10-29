@@ -110,7 +110,7 @@ SRC_HERO = "sp_hero_k.png"
 SRC_CAT = "sp_cat_k.png"
 SRC_BATTLE_BG = "battle_bg_k.png"
 SRC_TOWN = "town_art.png"
-HERO_W, HERO_H = 36, 46
+HERO_W, HERO_H = 72, 92
 CAT_W, CAT_H = 29, 32
 
 
@@ -305,7 +305,7 @@ def scene_result():
     draw_sprite(im, SRC_CAT, 44, 250, CAT_H)
     draw_sprite(im, SRC_HERO, 70, 250, HERO_H)
     draw_hud(d, wave="3/10", stat="AUTO·3·1·2")
-    bw, bh = 200, 170
+    bw, bh = 200, 180
     box, bd = _panel_base(bw, bh)
     txt_c(bd, "第 3 波 清场（累计收益）", bw / 2, 8, F16, (0xff, 0xd9, 0x3d))
     y = 28
@@ -313,7 +313,7 @@ def scene_result():
         txt_c(bd, ln, bw / 2, y, F16, (0xcc, 0xff, 0xcc))
         y += 16
     txt_c(bd, "A 继续前进 · B 回城", bw / 2, 150, F16, (0xc9, 0xa2, 0x27))
-    im.paste(box, (20, 150), box)
+    im.paste(box, (20, 120), box)
     return im
 
 

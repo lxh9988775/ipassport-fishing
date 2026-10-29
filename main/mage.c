@@ -361,7 +361,7 @@ static void build_ui(void) {
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
     /* 标题页主角：按当前职级显示分级形象（见习学徒→魔法帝），1:1 免缩放 */
-    mage_draw_sprite_ret(g_title_grp, mage_hero_sprite_for_rank(g.rank), SCR_W / 2, 268, 46, 1.0f, 0.0f, &t_hero);
+    mage_draw_sprite_ret(g_title_grp, mage_hero_sprite_for_rank(g.rank), SCR_W / 2, 268, 92, 1.0f, 0.0f, &t_hero);
     if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
 
     /* 命名组 */
@@ -1837,7 +1837,9 @@ static void scene_handle(int act) {
             if (act == ACT_NEXT) { funcSel = (funcSel + 1) % 8; g_need_refresh = 1; }
             else if (act == ACT_PREV) { funcSel = (funcSel + 7) % 8; g_need_refresh = 1; }
             else if (act == ACT_OK) { mage_set_scene(FUNC_SCENE[funcSel]); }
-            else if (act == ACT_BACK) { g.cityMode = 0; g_need_refresh = 1; }
+            /* 功能栏长按OK(返回键) = 真正回地图（SC_WILD），兑现提示"长按 回地图"。
+             * 旧逻辑只在 cityMode 0↔1 间互切，导致进城后困在菜单迷宫出不来（用户反馈"菜单关不掉"）。 */
+            else if (act == ACT_BACK) { mage_set_scene(SC_WILD); g.cityMode = 0; g_need_refresh = 1; }
         }
         break;
     case SC_STATUS:

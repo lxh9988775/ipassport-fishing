@@ -253,11 +253,11 @@ static void fx_build(void)
     lv_obj_remove_style_all(F.hero);
     lv_obj_set_style_bg_opa(F.hero, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(F.hero, 0, 0);
-    lv_obj_set_size(F.hero, 36, 46);
+    lv_obj_set_size(F.hero, 72, 92);
     /* 关键修复：mage_draw_bg 往 F.hero 容器里画的是「image 子对象」，
      * 必须拿它的指针才能改 src；直接 lv_image_set_src(F.hero,...) 作用在容器上
      * 会越界写坏 LVGL 实例内存 -> 延迟几帧后 Guru 崩溃（进战斗即崩的根因）。 */
-    mage_draw_bg_ret(F.hero, mage_hero_sprite_for_rank(g.rank), 0, 0, 36, 46, &F.heroImg);
+    mage_draw_bg_ret(F.hero, mage_hero_sprite_for_rank(g.rank), 0, 0, 72, 92, &F.heroImg);
     F.heroRankSig = -1;   /* 首帧由 render 按当前职级再校准（晋升后重进战斗也能更新） */
 
     /* 前景草丛：HTML 画两组三角，这里用一排深绿小三角块近似（视差 1.3） */
@@ -745,8 +745,8 @@ void mage_fx_render(void)
         const lv_image_dsc_t *hd = mage_img(mage_hero_sprite_for_rank(g.rank));
         if (hd && F.heroImg) { lv_image_set_src(F.heroImg, hd); F.heroRankSig = g.rank; }
     }
-    lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 18,
-                   (int)(250.0f + hBob) - 46);
+    lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 36,
+                   (int)(250.0f + hBob) - 92);
     /* 主角受击闪白：只在状态翻转的那一帧设置。
      * 每帧无条件设 img_opa 会持续触发 invalidate -> 卡死。
      * 作用在 image 子对象 F.heroImg（容器 F.hero 设 img_opa 不生效）。 */
@@ -992,7 +992,7 @@ void mage_fx_result(int show, const char *title, const char *footer, const char 
     if (show <= 0 || n <= 0 || !lines) { panel_hide(); return; }
     if (s_pmode != FX_PM_RESULT) {
         s_pmode = FX_PM_RESULT;
-        panel_geo(1, 20, 120, SCR_W - 40, 166, 0x0a0818);
+        panel_geo(1, 20, 120, SCR_W - 40, 180, 0x0a0818);
         lv_obj_set_width(F.evtName, SCR_W - 40);
         lv_obj_set_style_text_color(F.evtName, lv_color_hex(0xffd93d), 0);
         lv_obj_set_pos(F.evtName, 0, 8);
@@ -1052,7 +1052,7 @@ void mage_fx_expo(int show, const char *title, const char *sub,
         lv_obj_set_pos(F.evtDesc, 0, 54 + nrows * 16 + 4);
         lv_obj_set_width(F.evtHint, SCR_W - 28);
         lv_obj_set_style_text_color(F.evtHint, lv_color_hex(0xc9a227), 0);
-        lv_obj_set_pos(F.evtHint, 0, 228);
+        lv_obj_set_pos(F.evtHint, 0, 220);
     }
     static char lprevL[96], lprevR[96], lprevX[256], ltitle[28], lsub[28], lfoot[28];
     static uint8_t mygen = 0;
