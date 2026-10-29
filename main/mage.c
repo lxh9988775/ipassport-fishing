@@ -1620,7 +1620,7 @@ static void refresh_ui(void) {
             lv_obj_set_width(g_story_txt, SCR_W - 20);
             lv_label_set_long_mode(g_story_txt, LV_LABEL_LONG_WRAP);
             lv_obj_set_style_bg_color(g_story_txt, lv_color_hex(0x140e26), 0);
-            lv_obj_set_style_bg_opa(g_story_txt, LV_OPA_75, 0);
+            lv_obj_set_style_bg_opa(g_story_txt, LV_OPA_70, 0);
             lv_obj_set_style_pad_all(g_story_txt, 8, 0);
             lv_obj_set_pos(g_story_txt, 10, 178);
 
@@ -2208,7 +2208,7 @@ static void scene_handle(int act) {
         break;
     case SC_WILD: {
         ensureDungeonOffers();
-        int n = 5 + 1 + g.ndoffers;
+        int n = 5 + 1 + g.ndoffers + (g.towerUnlocked ? 1 : 0);  /* 终焉之塔行（第五章清场后）也要计入可选范围 */
         if (act == ACT_NEXT) wildIdx = (wildIdx + 1) % n;
         else if (act == ACT_PREV) wildIdx = (wildIdx + n - 1) % n;
         else if (act == ACT_BACK) { mage_set_scene(SC_CITY); g.cityMode = 0; }
