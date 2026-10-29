@@ -70,12 +70,15 @@ def draw_home(base, tint=None, winter=False, name=None):
     d.text((14, 4), "等级 1", font=font(), fill=BROWN)
     d.text((92, 4), "开心", font=font(), fill=RED)
     # 4) 状态条（与固件一致：row0=118, dyy=14 -> 118/132/146/160，收在 y168，绝不碰列表）
+    #    先画条、后画文字，保证文字绝不被条盖住（修正预览渲染遮挡）
     rows = [("饱食", 90), ("干净", 85), ("玩乐", 70), ("精力", 95)]
     for i, (lab, v) in enumerate(rows):
         y = 118 + i * 14
-        d.text((8, y), lab, font=font(), fill=BROWN)
         d.rectangle([40, y, 160, y + 8], fill=(232, 220, 210, 255))
         d.rectangle([40, y, 40 + v, y + 8], fill=(120, 210, 130, 255))
+    for i, (lab, v) in enumerate(rows):
+        y = 118 + i * 14
+        d.text((8, y), lab, font=font(), fill=BROWN)
     # 5) 照顾列表
     items = ["喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照"]
     sel = 0
@@ -96,6 +99,66 @@ def draw_home(base, tint=None, winter=False, name=None):
     if name is not None:
         d = ImageDraw.Draw(img, "RGBA")
         d.text((150, 4), name, font=font(), fill=BROWN)
+    return img.convert("RGB")
+
+def draw_home_v2(base, winter=False, name=None):
+    """改版主屏（有设计感，待用户确认）：
+       - 状态区：圆角卡 + 细边框 + 四项各配色圆点 + 同色进度条
+       - 照顾列表：同样卡化 + 选中红胶囊
+    层级仍与固件一致：房间背景 -> tint(顶区) -> 卡片(不透明) -> 文字/兔子。"""
+    img = base.convert("RGBA")
+    if winter:
+        ov = Image.new("RGBA", (W, H), (55, 75, 130, 56))
+        ImageDraw.Draw(ov).rectangle([0, 116, W, H], fill=(0, 0, 0, 0))
+        img = Image.alpha_composite(img, ov)
+    d = ImageDraw.Draw(img, "RGBA")
+
+    # ---- 状态卡 ----
+    CARD = CREAM + (255,)
+    BORD = (150, 110, 80, 255)
+    d.rounded_rectangle([6, 106, 234, 198], radius=14, fill=CARD, outline=BORD, width=2)
+    d.text((18, 110), "状态", font=font(), fill=BROWN)
+    stat = [("饱食", 90, (240, 160, 64)), ("干净", 85, (91, 168, 224)),
+            ("玩乐", 70, (240, 111, 160)), ("精力", 95, (111, 192, 111))]
+    for i, (lab, v, col) in enumerate(stat):
+        y = 130 + i * 16
+        # 配色圆点
+        d.ellipse([14, y + 1, 24, y + 11], fill=col + (255,))
+        d.text((32, y), lab, font=font(), fill=BROWN)
+        # 进度条（圆角感：先灰底后同色填充）
+        bx0, bx1 = 74, 212
+        d.rounded_rectangle([bx0, y, bx1, y + 9], radius=4, fill=(232, 220, 210, 255))
+        fw = int((bx1 - bx0) * v / 100)
+        if fw > 4:
+            d.rounded_rectangle([bx0, y, bx0 + fw, y + 9], radius=4, fill=col + (255,))
+
+    # ---- 照顾卡（y200 起，与状态卡 y198 留 2px 干净间隙）----
+    d.rounded_rectangle([6, 200, 234, 314], radius=14, fill=CARD, outline=BORD, width=2)
+    d.text((18, 204), "照顾", font=font(), fill=BROWN)
+    items = ["喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照"]
+    sel = 0
+    for i, it in enumerate(items):
+        y = 220 + i * 15
+        if i == sel:
+            d.rounded_rectangle([10, y - 1, 230, y + 14], radius=7, fill=RED)
+            d.text((22, y), it, font=font(), fill=WHITE)
+        else:
+            d.text((22, y), it, font=font(), fill=BROWN)
+
+    # ---- HUD ----
+    d.text((14, 4), "等级 1", font=font(), fill=BROWN)
+    d.text((92, 4), "开心", font=font(), fill=RED)
+    if name is not None:
+        d.text((150, 4), name, font=font(), fill=BROWN)
+
+    # ---- 兔子（在卡片之上，干净）----
+    rb = load_rabbit()
+    if rb:
+        img.alpha_composite(rb, (84, 26))
+        if winter:
+            cap = os.path.join(SPR, "costume_hat.png")
+            if os.path.exists(cap):
+                img.alpha_composite(Image.open(cap).convert("RGBA"), (84, 26))
     return img.convert("RGB")
 
 def draw_intro(step):
@@ -160,6 +223,17 @@ def main():
     out2 = os.path.join(ROOT, "pet_preview_season.png")
     season.save(out2)
     print("written", out2)
+
+    # home_redesign.png: 改前(现版朴素状态区) vs 改后(有设计感的状态卡+照顾卡)
+    before_home = draw_home(room)
+    after_home = draw_home_v2(room, winter=False, name=None)
+    redesign = side_by_side(before_home, after_home,
+                             "改前：朴素状态条(文字易与条重叠)",
+                             "改后：状态卡+配色圆点+同色条+照顾卡",
+                             "主屏改版（设计感提升，待确认）")
+    out3 = os.path.join(ROOT, "pet_preview_home_redesign.png")
+    redesign.save(out3)
+    print("written", out3)
 
 if __name__ == "__main__":
     main()
