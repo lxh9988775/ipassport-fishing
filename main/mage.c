@@ -354,7 +354,7 @@ static void build_ui(void) {
     g_menu0      = mk_label(g_title_grp, "  继续冒险", 0, 156, C_GRAY);
     g_menu1      = mk_label(g_title_grp, "  新的旅程", 0, 190, C_GRAY);
     g_title_foot = mk_label(g_title_grp, "v6.4 · 魔法帝之路", 0, 272, C_DIM);
-    g_title_hint = mk_label(g_title_grp, "↑↓ 选择 · OK 确定", 0, 296, C_DIM);
+    g_title_hint = mk_label(g_title_grp, "↑↓ 选择 · OK 确定", 0, 296, C_SUB);
     /* 标题页主视觉：与 HTML 一致用 title_art 全屏铺底。
      * 必须建在所有文字之后并移到最底层，否则会盖住标题文字。 */
     lv_obj_t *t_bg = NULL, *t_hero = NULL;
@@ -373,7 +373,7 @@ static void build_ui(void) {
     lv_obj_set_scrollbar_mode(g_name_grp, LV_SCROLLBAR_MODE_OFF);
     g_name_prompt = mk_label(g_name_grp, "为你的魔法师起名：", 0, 70, C_WHITE);
     g_name_val    = mk_label(g_name_grp, "", 0, 130, C_GOLD);
-    g_name_hint   = mk_label(g_name_grp, "↑↓ 换名 · OK 确定 · 长按返回", 0, 214, C_DIM);
+    g_name_hint   = mk_label(g_name_grp, "↑↓ 换名 · OK 确定 · 长按返回", 0, 214, C_SUB);
 
     /* 通用场景组（标题/正文/提示） */
     g_scene_grp = lv_obj_create(g_root);
@@ -722,7 +722,7 @@ static void build_ui(void) {
 
     g_scene_hint = lv_label_create(g_scene_grp);
     use_font12(g_scene_hint);   /* HTML 底部操作提示为 8-9px -> 12px 子集 */
-    lv_obj_set_style_text_color(g_scene_hint, C_DIM, 0);
+    lv_obj_set_style_text_color(g_scene_hint, C_SUB, 0);
     lv_obj_set_style_text_align(g_scene_hint, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_width(g_scene_hint, SCR_W);
     lv_obj_set_pos(g_scene_hint, 0, SCR_H - 18);
@@ -1624,6 +1624,10 @@ static void refresh_ui(void) {
         if (last_frame_scene != g_scene) {
             last_frame_scene = g_scene;
             bool pg = (g_scene == SC_PARTNERS);
+            /* 离开伙伴页：强制收起操作菜单/确认面板并清状态，杜绝菜单面板残留
+             * 盖住城镇等其它界面（用户反馈"伙伴菜单关不掉"的根因：返回城市切走后
+             * partners_grid_render 不再被调用，g_part_menu 面板永远停在屏幕上）。 */
+            if (!pg) { partMenuOpen = 0; partRelConf = 0; set_hidden(g_part_menu, true); set_hidden(g_part_conf, true); }
             set_hidden(g_frame, !fon);
             set_hidden(g_frame_bar, !fon);
             set_hidden(g_frame_title, !fon);
@@ -1653,6 +1657,8 @@ static void refresh_ui(void) {
                 set_hidden(g_list, true);            /* 离帧场景（含战斗）确保列表隐藏 */
                 set_hidden(g_part_root, true);
                 set_hidden(g_part_info, true);
+                set_hidden(g_part_menu, true);
+                set_hidden(g_part_conf, true);
             }
         }
     }
