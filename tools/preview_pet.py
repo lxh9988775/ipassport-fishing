@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+preview_pet.py - 口袋兔 v4 改进「电脑端对比图」生成器（纯预览，不参与固件编译）
+
+用与固件同套坐标/素材渲染 240x320 模拟屏，输出两张对比图交用户确认：
+  - pet_preview_naming.png  : A 轻引导/命名（左=改前无引导直进主屏，右=改后首次启动命名屏）
+  - pet_preview_season.png  : C 昼夜/季节纯视觉（左=改前恒定白天，右=改后夜晚+冬季蓝调+雪帽）
+
+依赖：Pillow + 源字体 SourceHanSansCN-Normal.otf（与 gen_font.py 同源）。
+用法：python tools/preview_pet.py
+"""
+import os
+from PIL import Image, ImageDraw, ImageFont
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SPR = os.path.join(ROOT, "assets", "sprites")
+FONT = os.path.join(ROOT, "assets", "fonts", "SourceHanSansCN-Normal.otf")
+OTF = FONT if os.path.exists(FONT) else None
+
+W, H = 240, 320
+CREAM = (255, 246, 240)
+PINK = (255, 222, 232)
+RED = (196, 30, 80)
+BROWN = (96, 64, 44)
+GRAYTX = (120, 100, 90)
+WHITE = (255, 255, 255)
+
+_f = None
+def font(sz=16):
+    global _f
+    if _f is None:
+        _f = ImageFont.truetype(OTF, 16) if OTF else ImageFont.load_default()
+    return _f
+
+def load_room():
+    p = os.path.join(SPR, "pet_room_preview.png")
+    if os.path.exists(p):
+        im = Image.open(p).convert("RGB").resize((W, H))
+        return im
+    # 退化：纯色房间
+    return Image.new("RGB", (W, H), (220, 235, 210))
+
+def load_rabbit():
+    p = os.path.join(SPR, "rabbit_front.png")
+    if os.path.exists(p):
+        return Image.open(p).convert("RGBA")
+    return None
+
+def draw_home(base, tint=None, winter=False, name=None):
+    """在 base(房间图) 上叠加主屏 UI，返回 PIL Image。tint=(r,g,b,opa) 可选。"""
+    img = base.convert("RGBA")
+    d = ImageDraw.Draw(img, "RGBA")
+    # 文字衬底面板（与固件一致：状态区 y116 / 列表区 y176）
+    d.rectangle([4, 116, 168, 178], fill=CREAM + (255,))
+    d.rectangle([8, 176, 232, 308], fill=CREAM + (255,))
+    # HUD
+    d.text((14, 4), "等级 1", font=font(), fill=BROWN)
+    d.text((92, 4), "开心", font=font(), fill=RED)
+    # 状态条
+    rows = [("饱食", 90), ("干净", 85), ("玩乐", 70), ("精力", 95)]
+    for i, (lab, v) in enumerate(rows):
+        y = 117 + i * 18
+        d.text((8, y), lab, font=font(), fill=BROWN)
+        d.rectangle([40, y, 160, y + 8], fill=(232, 220, 210, 255))
+        d.rectangle([40, y, 40 + v, y + 8], fill=(120, 210, 130, 255))
+    # 照顾列表
+    items = ["喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照"]
+    sel = 0
+    d.rounded_rectangle([10, 178 + sel * 21, 218, 178 + sel * 21 + 22], radius=11, fill=RED)
+    for i, it in enumerate(items):
+        col = WHITE if i == sel else BROWN
+        d.text((18, 179 + i * 21), it, font=font(), fill=col)
+    # 兔子
+    rb = load_rabbit()
+    if rb:
+        img.alpha_composite(rb, (84, 26))
+        if winter:
+            # 雪帽：复用草帽精灵当雪帽纯显示（与固件一致，不改真实 costume）
+            cap = os.path.join(SPR, "costume_hat.png")
+            if os.path.exists(cap):
+                img.alpha_composite(Image.open(cap).convert("RGBA"), (84, 26))
+    # 季节字符（HUD 小标）
+    if name is not None:
+        d.text((150, 4), name, font=font(), fill=BROWN)
+    # 昼夜/季节叠色层（纯视觉，仅顶部房间区可见；面板不透明挡住下半）
+    if tint:
+        r, g, b, opa = tint
+        ov = Image.new("RGBA", (W, H), (r, g, b, opa))
+        # 只透出顶部房间区（y < 116）：下半蒙版擦透明，避免压字
+        ImageDraw.Draw(ov).rectangle([0, 116, W, H], fill=(0, 0, 0, 0))
+        img = Image.alpha_composite(img, ov)
+    return img.convert("RGB")
+
+def draw_intro(step):
+    """首次启动引导屏（A 项）。step: 0 欢迎 / 1 起名 / 2 照顾提示。"""
+    img = Image.new("RGBA", (W, H), CREAM + (255,))
+    d = ImageDraw.Draw(img, "RGBA")
+    if step == 0:
+        d.text((W // 2 - 32, 24), "初次见面", font=font(), fill=RED)
+        body = ["你好呀！", "我是你的口袋兔", "我会陪你一起长大"]
+        for i, line in enumerate(body):
+            d.text((W // 2 - 48, 70 + i * 24), line, font=font(), fill=BROWN)
+        d.text((W // 2 - 48, H - 36), "按 OK 继续", font=font(), fill=GRAYTX)
+    elif step == 1:
+        d.text((W // 2 - 56, 24), "给它起个名字", font=font(), fill=RED)
+        d.text((W // 2 - 56, 70), "用上下键选一个", font=font(), fill=BROWN)
+        d.text((W // 2 - 40, 94), "按 OK 确定", font=font(), fill=BROWN)
+        # 名字预设（团子高亮）
+        names = ["团子", "豆豆", "毛毛", "小白", "点点", "球球"]
+        for i, n in enumerate(names):
+            col = RED if i == 0 else BROWN
+            d.text((W // 2 - 18, 140 + i * 22), n, font=font(), fill=col)
+        d.text((W // 2 - 52, H - 36), "↑↓选 · OK确定", font=font(), fill=GRAYTX)
+    else:
+        d.text((W // 2 - 40, 24), "照顾我吧", font=font(), fill=RED)
+        body = ["喂食·洗澡·陪玩·睡觉", "把我照顾好", "还能换装、集贴纸！"]
+        for i, line in enumerate(body):
+            d.text((W // 2 - 64, 70 + i * 24), line, font=font(), fill=BROWN)
+        d.text((W // 2 - 48, H - 36), "按 OK 开始", font=font(), fill=GRAYTX)
+    return img.convert("RGB")
+
+def side_by_side(left, right, llabel, rlabel, title):
+    pad = 8
+    tw = W * 2 + pad * 3
+    th = H + 40
+    canvas = Image.new("RGB", (tw, th), (240, 240, 240))
+    canvas.paste(left, (pad, 36))
+    canvas.paste(right, (pad * 2 + W, 36))
+    d = ImageDraw.Draw(canvas)
+    d.text((pad, 8), title, font=font(), fill=(40, 40, 40))
+    d.text((pad, 36 + H + 6), llabel, font=font(), fill=GRAYTX)
+    d.text((pad * 2 + W, 36 + H + 6), rlabel, font=font(), fill=GRAYTX)
+    return canvas
+
+def main():
+    room = load_room()
+    # naming.png: 改前(无引导直进主屏) vs 改后(首次启动命名屏)
+    before_home = draw_home(room)
+    after_intro = draw_intro(1)
+    naming = side_by_side(before_home, after_intro,
+                           "改前：无引导，直接进主屏", "改后：首次启动·起名屏(默认团子可改)",
+                           "A 轻剧情引导 + 兔子人格（命名屏）")
+    out1 = os.path.join(ROOT, "pet_preview_naming.png")
+    naming.save(out1)
+    print("written", out1)
+
+    # season.png: 改前(恒定白天) vs 改后(夜晚+冬季蓝调+雪帽)
+    before_season = draw_home(room, tint=None, winter=False, name="春")
+    after_season = draw_home(room, tint=(55, 75, 130, 56), winter=True, name="冬")
+    season = side_by_side(before_season, after_season,
+                           "改前：恒定白天，无季节变化", "改后：夜晚+冬季蓝调，兔子戴雪帽",
+                           "C 昼夜/季节纯视觉（不碰 pet_tick 衰减）")
+    out2 = os.path.join(ROOT, "pet_preview_season.png")
+    season.save(out2)
+    print("written", out2)
+
+if __name__ == "__main__":
+    main()

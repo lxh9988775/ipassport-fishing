@@ -33,6 +33,9 @@ COSTUMES = [
     ("costume_glasses", "眼镜"),
     ("costume_scarf",   "围巾"),
     ("costume_flower",  "花环"),
+    ("costume_cape",    "披风"),
+    ("costume_bell",    "铃铛"),
+    ("costume_starcrown","星冠"),
 ]
 
 # 调色板
@@ -54,6 +57,14 @@ FLW_P    = (244, 130, 168, 255)
 FLW_Y    = (250, 214, 100, 255)
 FLW_W    = (250, 250, 246, 255)
 
+# v4 新增 3 款装扮
+CAPE_MAIN = (120, 92, 196, 255)   # 披风主色（紫罗兰）
+CAPE_LT   = (156, 128, 224, 255)  # 披风内衬高光
+CAPE_COL  = (250, 206, 84, 255)    # 披风金领口
+BELL_GD   = (250, 206, 84, 255)    # 铃铛金
+BELL_DK   = (214, 168, 56, 255)
+STAR_GD   = (250, 214, 100, 255)   # 星冠金
+
 
 def new_canvas():
     return Image.new("RGBA", (SIZE, SIZE), (0, 0, 0, 0))
@@ -65,6 +76,17 @@ def rect(d, x0, y0, x1, y1, color):
 
 def ellipse(d, x0, y0, x1, y1, color):
     d.ellipse([x0, y0, x1, y1], fill=color)
+
+
+def draw_star(d, cx, cy, r, color):
+    """四角星（菱形 + 十字），72x72 下约 r=5 的一颗小星。"""
+    d.line([(cx - r, cy), (cx + r, cy)], fill=color, width=2)
+    d.line([(cx, cy - r), (cx, cy + r)], fill=color, width=2)
+    d.polygon([
+        (cx, cy - r), (cx + r // 2, cy - r // 2), (cx + r, cy),
+        (cx + r // 2, cy + r // 2), (cx, cy + r), (cx - r // 2, cy + r // 2),
+        (cx - r, cy), (cx - r // 2, cy - r // 2),
+    ], fill=color)
 
 
 def draw_hat():
@@ -192,7 +214,42 @@ def draw_flower():
     return im
 
 
-DRAWERS = [draw_hat, draw_crown, draw_glasses, draw_scarf, draw_flower]
+def draw_cape():
+    """披风：紫罗兰斗篷从脖子垂到身体下，盖住胸前；金领口。"""
+    im = new_canvas()
+    d = ImageDraw.Draw(im)
+    # 主体（上窄下宽，像披在肩上垂落）
+    d.polygon([(22, 46), (50, 46), (55, 70), (17, 70)], fill=CAPE_MAIN)
+    # 内衬高光
+    d.polygon([(28, 49), (44, 49), (48, 68), (24, 68)], fill=CAPE_LT)
+    # 金领口
+    d.rectangle([20, 42, 52, 47], fill=CAPE_COL)
+    return im
+
+
+def draw_bell():
+    """铃铛：胸前小金铃 + 顶环 + 铃舌。"""
+    im = new_canvas()
+    d = ImageDraw.Draw(im)
+    ellipse(d, 30, 48, 42, 58, BELL_GD)
+    d.rectangle([30, 46, 42, 49], fill=BELL_DK)    # 顶环带
+    d.point((36, 45), fill=BELL_DK)                # 挂环
+    d.rectangle([35, 58, 37, 61], fill=BELL_DK)    # 铃舌
+    d.point((33, 52), fill=BELL_DK)                # 高光点
+    return im
+
+
+def draw_starcrown():
+    """星冠：头顶三颗小金星（tiara）。"""
+    im = new_canvas()
+    d = ImageDraw.Draw(im)
+    for cx in (26, 36, 46):
+        draw_star(d, cx, 7, 5, STAR_GD)
+    return im
+
+
+DRAWERS = [draw_hat, draw_crown, draw_glasses, draw_scarf, draw_flower,
+           draw_cape, draw_bell, draw_starcrown]
 
 
 # ---------------------------------------------------------------------------

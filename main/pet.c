@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -75,15 +76,26 @@ static lv_color_t gc(int i) {
 }
 
 /* ===================== 场景模式 ===================== */
-enum { SCR_HOME = 0, SCR_MENU, SCR_PASSPORT, SCR_GAME, SCR_DRESS };
+enum { SCR_HOME = 0, SCR_MENU, SCR_PASSPORT, SCR_GAME, SCR_DRESS, SCR_INTRO };
 
-/* ===================== 换装（v3） ===================== */
+/* ===================== 换装（v3 起，v4 扩到 8 款） ===================== */
 static const lv_image_dsc_t *const COSTUME_IMG[PET_COSTUME_MAX + 1] = {
     NULL, &costume_hat, &costume_crown, &costume_glasses, &costume_scarf, &costume_flower,
+    &costume_cape, &costume_bell, &costume_starcrown,
 };
 static const char *const COSTUME_NAMES[PET_COSTUME_MAX + 1] = {
-    "不穿", "草帽", "皇冠", "眼镜", "围巾", "花环",
+    "不穿", "草帽", "皇冠", "眼镜", "围巾", "花环", "披风", "铃铛", "星冠",
 };
+
+/* ===================== 昼夜 / 季节（v4，纯视觉层） =====================
+ * 按 RTC 真实时间算时段与季节；RTC 未校准时回退到慢循环，保证演示可见变化。
+ * 只改全屏半透明叠色层 g_tint 的颜色/不透明度，绝不触碰 pet_tick 衰减逻辑。 */
+enum { DP_DAY = 0, DP_DUSK = 1, DP_NIGHT = 2 };
+enum { SEA_SPR = 0, SEA_SUM = 1, SEA_AUT = 2, SEA_WIN = 3 };
+
+/* ===================== 名字预设（v4，首启引导/护照改名用） ===================== */
+static const char *const PET_NAMES[] = { "团子", "豆豆", "毛毛", "小白", "点点", "球球" };
+static const int NPET_NAMES = (int)(sizeof(PET_NAMES) / sizeof(PET_NAMES[0]));
 
 /* 颜色配对用的四色蛋（顺序与 COLORS_RGB / gc(i) 严格一致） */
 static const lv_image_dsc_t *const EGG_IMG[4] = {
@@ -115,7 +127,8 @@ static void nvs_load_save(void) {
 }
 
 static void nvs_save_now(void) {
-    uint8_t buf[64];
+    /* v4 存档 = 8 头 + 3 槽 × 36 = 116 字节；缓冲留足到 128 防止溢出。 */
+    uint8_t buf[128];
     int n = pet_save_serialize(buf, (int)sizeof(buf));
     if (n <= 0) return;
     nvs_handle_t h;
@@ -193,6 +206,15 @@ static lv_obj_t *g_home_lbl[6] = {0};
 static lv_obj_t *g_home_cap  = NULL;
 static lv_obj_t *g_home_hint = NULL;
 
+/* 昼夜/季节叠色层（纯视觉；建在房间背景之上、文字面板之下，只透出顶部房间区） */
+static lv_obj_t *g_tint = NULL;
+static int s_daypart = -1;     /* 缓存时段，仅变化时改 g_tint（守 LVGL 重绘铁律） */
+static int s_season = -1;      /* 缓存季节 */
+
+/* 首次启动引导状态（v4） */
+static int g_intro_step = 0;   /* 0 欢迎 / 1 起名 / 2 照顾提示 */
+static int g_name_sel = 0;     /* 当前选中的名字预设下标 */
+
 /* 菜单（小游戏列表） */
 static lv_obj_t *g_menu_lbl[7] = {0};
 static lv_obj_t *g_menu_cap  = NULL;
@@ -202,15 +224,26 @@ static lv_obj_t *g_menu_title = NULL;
 static lv_obj_t *g_dress_rab  = NULL;   /* 2x 大兔子（试衣镜） */
 static lv_obj_t *g_dress_cos  = NULL;   /* 装扮预览叠层（同位置同缩放） */
 static lv_obj_t *g_dress_cap  = NULL;
-static lv_obj_t *g_dress_lbl[6] = {0};
+static lv_obj_t *g_dress_lbl[PET_COSTUME_MAX + 1] = {0};
 static lv_obj_t *g_dress_msg  = NULL;
 static lv_obj_t *g_dress_name = NULL;   /* 镜下当前装扮名 */
 
-/* 护照（贴纸墙） */
+/* 护照（贴纸墙，v4 扩到 16 枚，4×4 网格） */
 static lv_obj_t *g_pass_title = NULL;
-static lv_obj_t *g_pass_count = NULL;
-static lv_obj_t *g_pass_cell[12] = {0};
-static lv_obj_t *g_pass_icon[12] = {0};
+static lv_obj_t *g_pass_count = NULL;   /* 同时显示宠物名字 + 贴纸数 */
+static lv_obj_t *g_pass_cell[PET_STICKER_MAX] = {0};
+static lv_obj_t *g_pass_icon[PET_STICKER_MAX] = {0};
+
+/* 首次启动引导（v4）UI 对象 */
+static lv_obj_t *g_intro_title = NULL;
+static lv_obj_t *g_intro_body  = NULL;
+static lv_obj_t *g_intro_name  = NULL;   /* 命名页：当前选中的名字预设 */
+static lv_obj_t *g_intro_hint  = NULL;
+
+/* 昼夜/季节 HUD：季节字符（春/夏/秋/冬）小标，纯视觉提示 */
+static lv_obj_t *g_season_lbl = NULL;
+/* 冬天彩蛋：纯显示叠层（复用草帽精灵当雪帽，绝不改真实 costume） */
+static lv_obj_t *g_winter_cap = NULL;
 
 /* 游戏层 */
 static lv_obj_t *g_g_title = NULL;
@@ -321,6 +354,20 @@ static void build_home(void) {
     lv_img_set_src(g_home_bg, &pet_room);
     lv_obj_set_pos(g_home_bg, 0, 0);
 
+    /* 昼夜/季节叠色层（纯视觉，v4）：建在房间背景之上、奶油文字面板之下。
+       只透出顶部房间区（面板不透明挡住下半），文字绝不压字（审核铁律）。
+       颜色/不透明度由 refresh_home 按 RTC 算时段+季节后，仅在变化时刷新（守 LVGL 重绘铁律）。 */
+    g_tint = lv_obj_create(g_home);
+    lv_obj_set_size(g_tint, SCR_W, SCR_H);
+    lv_obj_set_pos(g_tint, 0, 0);
+    lv_obj_set_style_bg_color(g_tint, lv_color_make(255, 250, 230), 0);
+    lv_obj_set_style_bg_opa(g_tint, LV_OPA_12, 0);
+    lv_obj_set_style_border_width(g_tint, 0, 0);
+    lv_obj_set_style_radius(g_tint, 0, 0);
+    lv_obj_set_style_pad_all(g_tint, 0, 0);
+    lv_obj_clear_flag(g_tint, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_move_to_index(g_tint, 1);   /* 沉到房间背景(0)之上、面板/兔子之下 */
+
     /* 文字衬底面板（在所有文字/胶囊之前创建，沉在文字下面）：
        状态条区 y116-178 / 照顾列表区 y176-308；房间家具只安排在面板之外的缝隙 */
     make_panel(g_home, 4, 116, 164, 62, CREAM);
@@ -369,6 +416,16 @@ static void build_home(void) {
     g_rab_cos = lv_img_create(g_home);
     costume_overlay_set(g_rab_cos, pet_get_costume(), false);
     lv_obj_set_pos(g_rab_cos, g_rab_x, 26);
+
+    /* 昼夜/季节 HUD：季节字符小标（纯视觉提示，不挡任何状态条） */
+    g_season_lbl = make_label(g_home, "春", 150, 4, BROWN);
+
+    /* 冬天彩蛋：纯显示雪帽（复用草帽精灵），绝不改真实 costume，不奖励不惩罚。
+       仅冬季且当前没戴草帽时显示；位置跟随兔子头部，每帧同步。 */
+    g_winter_cap = lv_img_create(g_home);
+    lv_img_set_src(g_winter_cap, &costume_hat);
+    lv_obj_set_pos(g_winter_cap, g_rab_x, 26);
+    lv_obj_add_flag(g_winter_cap, LV_OBJ_FLAG_HIDDEN);
 
     g_lbl_zzz = make_label(g_home, "z Z z", g_rab_x + 58, 30, lv_color_make(150, 150, 170));
     lv_obj_add_flag(g_lbl_zzz, LV_OBJ_FLAG_HIDDEN);
@@ -420,7 +477,7 @@ static void build_menu(void) {
 static const char *sticker_name(int id) {
     /* 每个贴纸一个代表汉字（UTF-8 一个汉字 3 字节，不能用 char 数组按字节取）。
        字库由 tools/gen_font.py 扫描本文件自动生成，新增汉字会被自动收录。 */
-    static const char *const names[12] = {
+    static const char *const names[PET_STICKER_MAX] = {
         "见", /* PST_FIRST  初次见面   */
         "食", /* PST_FEED5  喂食 5 次  */
         "澡", /* PST_CLEAN5 洗澡 5 次  */
@@ -433,25 +490,99 @@ static const char *sticker_name(int id) {
         "忆", /* PST_GAME_MEMORY 记忆翻牌 */
         "猫", /* PST_GAME_PEEK   躲猫猫   */
         "跳", /* PST_GAME_RHYTHM 节奏蹦蹦 */
+        "友", /* PST_STK6   贴纸满 6 枚（解锁第 2 只宠物） */
+        "五", /* PST_LV5    到达 5 级  */
+        "季", /* PST_SEASON4 经历春夏秋冬 */
+        "装", /* PST_COS_ALL 穿遍全部装扮 */
     };
-    if (id < 0 || id >= 12) return "?";
+    if (id < 0 || id >= PET_STICKER_MAX) return "?";
     return names[id];
 }
 
 static void build_passport(void) {
     lv_obj_clean(g_layer);
     g_pass_title = make_label(g_layer, "宠物护照", 0, 0, RED_TXT);
-    lv_obj_align(g_pass_title, LV_ALIGN_TOP_MID, 0, 22);
-    g_pass_count = make_label(g_layer, "贴纸 0/12", 0, 0, BROWN);
-    lv_obj_align(g_pass_count, LV_ALIGN_TOP_MID, 0, 46);
+    lv_obj_align(g_pass_title, LV_ALIGN_TOP_MID, 0, 20);
+    /* 同时显示当前宠物名字 + 贴纸进度（v4：护照/贴纸簿显示名字） */
+    g_pass_count = make_label(g_layer, "团子 · 贴纸 0/16", 0, 0, BROWN);
+    lv_obj_align(g_pass_count, LV_ALIGN_TOP_MID, 0, 44);
 
-    int cx[3] = { 18, 92, 166 };
-    int cy[4] = { 70, 134, 198, 262 };
-    for (int i = 0; i < 12; ++i) {
-        int r = i / 3, c = i % 3;
+    /* 4 列 × 4 行网格（16 枚贴纸）；顶部留 68px 给标题+名字 */
+    int cx[4] = { 8, 64, 120, 176 };
+    int cy[4] = { 68, 132, 196, 260 };
+    for (int i = 0; i < PET_STICKER_MAX; ++i) {
+        int r = i / 4, c = i % 4;
         int x = cx[c], y = cy[r];
         g_pass_cell[i] = make_panel(g_layer, x, y, 56, 56, PINK);
         g_pass_icon[i] = make_label(g_layer, "?", x + 20, y + 18, GRAYTX);
+    }
+
+    /* 底部提示：多宠物时提示“上下换宠物”，否则仅“返回” */
+    const char *hint = (pet_slot_count() > 1) ? "↑↓换宠物 · OK返回" : "按 OK 返回";
+    lv_obj_t *h = make_label(g_layer, hint, 0, 0, GRAYTX);
+    lv_obj_align(h, LV_ALIGN_BOTTOM_MID, 0, -6);
+}
+
+/* ===================== 首次启动轻引导（v4，A 项） =====================
+ * 三段式：0 欢迎 / 1 起名 / 2 照顾提示。默认名“团子”，可在第 1 段用上下键改。
+ * 纯文字页（复用 g_layer），不碰任何照顾逻辑（守红线①：不调快衰减/不死亡/不惩罚）。 */
+static void build_intro(void) {
+    lv_obj_clean(g_layer);
+    g_intro_title = make_label(g_layer, "初次见面", 0, 0, RED_TXT);
+    lv_obj_align(g_intro_title, LV_ALIGN_TOP_MID, 0, 24);
+    g_intro_body = make_label(g_layer, "", 0, 0, BROWN);
+    lv_obj_align(g_intro_body, LV_ALIGN_TOP_MID, 0, 70);
+    g_intro_name = make_label(g_layer, "", 0, 0, RUI_RED);
+    lv_obj_align(g_intro_name, LV_ALIGN_TOP_MID, 0, 150);
+    g_intro_hint = make_label(g_layer, "按 OK 继续", 0, 0, GRAYTX);
+    lv_obj_align(g_intro_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
+    refresh_intro();
+}
+
+static void refresh_intro(void) {
+    static const char *body0 =
+        "你好呀！\n我是你的口袋兔\n我会陪你一起长大";
+    static const char *body2 =
+        "喂食·洗澡·陪玩·睡觉\n把我照顾好\n还能换装、集贴纸！";
+    if (g_intro_step == 0) {
+        if (g_intro_title) set_text_cached(g_intro_title, "初次见面");
+        if (g_intro_body)  set_text_cached(g_intro_body, body0);
+        if (g_intro_name)  set_text_cached(g_intro_name, "");
+        if (g_intro_hint)  set_text_cached(g_intro_hint, "按 OK 继续");
+    } else if (g_intro_step == 1) {
+        if (g_intro_title) set_text_cached(g_intro_title, "给它起个名字");
+        if (g_intro_body)  set_text_cached(g_intro_body, "用上下键选一个\n按 OK 确定");
+        if (g_intro_name)  set_text_cached(g_intro_name, PET_NAMES[g_name_sel]);
+        if (g_intro_hint)  set_text_cached(g_intro_hint, "↑↓选 · OK确定");
+    } else {
+        if (g_intro_title) set_text_cached(g_intro_title, "照顾我吧");
+        if (g_intro_body)  set_text_cached(g_intro_body, body2);
+        if (g_intro_name)  set_text_cached(g_intro_name, "");
+        if (g_intro_hint)  set_text_cached(g_intro_hint, "按 OK 开始");
+    }
+}
+
+static void intro_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
+    if (ev != BSP_BTN_CLICK) return;
+    if (g_intro_step == 0) {
+        if (btn == BSP_BTN_OK) { g_intro_step = 1; refresh_intro(); fishing_audio_play(SFX_CLICK); }
+        return;
+    }
+    if (g_intro_step == 1) {
+        if (btn == BSP_BTN_UP)        { g_name_sel = (g_name_sel + NPET_NAMES - 1) % NPET_NAMES; refresh_intro(); fishing_audio_play(SFX_CLICK); }
+        else if (btn == BSP_BTN_DOWN) { g_name_sel = (g_name_sel + 1) % NPET_NAMES; refresh_intro(); fishing_audio_play(SFX_CLICK); }
+        else if (btn == BSP_BTN_OK) {
+            pet_set_name(PET_NAMES[g_name_sel]);   /* 默认“团子”即下标 0，可直接 OK 确定 */
+            g_intro_step = 2; refresh_intro(); fishing_audio_play(SFX_CATCH);
+        }
+        return;
+    }
+    /* step 2：结束引导，进入主屏 */
+    if (btn == BSP_BTN_OK) {
+        pet_mark_intro_done();
+        nvs_save_now();   /* 名字 + 引导完成标志落盘 */
+        g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms();
+        fishing_audio_play(SFX_CLICK);
     }
 }
 
@@ -459,6 +590,8 @@ static void build_passport(void) {
 static void game_init(int id);
 static void game_finish(void);
 static void build_dress(void);   /* 定义在 passport_input 之后，rebuild_current 要用 */
+static void build_intro(void);   /* v4 首次启动轻引导 */
+static void refresh_intro(void);
 
 static void build_game(void) {
     lv_obj_clean(g_layer);
@@ -485,6 +618,7 @@ static void rebuild_current(void) {
         else if (g_scr == SCR_PASSPORT) build_passport();
         else if (g_scr == SCR_GAME) build_game();
         else if (g_scr == SCR_DRESS) build_dress();
+        else if (g_scr == SCR_INTRO) build_intro();
     }
 }
 
@@ -518,6 +652,10 @@ static void do_care(int idx) {
     g_action_frame = fr;
     g_action_until = (int)now_ms() + (idx == 3 && ev == PET_EVT_SLEEP_START ? 0 : 1100);
     show_feedback(fb);
+    /* v4 多宠物：照顾可能触发里程碑解锁（贴纸满6/到3级），弹提示并落盘 */
+    int nl = pet_unlock_check();
+    if (nl > 0) show_feedback("解锁新宠物！");
+    nvs_save_now();
 }
 
 /* ===================== 输入：主屏 ===================== */
@@ -558,11 +696,28 @@ static void menu_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
 
 /* ===================== 输入：护照 ===================== */
 static void passport_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
-    (void)btn;
     if (ev != BSP_BTN_CLICK) return;
-    /* 任意键返回；但刚进入的 450ms 内忽略，防止切屏连击瞬间把护照弹回，
-       小朋友会以为护照页“打不开”。 */
-    if ((int)now_ms() - g_scr_since < 450) return;
+    if ((int)now_ms() - g_scr_since < 450) return;  /* 进护照防抖 */
+    if (pet_slot_count() > 1 &&
+        (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN)) {
+        /* v4 多宠物：在已解锁槽之间循环切换（复用菜单“上下选”范式）。
+           只切显示，不删任何宠物；切走再切回，原宠物进度原样保留。 */
+        int step = (btn == BSP_BTN_UP) ? -1 : 1;
+        int cur = pet_get_slot();
+        int next = cur;
+        for (int k = 0; k < PET_SLOT_MAX; ++k) {
+            next = (next + step + PET_SLOT_MAX) % PET_SLOT_MAX;
+            if (pet_slot_unlocked(next)) break;
+        }
+        if (next != cur) {
+            pet_set_slot(next);
+            nvs_save_now();          /* 切宠物低频，立即落盘 */
+            g_rebuild = 1;           /* 重建护照，刷新名字+贴纸 */
+            fishing_audio_play(SFX_CLICK);
+        }
+        return;
+    }
+    /* 任意键返回 */
     g_scr = SCR_HOME; g_rebuild = 1; g_scr_since = (int)now_ms();
 }
 
@@ -602,9 +757,9 @@ static void build_dress(void) {
     g_dress_name = make_label(mirror, COSTUME_NAMES[g_dress_sel], 0, 0, BROWN);
     lv_obj_align(g_dress_name, LV_ALIGN_BOTTOM_MID, 0, -8);
 
-    /* 装扮列表（右侧）：0=不穿，1..5=五件装扮；先建胶囊后建文字 */
+    /* 装扮列表（右侧）：0=不穿，1..8=八款装扮；先建胶囊后建文字 */
     g_dress_cap = make_capsule(g_layer, DRESS_LIST_X, DRESS_LIST_Y, 72, 20);
-    for (int i = 0; i < 6; ++i) {
+    for (int i = 0; i <= PET_COSTUME_MAX; ++i) {
         g_dress_lbl[i] = make_label(g_layer, COSTUME_NAMES[i],
                                     DRESS_LIST_X + 18, DRESS_LIST_Y + 2 + i * DRESS_ROW_H,
                                     BROWN);
@@ -625,8 +780,8 @@ static void dress_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
         return;
     }
     if (ev != BSP_BTN_CLICK) return;
-    if (btn == BSP_BTN_UP)   { g_dress_sel = (g_dress_sel + 5) % 6; fishing_audio_play(SFX_CLICK); }
-    else if (btn == BSP_BTN_DOWN) { g_dress_sel = (g_dress_sel + 1) % 6; fishing_audio_play(SFX_CLICK); }
+    if (btn == BSP_BTN_UP)   { g_dress_sel = (g_dress_sel + PET_COSTUME_MAX) % (PET_COSTUME_MAX + 1); fishing_audio_play(SFX_CLICK); }
+    else if (btn == BSP_BTN_DOWN) { g_dress_sel = (g_dress_sel + 1) % (PET_COSTUME_MAX + 1); fishing_audio_play(SFX_CLICK); }
     else if (btn == BSP_BTN_OK) {
         if ((int)now_ms() - g_scr_since < 450) return;  /* 切屏防抖 */
         pet_set_costume(g_dress_sel);
@@ -640,7 +795,7 @@ static void refresh_dress(void) {
     if (g_dress_sel != s_sel) {
         s_sel = g_dress_sel;
         lv_obj_set_pos(g_dress_cap, DRESS_LIST_X, DRESS_LIST_Y + g_dress_sel * DRESS_ROW_H);
-        for (int i = 0; i < 6; ++i) {
+        for (int i = 0; i <= PET_COSTUME_MAX; ++i) {
             if (!g_dress_lbl[i]) continue;
             lv_obj_set_style_text_color(g_dress_lbl[i],
                                         (i == g_dress_sel) ? WHITE : BROWN, 0);
@@ -848,6 +1003,9 @@ static void game_finish(void) {
     snprintf(buf, sizeof(buf), "得分 %d！按 OK 返回", g_g.score);
     if (g_g_msg) set_text_cached(g_g_msg, buf);
     fishing_audio_play(SFX_CATCH);
+    /* v4 多宠物：通关发贴纸可能触发里程碑解锁（贴纸满6/到3级/穿遍装扮），落盘 */
+    pet_unlock_check();
+    nvs_save_now();
 }
 
 /* ===================== 刷新：主屏 ===================== */
@@ -873,11 +1031,75 @@ static void bar_color(lv_obj_t *fill, int v) {
     lv_obj_set_style_bg_color(fill, c, 0);
 }
 
+/* ===================== 昼夜 / 季节（v4，纯视觉层） =====================
+ * 按 RTC 真实时间算时段与季节；RTC 未校准（tm_year<120，即 2020 年前）时
+ * 回退到慢循环，保证演示可见变化。结果只用于改全屏半透明叠色层 g_tint，
+ * 绝不触碰 pet_tick 衰减逻辑（红线①）。 */
+static const uint8_t TINT_RGB[3][4][3] = {
+    /* 白天 */ { {190,235,190}, {255,245,205}, {245,205,150}, {205,225,245} },
+    /* 黄昏 */ { {245,180,150}, {255,170,110}, {240,150,90},  {225,200,235} },
+    /* 夜晚 */ { {60,90,120},   {50,70,130},   {70,60,110},   {70,90,150}   },
+};
+static const uint8_t TINT_OPA[3][4] = {
+    {18, 16, 20, 22},   /* 白天各季不透明度 */
+    {42, 46, 48, 44},   /* 黄昏 */
+    {52, 54, 52, 56},   /* 夜晚 */
+};
+static const char *SEASON_CH[4] = { "春", "夏", "秋", "冬" };
+
+static void compute_env(int now, int *dp_out, int *sea_out) {
+    int dp = DP_DAY, sea = SEA_SPR;
+    time_t t = time(NULL);
+    int have_rtc = 0;
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    if (t != (time_t)(-1)) {
+#ifdef _WIN32
+        struct tm *p = localtime(&t);
+        if (p) { tm = *p; have_rtc = (tm.tm_year >= 120); }
+#else
+        if (localtime_r(&t, &tm)) have_rtc = (tm.tm_year >= 120);
+#endif
+    }
+    if (have_rtc) {
+        int h = tm.tm_hour;
+        dp = (h >= 6 && h < 17) ? DP_DAY : (h >= 17 && h < 19) ? DP_DUSK : DP_NIGHT;
+        int m = tm.tm_mon;   /* 0..11：3-5 春，6-8 夏，9-11 秋，12-2 冬 */
+        sea = (m >= 2 && m <= 4) ? SEA_SPR
+            : (m >= 5 && m <= 7) ? SEA_SUM
+            : (m >= 8 && m <= 10) ? SEA_AUT : SEA_WIN;
+    } else {
+        dp  = (now / 20000) % 3;   /* 慢循环演示：约 60s 一换时段 */
+        sea = (now / 60000) % 4;   /* 约 3 分钟一换季节 */
+    }
+    *dp_out = dp; *sea_out = sea;
+}
+
 static void refresh_home(int now) {
     pet_status_t st; pet_get_status(&st);
     char buf[32];
 
     refresh_batt();
+
+    /* v4 昼夜/季节纯视觉层：仅在时段或季节变化时改 g_tint（守 LVGL 重绘铁律），
+       绝不触碰 pet_tick 衰减逻辑。同时记录走过的季节（PST_SEASON4 联动）。 */
+    {
+        int dp, sea;
+        compute_env(now, &dp, &sea);
+        if (dp != s_daypart || sea != s_season) {
+            s_daypart = dp; s_season = sea;
+            lv_obj_set_style_bg_color(g_tint, lv_color_make(TINT_RGB[dp][sea][0],
+                                                            TINT_RGB[dp][sea][1],
+                                                            TINT_RGB[dp][sea][2]), 0);
+            lv_obj_set_style_bg_opa(g_tint, (lv_opa_t)TINT_OPA[dp][sea], 0);
+            set_text_cached(g_season_lbl, SEASON_CH[sea]);
+            pet_season_seen(sea);   /* 经历四季 → 里程碑贴纸（仅逻辑，纯视觉无关） */
+        }
+        /* 冬天彩蛋雪帽：仅冬季且当前没戴草帽时显示；睡觉藏帽。纯显示，不改真实 costume */
+        bool show_cap = (sea == SEA_WIN) && (pet_get_costume() != 1) && !st.sleeping;
+        if (show_cap) lv_obj_clear_flag(g_winter_cap, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(g_winter_cap, LV_OBJ_FLAG_HIDDEN);
+    }
 
     if (st.level != s_lvl) { s_lvl = st.level; snprintf(buf, sizeof(buf), "等级 %d", st.level); set_text_cached(g_lbl_level, buf); }
     int mood_id = (int)(size_t)pet_mood_name(&st);
@@ -942,6 +1164,7 @@ static void refresh_home(int now) {
     }
     lv_obj_set_pos(g_rabbit, g_rab_x, by);
     lv_obj_set_pos(g_rab_cos, g_rab_x, by);   /* 装扮跟着兔子走 */
+    lv_obj_set_pos(g_winter_cap, g_rab_x, by); /* 雪帽跟随头部 */
     if (st.sleeping) lv_obj_set_pos(g_lbl_zzz, g_rab_x + 58, by + 4);
 
     /* 反馈清理 */
@@ -968,9 +1191,11 @@ static void refresh_menu(void) {
 
 /* ===================== 刷新：护照 ===================== */
 static void refresh_passport(void) {
-    char buf[32]; snprintf(buf, sizeof(buf), "贴纸 %d/12", pet_sticker_count());
+    /* 头部：宠物名字 + 贴纸进度（v4：护照显示名字；多宠物时显示当前选中宠物） */
+    char buf[64];
+    snprintf(buf, sizeof(buf), "%s · 贴纸 %d/%d", pet_get_name(), pet_sticker_count(), PET_STICKER_MAX);
     set_text_cached(g_pass_count, buf);
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 0; i < PET_STICKER_MAX; ++i) {
         bool got = pet_sticker_has((unsigned)i);
         if (got) {
             lv_obj_set_style_bg_color(g_pass_cell[i], gc(i), 0);
@@ -1092,6 +1317,11 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
         case SCR_DRESS:
             dress_input(btn, ev);
             break;
+        case SCR_INTRO:
+            if (ev != BSP_BTN_LONG) {
+                intro_input(btn, ev);
+            }
+            break;
     }
 }
 
@@ -1179,10 +1409,20 @@ void pet_app_start(void) {
 
         lv_obj_add_flag(g_layer, LV_OBJ_FLAG_HIDDEN);
 
-        g_scr = SCR_HOME;
+        /* v4：首次启动播放轻引导（A 项）；老玩家/已看过则直接进主屏 */
+        if (pet_needs_intro()) {
+            g_scr = SCR_INTRO;
+            g_intro_step = 0;
+            g_name_sel = 0;
+            lv_obj_add_flag(g_home, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(g_layer, LV_OBJ_FLAG_HIDDEN);
+            build_intro();
+        } else {
+            g_scr = SCR_HOME;
+        }
         g_rebuild = 0;
         g_rab_last_ms = (int)now_ms();
-        refresh_home((int)now_ms());
+        if (g_scr == SCR_HOME) refresh_home((int)now_ms());
         bsp_lvgl_unlock();
     }
     xTaskCreate(pet_task, "pet", 8192, NULL, 5, NULL);

@@ -11,6 +11,9 @@ extern const lv_image_dsc_t costume_crown;
 extern const lv_image_dsc_t costume_glasses;
 extern const lv_image_dsc_t costume_scarf;
 extern const lv_image_dsc_t costume_flower;
+extern const lv_image_dsc_t costume_cape;
+extern const lv_image_dsc_t costume_bell;
+extern const lv_image_dsc_t costume_starcrown;
 
 #ifdef __cplusplus
 }

@@ -12,6 +12,10 @@
  *   - 动作只涨不扣（除陪玩耗一点精力），反馈永远是鼓励式
  *
  * v2 新增（2026-10-04）：贴纸簿 + 分动作照顾计数 + 小游戏奖励接口。
+ * v3 新增（2026-10-05）：换装系统 costume 字段。
+ * v4 新增（2026-10-29 微迭代）：多宠物槽（最多 3 只，里程碑解锁）+ 每只宠物名字
+ *   + 装扮扩容到 8 款 + 贴纸扩容到 16 枚 + 首次启动轻引导。
+ *   注意：pet_tick 衰减常量与逻辑 v2 起从未改动（红线①），本版依旧不动。
  */
 
 #ifndef PET_LOGIC_H
@@ -26,8 +30,9 @@ extern "C" {
 #endif
 
 /* ===================== 版本 / 存档 ===================== */
-#define PET_SCHEMA_VER   3
+#define PET_SCHEMA_VER   4        /* v4：多宠物槽 + 名字 + 装扮/贴纸扩容 */
 #define PET_SAVE_MAGIC   0x50455431u   /* 'PET1' */
+#define PET_SLOT_MAX     3             /* 最多 3 只宠物（默认 1 槽，里程碑解锁第 2、3 槽） */
 
 /* ===================== 事件 ===================== */
 typedef enum {
@@ -58,8 +63,8 @@ typedef struct {
     int  sleep_count;   /* 睡饱自动醒的次数 */
 } pet_status_t;
 
-/* ===================== 贴纸簿（12 枚，NVS 持久化） ===================== */
-#define PET_STICKER_MAX 12
+/* ===================== 贴纸簿（16 枚，NVS 持久化） ===================== */
+#define PET_STICKER_MAX 16
 enum {
     PST_FIRST = 0,   /* 初次见面 */
     PST_FEED5,       /* 喂食 5 次 */
@@ -73,6 +78,11 @@ enum {
     PST_GAME_MEMORY, /* 记忆翻牌通关 */
     PST_GAME_PEEK,   /* 躲猫猫通关 */
     PST_GAME_RHYTHM, /* 节奏蹦蹦通关 */
+    /* v4 新增 4 枚里程碑贴纸 */
+    PST_STK6,        /* 贴纸满 6 枚（同时解锁第 2 只宠物） */
+    PST_LV5,         /* 到达 5 级 */
+    PST_SEASON4,     /* 经历春夏秋冬四季（昼夜/季节视觉联动） */
+    PST_COS_ALL,     /* 穿遍全部装扮（装扮扩容联动） */
 };
 
 void pet_sticker_grant(unsigned id);      /* 已拥有则无操作 */
@@ -94,16 +104,36 @@ pet_event_t pet_toggle_sleep(void);  /* 睡觉/唤醒 开关 */
 /* ===================== 小游戏奖励（只涨不扣） ===================== */
 void pet_add_fun(int delta);         /* 玩乐 +delta（上限 100） */
 
-/* ===================== 换装（v3 新增） ===================== */
-#define PET_COSTUME_MAX 5            /* 1..5 = 草帽/皇冠/眼镜/围巾/花环，0=不穿 */
+/* ===================== 换装（v3 起） ===================== */
+#define PET_COSTUME_MAX 8            /* 1..8 = 草帽/皇冠/眼镜/围巾/花环/披风/铃铛/星冠，0=不穿 */
 void pet_set_costume(int id);        /* 非法值按 0（不穿）处理 */
 int  pet_get_costume(void);
+
+/* ===================== 多宠物（v4） ===================== */
+int  pet_get_slot(void);             /* 当前活动槽 0..2 */
+int  pet_slot_count(void);           /* 已解锁槽数 1..3 */
+bool pet_slot_unlocked(int slot);    /* slot 是否已解锁（0 恒解锁） */
+void pet_set_slot(int slot);         /* 仅切换到已解锁槽 */
+/* 照顾/升级/集贴纸后调用：按里程碑解锁第 2、3 槽，返回"本次新解锁的槽数"
+   （供 UI 弹"解锁新宠物"提示；不解锁则返回 0）。不改动任何衰减逻辑。 */
+int  pet_unlock_check(void);
+
+/* ===================== 命名（v4） ===================== */
+void pet_set_name(const char *name);   /* 设置当前活动宠物的名字（最多 15 字，UTF-8） */
+const char *pet_get_name(void);         /* 当前活动宠物名字（默认"团子"） */
+
+/* ===================== 首次启动轻引导（v4） ===================== */
+bool pet_needs_intro(void);            /* 是否需要播放首次启动引导 */
+void pet_mark_intro_done(void);        /* 标记引导已看过（下次启动不再播） */
+
+/* ===================== 季节联动（v4，供 C 视觉层调用） ===================== */
+void pet_season_seen(int season);      /* 记录经历过的季节（0..3），四季齐全发 PST_SEASON4 */
 
 /* ===================== 查询 ===================== */
 void pet_get_status(pet_status_t *out);
 const char *pet_mood_name(const pet_status_t *st);   /* 开心/还行/不开心/睡得香 */
 
-/* ===================== 存档（版本化，v1 自动迁移） ===================== */
+/* ===================== 存档（版本化，v1/v2/v3 自动迁移到 v4） ===================== */
 int  pet_save_serialize(uint8_t *buf, int cap);
 /* 0=成功 1=旧版本已迁移 -1=不认识的数据 -2=长度非法 */
 int  pet_save_apply(const uint8_t *buf, int len);
