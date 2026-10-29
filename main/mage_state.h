@@ -86,6 +86,10 @@ typedef struct {
     int eventSeen;     /* 本场事件已触发 */
     int done;          /* 远征完成 */
     int storyShown;
+    /* 评星跟踪（A④：回合内 / 无伤 / 零道具） */
+    int tookDmg;       /* 本次远征是否受过敌方伤害 */
+    int usedPot;       /* 本次远征是否用过体力药水 */
+    int bossAct;       /* BOSS 波累计玩家行动次数（评"回合内"用） */
     int goldGain, expGain, herbGain, matGain, potGain;
     int killCnt;
     int bossEquipRar;
@@ -147,6 +151,9 @@ typedef struct {
     int mbag[40];         /* 素材数量，下标 = MATERIALS */
     int dexSeen[50], dexCaught[50];   /* 图鉴，下标 = ENEMY */
     int bossKilled[5], storySeen[10]; /* 主线进度 */
+    int chapterStars[5];              /* 每章星级 1-3（按A清场评定），存NVS作为解锁门槛 */
+    int storyPending;  /* 待展示故事书页 1..5=章节 / 6=终焉之塔真结局；0=无（BOSS倒下置位） */
+    int towerUnlocked; /* 终焉之塔入口已开放（第五章清场后） */
     int spell[3];         /* 合成槽 [形态,元素,阶级] */
     int equipped;         /* 当前装配魔法 key */
     int loadout[16];      /* 出战编队（spell key） */

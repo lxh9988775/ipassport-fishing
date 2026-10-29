@@ -73,10 +73,12 @@ typedef struct { const char *n; float hp; float atk; float bossAtk; float dmgTak
 extern const DiffDef DIFFS[4];          /* 轻松/普通/困难/炼狱 */
 
 /* ============ BOSS / 剧情 ============ */
-typedef struct { const char *type; const char *n; } BossDef;
+typedef struct { const char *type; const char *n; const char *mech; float p2atk; } BossDef;
 extern const BossDef BOSSES[5];
 extern const char *STORY_ENTER[5];
 extern const char *STORY_BOSS[5];
+extern const int REC_LV[5];            /* 各章推荐等级（反碾压基准） */
+extern const char *STORY_VIGNETTE[6];  /* 故事书六卷：1-5章过场 + 终焉之塔真结局（主角阿辰） */
 
 /* ============ 装备 ============ */
 typedef struct { const char *n; const char *names[4]; } EqSlotDef;

@@ -69,13 +69,13 @@ enum {
     SC_BOOK, SC_ALCHEMY, SC_BAG, SC_EQUIP, SC_ACAD,
     SC_WILD, SC_GUILD, SC_HOME, SC_FORGE, SC_MARKET,
     SC_DEX, SC_MUPGRADE, SC_BATTLE, SC_MENU, SC_PROMOTE,
-    SC_RESEARCH, SC_CRAFT, SC_COUNT
+    SC_RESEARCH, SC_CRAFT, SC_STORY, SC_COUNT
 };
 static const char *SCENE_NAME[SC_COUNT] = {
     "标题", "命名", "魔法小镇", "角色", "伙伴", "魔法书", "炼金", "背包",
     "装备", "魔法学院", "野外试炼", "冒险者公会", "住宅", "锻造房",
     "魔法黑市", "魔物图鉴", "魔法升级", "战斗", "系统", "晋升仪式",
-    "魔法研究", "研究魔法"
+    "魔法研究", "研究魔法", "故事书"
 };
 
 /* 城镇簇场景：魔法小镇(CITY)及其所有子面板都铺 town_art 背景（HTML 用 drawTownBg），
@@ -132,6 +132,10 @@ static lv_obj_t *g_title_grp = NULL, *g_name_grp = NULL, *g_scene_grp = NULL, *g
 /* 美术层容器：城镇主视觉（周期刷新时需防重复叠加，故单独持有并在切页时清理） */
 static lv_obj_t *g_scene_art = NULL, *g_city_art = NULL, *g_city_dim = NULL;
 static bool g_city_art_shown = false;
+/* 故事书过场页（SC_STORY）：全屏手稿图沉底 + 底部文字面板叠其上 */
+static lv_obj_t *g_story_grp = NULL, *g_story_img = NULL, *g_story_txt = NULL, *g_story_title = NULL, *g_story_hint = NULL;
+static int s_story_page = 0;      /* 当前展示页 1..6（0=未展示） */
+static int s_story_shown = -1;    /* 上次已渲染页，避免每 60ms 重设样式触发全屏重绘 */
 static lv_obj_t *g_title_main = NULL, *g_title_sub = NULL, *g_title_tag = NULL;
 static lv_obj_t *g_menu0 = NULL, *g_menu1 = NULL, *g_title_foot = NULL, *g_title_hint = NULL;
 static lv_obj_t *g_name_prompt = NULL, *g_name_val = NULL, *g_name_hint = NULL;
@@ -186,11 +190,14 @@ static lv_obj_t *g_row_rgt[MENU_ROWS];
 static lv_obj_t *g_row_tri[MENU_ROWS];   /* 选中三角（替代 ▶ 文字符号，避免字体缺字形豆腐块） */
 static int menu_list_dirty = 1;
 static int menu_last_key = -1;
-/* 渲染数据源（由三个 scene 的刷新分支填充） */
-static struct { MenuRow rows[MENU_ROWS]; int n; int sel; } g_menu;
-/* 文本缓冲（指向本缓冲，跨调用有效） */
-static char g_menu_sub[MENU_ROWS][56];
-static char g_menu_rgt[MENU_ROWS][16];
+/* 渲染数据源（由三个 scene 的刷新分支填充）
+ * 注：rows 容量与可见行数(MENU_ROWS=8)解耦 —— WILD 菜单含 5 章 + 遗迹 + 终焉之塔 + 副本邀请，
+ * 实际条目可超过 8；rows 留足 16 避免越界写崩溃，渲染仍只画前 MENU_ROWS 行。 */
+static struct { MenuRow rows[16]; int n; int sel; } g_menu;
+/* 文本缓冲（指向本缓冲，跨调用有效）；容量与 g_menu.rows 一致(16)，避免 WILD 菜单
+ * 含 终焉之塔 + 副本邀请时越界写溢出 */
+static char g_menu_sub[16][56];
+static char g_menu_rgt[16][16];
 static int g_list_y0 = ROW_Y0;   /* 详情页(图鉴/伙伴/角色)把卡片列表下移到立绘下方 */
 /* 城镇地点 / 功能面板的图标映射（每个板块都有专属设计图标） */
 static const char *CITY_LOC_ICON[7] = {"sp_icon_book","sp_icon_map","sp_icon_sword",
@@ -1060,13 +1067,18 @@ static void partners_grid_render(void) {
 static void refresh_ui(void) {
     bool title  = (g_scene == SC_TITLE);
     bool naming = (g_scene == SC_NAME);
-    bool hud_on = !title && !naming;
+    bool hud_on = !title && !naming && g_scene != SC_STORY;
 
     set_hidden(g_title_grp, !title);
     set_hidden(g_name_grp, !naming);
     set_hidden(g_scene_grp, title || naming);
     set_hidden(g_hud, !hud_on);
     for (int i = 0; i < 14; i++) set_hidden(g_stars[i], !title);
+    /* 故事书容器仅在 SC_STORY 时显示，其他场景一律隐藏（避免盖在城镇/战斗上） */
+    if (g_story_grp) {
+        if (g_scene == SC_STORY) lv_obj_remove_flag(g_story_grp, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(g_story_grp, LV_OBJ_FLAG_HIDDEN);
+    }
 
     /* 离开城镇页时销毁主视觉容器，下次进入重建。
      * 注意：必须把 g_scene_art 本身置 NULL（它已被 lv_obj_clean 掏空，
@@ -1541,7 +1553,8 @@ static void refresh_ui(void) {
     }
     case SC_WILD: {
         ensureDungeonOffers();
-        int n = 5 + 1 + g.ndoffers;
+        int tower = g.towerUnlocked ? 1 : 0;   /* 终焉之塔入口（第五章清场后开放） */
+        int n = 5 + 1 + tower + g.ndoffers;
         wildIdx = clampi(wildIdx, 0, n - 1);
         g_menu.n = n; g_menu.sel = wildIdx;
         for (int i = 0; i < 5; i++) {
@@ -1556,9 +1569,15 @@ static void refresh_ui(void) {
                  g.rank < 1 ? "晋升初级魔法师后开放" : "精英连战 3 层");
         snprintf(g_menu_rgt[base], sizeof(g_menu_rgt[base]), "%s", g.rank < 1 ? "锁" : "A 进入");
         g_menu.rows[base] = (MenuRow){"sp_icon_gate", "遗迹秘境", g_menu_sub[base], g_menu_rgt[base]};
+        int tr = base + 1;
+        if (tower) {
+            snprintf(g_menu_sub[tr], sizeof(g_menu_sub[tr]), "%s", "终焉之塔 · 真结局征程");
+            snprintf(g_menu_rgt[tr], sizeof(g_menu_rgt[tr]), "A 攀登");
+            g_menu.rows[tr] = (MenuRow){"sp_icon_gate", "终焉之塔", g_menu_sub[tr], g_menu_rgt[tr]};
+        }
         for (int i = 0; i < g.ndoffers; i++) {
             int id = g.dungeonOffers[i];
-            int r = base + 1 + i;
+            int r = base + 1 + tower + i;
             snprintf(g_menu_sub[r], sizeof(g_menu_sub[r]), "%s", DUNGEONS[id].kind);
             snprintf(g_menu_rgt[r], sizeof(g_menu_rgt[r]), "A 进入");
             g_menu.rows[r] = (MenuRow){"sp_icon_gate", DUNGEONS[id].name, g_menu_sub[r], g_menu_rgt[r]};
@@ -1566,6 +1585,75 @@ static void refresh_ui(void) {
         lv_label_set_text(g_scene_hint, "OK 出发/进入 · ↓ 切换 · 长按 返回");
         s_b[0] = '\0';
         menu_list_dirty = 1;
+        break;
+    }
+    case SC_STORY: {
+        /* 故事书过场页：全屏手稿图沉底 + 底部文字面板叠其上。
+         * 仅在页面切换时重建内容（s_story_shown 比对），避免每 60ms 重设样式触发全屏重绘。 */
+        if (!g_story_grp) {
+            g_story_grp = lv_obj_create(g_scene_grp);
+            lv_obj_remove_style_all(g_story_grp);
+            lv_obj_set_size(g_story_grp, SCR_W, SCR_H);
+            lv_obj_set_pos(g_story_grp, 0, 0);
+            lv_obj_set_style_bg_opa(g_story_grp, LV_OPA_TRANSP, 0);
+            lv_obj_set_scrollbar_mode(g_story_grp, LV_SCROLLBAR_MODE_OFF);
+
+            g_story_img = lv_image_create(g_story_grp);
+            lv_obj_remove_style_all(g_story_img);
+            lv_obj_set_style_bg_opa(g_story_img, LV_OPA_TRANSP, 0);
+            lv_obj_set_style_border_width(g_story_img, 0, 0);
+            lv_obj_set_style_pad_all(g_story_img, 0, 0);
+            lv_obj_set_size(g_story_img, SCR_W, SCR_H);
+            lv_obj_set_pos(g_story_img, 0, 0);
+
+            g_story_title = lv_label_create(g_story_grp);
+            use_cjk(g_story_title);
+            lv_obj_set_style_text_color(g_story_title, C_GOLD, 0);
+            lv_obj_set_style_text_align(g_story_title, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_width(g_story_title, SCR_W);
+            lv_obj_set_pos(g_story_title, 0, 10);
+
+            g_story_txt = lv_label_create(g_story_grp);
+            use_font12(g_story_txt);   /* 12px 子集：底部面板正文，单屏可容整段 vignette */
+            lv_obj_set_style_text_color(g_story_txt, C_WHITE, 0);
+            lv_obj_set_style_text_align(g_story_txt, LV_TEXT_ALIGN_LEFT, 0);
+            lv_obj_set_width(g_story_txt, SCR_W - 20);
+            lv_label_set_long_mode(g_story_txt, LV_LABEL_LONG_WRAP);
+            lv_obj_set_style_bg_color(g_story_txt, lv_color_hex(0x140e26), 0);
+            lv_obj_set_style_bg_opa(g_story_txt, LV_OPA_75, 0);
+            lv_obj_set_style_pad_all(g_story_txt, 8, 0);
+            lv_obj_set_pos(g_story_txt, 10, 178);
+
+            g_story_hint = lv_label_create(g_story_grp);
+            use_font12(g_story_hint);
+            lv_obj_set_style_text_color(g_story_hint, C_SUB, 0);
+            lv_obj_set_style_text_align(g_story_hint, LV_TEXT_ALIGN_CENTER, 0);
+            lv_obj_set_width(g_story_hint, SCR_W);
+            lv_obj_set_pos(g_story_hint, 0, SCR_H - 18);
+
+            /* 全屏贴图沉底：建在文字之后 move_to_index(0)，否则盖字（LVGL 铁律） */
+            lv_obj_move_to_index(g_story_img, 0);
+        }
+        if (s_story_shown != s_story_page) {
+            s_story_shown = s_story_page;
+            char inm[16]; snprintf(inm, sizeof(inm), "sb_%d", s_story_page);
+            const lv_image_dsc_t *dsc = mage_img(inm);
+            if (dsc) lv_image_set_src(g_story_img, dsc);
+            char ttl[40];
+            if (s_story_page == 6) snprintf(ttl, sizeof(ttl), "终焉之塔 · 真结局");
+            else snprintf(ttl, sizeof(ttl), "第%d章 · %s", s_story_page, CHAPTERS[s_story_page - 1]);
+            lv_label_set_text(g_story_title, ttl);
+            int ck = (s_story_page <= 5) ? (s_story_page - 1) : 4;
+            int st = g.chapterStars[ck];
+            const char *starstr = (st >= 3) ? "评级：三星（无伤·零道具·速攻）"
+                                : (st == 2) ? "评级：二星"
+                                : "评级：一星";
+            char buf[240];
+            snprintf(buf, sizeof(buf), "%s\n\n%s", STORY_VIGNETTE[s_story_page - 1], starstr);
+            lv_label_set_text(g_story_txt, buf);
+            lv_label_set_text(g_story_hint,
+                (s_story_page == 5 && g.towerUnlocked && !g.storySeen[5]) ? "A 翻页 →" : "A 继续 →");
+        }
         break;
     }
     case SC_BATTLE: {
@@ -2134,8 +2222,11 @@ static void scene_handle(int act) {
             } else if (wildIdx == 5) {
                 if (g.rank < 1) { toast("晋升初级魔法师后开放"); break; }
                 battle_start_dungeon(-1);
+            } else if (g.towerUnlocked && wildIdx == 6) {
+                battle_start_wild(4);   /* 终焉之塔：复用终章浮空遗迹区域，最高难度征程 */
             } else {
-                int id = g.dungeonOffers[wildIdx - 6];
+                int off = 6 + (g.towerUnlocked ? 1 : 0);
+                int id = g.dungeonOffers[wildIdx - off];
                 battle_start_dungeon(id);
             }
         }
@@ -2165,6 +2256,21 @@ static void scene_handle(int act) {
         g_need_refresh = 1;
         break;
     }
+    case SC_STORY:
+        if (act == ACT_OK || act == ACT_NEXT || act == ACT_PREV || act == ACT_BACK) {
+            /* 第五章清场后：先讲完真结局页（6）再回城 */
+            if (s_story_page == 5 && g.towerUnlocked && !g.storySeen[5]) {
+                g.storySeen[5] = 1;
+                s_story_page = 6;
+                s_story_shown = -1;     /* 强制重建真结局页 */
+                g_need_refresh = 1;
+                break;
+            }
+            /* 退出故事书 → 回城 */
+            s_story_shown = -1;
+            mage_set_scene(SC_CITY); g.cityMode = 0; g_need_refresh = 1;
+        }
+        break;
     default:
         break;
     }
@@ -2299,10 +2405,11 @@ static void deal_to(BattleEnemy *e, int dmg) {
     /* 1:1 复刻 HTML：bt.nums.push({x:e.x, y:enemyFeetY()-34, v:''+dmg, c:'#fff', t:0.8}) */
     mage_fx_num(e->x, 250 - 34, dmg, 0xffffff);
     if (e->hp <= 0) bt.shake = 0.30f;   /* 仅击杀瞬间震屏，普通命中靠受击后仰/闪红反馈，避免每击狂震 */
-    if (e->boss && !e->enraged && e->hp > 0 && e->hp <= (int)(e->maxHp * 0.65f)) {
-        e->enraged = 1; e->atk = (int)(e->atk * 1.6f + 0.5f);
+    if (e->boss && !e->enraged && e->hp > 0 && e->hp <= (int)(e->maxHp * 0.50f)) {
+        float p2 = (g.mapChapter >= 0 && g.mapChapter <= 4) ? BOSSES[g.mapChapter].p2atk : 1.6f;
+        e->enraged = 1; e->atk = (int)(e->atk * p2 + 0.5f);
         e->bossCD = e->bossCD < 2 ? e->bossCD : 2;
-        toast("%s 狂暴了！攻击大幅提升", ENEMY[e->typeIdx].n);   /* 不用 emoji：子集字库无 emoji 字形，屏上只会出豆腐块 */
+        toast("%s 进入二阶段！攻击大幅提升", ENEMY[e->typeIdx].n);   /* 不用 emoji：子集字库无 emoji 字形，屏上只会出豆腐块 */
     }
     if (ENEMY[e->typeIdx].hasCap && can_capture(e)) {           /* 手下留情锁血 */
         int fl = (int)(e->maxHp * 0.08f + 0.5f); if (fl < 1) fl = 1;
@@ -2339,6 +2446,18 @@ static void kill_award(BattleEnemy *e) {
         bt.bossCrystal = 2; bt.bossOrb = 2; bt.bossSeal = 1;
         int ck = g.mapChapter; if (ck < 0) ck = 0; if (ck > 4) ck = 4;
         g.bossKilled[ck] = 1;
+        /* A④ 章节星级：1 星保底（清场），无伤 / 零道具 / 回合内 各 +1，封顶 3 星 */
+        int stars = 1;
+        if (!bt.tookDmg) stars++;                       /* 无伤 */
+        if (!bt.usedPot) stars++;                       /* 零道具（未用体力药水） */
+        if (bt.bossAct > 0 && bt.bossAct <= 8) stars++;  /* 回合内（BOSS 波 8 回合内击杀） */
+        if (stars > 3) stars = 3;
+        if (stars > g.chapterStars[ck]) g.chapterStars[ck] = stars;
+        /* C 故事书过场：首次清场才弹（storySeen 门控，避免重复刷本反复弹） */
+        if (!g.storySeen[ck]) { g.storySeen[ck] = 1; g.storyPending = ck + 1; }
+        if (ck == 4) {  /* 第五章清场 → 开放终焉之塔入口（真结局页在翻页时衔接） */
+            g.towerUnlocked = 1;
+        }
         if (!bt.storyShown && g.mapChapter < 4) { bt.storyShown = 1; toast("主线推进：%s 已解锁！", CHAPTERS[g.mapChapter + 1]); }
         mage_persist();
     }
@@ -2493,6 +2612,7 @@ static void use_item(void) {
         if (g.potions <= 0) { toast("没有药水了"); return; }
         if (g.hp >= g.maxHp) { toast("状态很好"); return; }
         g.potions--;
+        bt.usedPot = 1;   /* A④ 评星：用过体力药水 → 取消"零道具"星 */
         g.hp += (int)(g.maxHp * 0.4f + 0.5f); if (g.hp > g.maxHp) g.hp = g.maxHp;
         g.mp += (int)(g.maxMp * 0.3f + 0.5f); if (g.mp > g.maxMp) g.mp = g.maxMp;
         after_player_action();
@@ -2553,6 +2673,7 @@ static void apply_enemy_hit(BattleEnemy *e, int big) {
     if (pr && pr->traitIdx == traitIndex("tough")) d = (int)(d * 0.9f + 0.5f);
     if (bt.guardBlock > 0) { int cut = (int)(d * bt.guardBlock + 0.5f); d -= cut; if (d < 1) d = 1; bt.guardBlock -= 0.15f; if (bt.guardBlock < 0) bt.guardBlock = 0; }
     g.hp -= d; if (g.hp < 0) g.hp = 0;
+    bt.tookDmg = 1;   /* A④ 评星：受过敌方伤害 → 取消"无伤"星 */
     /* 1:1 复刻 HTML：bt.nums.push({x:bt.px, y:200, v:'-'+d, c:PAL.red, t:0.8})
      * 原版是**红色飘字**（向上飘 22px/s，0.8s 淡出），不是 toast 横幅。
      * 之前用 toast("-%d HP") 在底部拉了一条蓝底白字横条，与原版完全不同。 */
@@ -2623,6 +2744,7 @@ static void enemy_phase(void) {
 static void after_player_action(void) {
     /* BOSS 蓄力警告只在出招那一回合闪（HTML e.lunge.big 的瞬时标记） */
     for (int i = 0; i < bt.enemyCount; i++) bt.enemies[i].lungeBig = 0;
+    if (bt.wave >= 10) bt.bossAct++;   /* A④ 评星：BOSS 波玩家行动计数（评"回合内"用） */
     partner_strike();
     if (bt.enemyCount == 0) { kill_clear(); return; }
     enemy_phase();
@@ -2658,9 +2780,13 @@ static void spawn_group(void) {
         if (elite && i == 0) lvl += 2;
         const DiffDef *dc = diffC();
         float mult = 1 + (lvl - 1) * 0.14f;
+        /* 反碾压：玩家等级远超本章推荐时，敌人强度上调（封顶+40%），逼用机制而非刷级 */
+        int ch = g.mapChapter; if (ch < 0) ch = 0; if (ch > 4) ch = 4;
+        int over = g.level - REC_LV[ch]; if (over < 0) over = 0;
+        float scale = 1.0f + (over > 8 ? 8 : over) * 0.05f;
         float MB = 1.05f;
-        int hp = (int)(bd->hp * mult * dc->hp * MB + 0.5f);
-        int atk = (int)((bd->atk + mult * 0.6f) * dc->atk * MB + 0.5f);
+        int hp = (int)(bd->hp * mult * dc->hp * MB * scale + 0.5f);
+        int atk = (int)((bd->atk + mult * 0.6f) * dc->atk * MB * scale + 0.5f);
         BattleEnemy *e = &bt.enemies[bt.enemyCount++];
         e->typeIdx = typeIdx; e->lvl = lvl;
         e->hp = hp; e->maxHp = hp; e->atk = atk;
@@ -2694,13 +2820,16 @@ static void spawn_boss(void) {
     g.dexSeen[typeIdx]++;
     int lvl = (g.mapChapter - 1) * 2 + 10 + 2;
     const DiffDef *dc = diffC();
-    float mult = (1 + (lvl - 1) * 0.14f) * 7.5f * dc->hp;
+    int ch = g.mapChapter; if (ch < 0) ch = 0; if (ch > 4) ch = 4;
+    int over = g.level - REC_LV[ch]; if (over < 0) over = 0;
+    float scale = 1.0f + (over > 8 ? 8 : over) * 0.05f;
+    float mult = (1 + (lvl - 1) * 0.14f) * 7.5f * dc->hp * scale;
     int hp = (int)(bd->hp * mult + 0.5f);
-    int atk = (int)((bd->atk + mult * 0.6f) * 1.85f * dc->bossAtk + 0.5f);
+    int atk = (int)((bd->atk + mult * 0.6f) * 1.85f * dc->bossAtk * scale + 0.5f);
     bt.enemyCount = 1;
     BattleEnemy *e = &bt.enemies[0];
     e->typeIdx = typeIdx; e->lvl = lvl; e->hp = hp; e->maxHp = hp; e->atk = atk;
-    e->shield = 5; e->shieldMax = 5; e->brokenTurns = 0;
+    e->shield = 7; e->shieldMax = 7; e->brokenTurns = 0;   /* 破防盾 5→7：需更多破防回合，逼出破防机制 */
     e->boss = 1; e->elite = 1; e->enraged = 0; e->bossCD = 3;
     e->mercy = 0; e->mercyTurns = 0; e->poisonTurns = 0;
     int rr = rollRarity(); e->rarity = (rr + 1) < 3 ? (rr + 1) : 3;
@@ -2717,7 +2846,7 @@ static void spawn_boss(void) {
     }
     e->resistKnown = 0;
     bt.storyShown = 0;
-    toast("⚠ %s 出现！用弱点破盾，蓄力时防御！", B->n);
+    toast("⚠ %s：%s", B->n, B->mech);   /* 首次出现即弹可读机制提示 */
 }
 static void spawn_and_menu(void) {
     spawn_group();
@@ -2865,6 +2994,15 @@ static void apply_event(void) {
 }
 static void end_battle(void) {
     bt.active = 0; bt.enemyCount = 0;
+    if (g.storyPending > 0) {           /* C 故事书过场：先讲完故事再回城 */
+        s_story_page = g.storyPending;
+        g.storyPending = 0;
+        s_story_shown = -1;             /* 强制下一帧重建故事书 UI（全屏贴图改样式需比对） */
+        mage_set_scene(SC_STORY);
+        mage_persist();
+        g_need_refresh = 1;
+        return;
+    }
     mage_set_scene(SC_CITY); g.cityMode = 0;
     mage_persist();
     g_need_refresh = 1;

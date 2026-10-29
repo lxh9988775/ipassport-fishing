@@ -50,6 +50,17 @@ ICONS = {
     "goblin_icon": ("goblin.png", 56, 56),
 }
 
+# ---- 故事书过场页（每章结束一页手稿，全屏不透明背景，纯 RGB565 省内存） ----
+# 源图由 tools/_resize_storybook_tmp.py 把 1024x1536 原图按 3:4 裁切缩到 240x320（禁原图进固件）。
+STORYBOOK = {
+    "sb_1": ("story_1.png", 240, 320),
+    "sb_2": ("story_2.png", 240, 320),
+    "sb_3": ("story_3.png", 240, 320),
+    "sb_4": ("story_4.png", 240, 320),
+    "sb_5": ("story_5.png", 240, 320),
+    "sb_6": ("story_6.png", 240, 320),
+}
+
 # ---- 伙伴网格缩略图：把物种立绘在「烘焙期」缩到网格显示尺寸（运行期禁止 LVGL 缩放）----
 PARTNER_THUMBS = ["cat", "fox", "slime", "goblin", "mush", "wolf", "goblin_boss"]
 
@@ -193,6 +204,12 @@ def main():
 
     for name, (src_name, tw, th) in ICONS.items():
         print(f"图标 {name} <- {src_name} ({tw}x{th}) rgb565")
+        px = load_rgba(os.path.join(SRC, src_name), tw, th)
+        total += emit(parts, index, name, px, tw, th, "rgb565")
+
+    # ---- 故事书过场页（全屏不透明，纯 RGB565） ----
+    for name, (src_name, tw, th) in STORYBOOK.items():
+        print(f"故事书 {name} <- {src_name} ({tw}x{th}) rgb565")
         px = load_rgba(os.path.join(SRC, src_name), tw, th)
         total += emit(parts, index, name, px, tw, th, "rgb565")
 

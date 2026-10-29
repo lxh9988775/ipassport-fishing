@@ -205,7 +205,7 @@ void rollEquip(int minRar, EbagItem *out) {
 
 /* ===================== 存档（NVS 版本化二进制） ===================== */
 #define MAGE_SAVE_MAGIC 0x4D473154u   /* "MGT1" */
-#define MAGE_SAVE_VER   1
+#define MAGE_SAVE_VER   2   /* v2: 新增 chapterStars[5] 字段；旧v1存档加载时按"新号"丢弃（开发期一次性重置） */
 
 int mage_save_serialize(uint8_t *buf, int cap) {
     int need = (int)(8 + sizeof(MageState));
