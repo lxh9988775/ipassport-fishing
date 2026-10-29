@@ -48,30 +48,42 @@ def load_rabbit():
     return None
 
 def draw_home(base, tint=None, winter=False, name=None):
-    """在 base(房间图) 上叠加主屏 UI，返回 PIL Image。tint=(r,g,b,opa) 可选。"""
+    """在 base(房间图) 上叠加主屏 UI，返回 PIL Image。tint=(r,g,b,opa) 可选。
+
+    绘制层级严格对齐固件 build_home 的 z 序：
+      房间背景 → 昼夜/季节叠色(g_tint, 沉底, 只压房间顶部 y<116)
+      → 奶油文字面板 → HUD/状态条/列表 → 兔子/雪帽 → 季节标
+    因此 tint 只给顶部房间区上氛围色，兔子与文字画在 tint 之上，绝不被盖（无遮挡）。
+    """
     img = base.convert("RGBA")
+    # 1) 昼夜/季节叠色层：只压房间背景图顶部（y<116），下半蒙版擦透明（与固件 g_tint 沉底一致）
+    if tint:
+        r, g, b, opa = tint
+        ov = Image.new("RGBA", (W, H), (r, g, b, opa))
+        ImageDraw.Draw(ov).rectangle([0, 116, W, H], fill=(0, 0, 0, 0))
+        img = Image.alpha_composite(img, ov)
     d = ImageDraw.Draw(img, "RGBA")
-    # 文字衬底面板（与固件一致：状态区 y116 / 列表区 y176）
+    # 2) 文字衬底面板（盖住下半，与固件一致；在 tint 之上）
     d.rectangle([4, 116, 168, 178], fill=CREAM + (255,))
     d.rectangle([8, 176, 232, 308], fill=CREAM + (255,))
-    # HUD
+    # 3) HUD（在 tint 之上，不被染）
     d.text((14, 4), "等级 1", font=font(), fill=BROWN)
     d.text((92, 4), "开心", font=font(), fill=RED)
-    # 状态条
+    # 4) 状态条（与固件一致：row0=118, dyy=14 -> 118/132/146/160，收在 y168，绝不碰列表）
     rows = [("饱食", 90), ("干净", 85), ("玩乐", 70), ("精力", 95)]
     for i, (lab, v) in enumerate(rows):
-        y = 117 + i * 18
+        y = 118 + i * 14
         d.text((8, y), lab, font=font(), fill=BROWN)
         d.rectangle([40, y, 160, y + 8], fill=(232, 220, 210, 255))
         d.rectangle([40, y, 40 + v, y + 8], fill=(120, 210, 130, 255))
-    # 照顾列表
+    # 5) 照顾列表
     items = ["喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照"]
     sel = 0
     d.rounded_rectangle([10, 178 + sel * 21, 218, 178 + sel * 21 + 22], radius=11, fill=RED)
     for i, it in enumerate(items):
         col = WHITE if i == sel else BROWN
         d.text((18, 179 + i * 21), it, font=font(), fill=col)
-    # 兔子
+    # 6) 兔子（在 tint 之上，不被染）
     rb = load_rabbit()
     if rb:
         img.alpha_composite(rb, (84, 26))
@@ -80,16 +92,10 @@ def draw_home(base, tint=None, winter=False, name=None):
             cap = os.path.join(SPR, "costume_hat.png")
             if os.path.exists(cap):
                 img.alpha_composite(Image.open(cap).convert("RGBA"), (84, 26))
-    # 季节字符（HUD 小标）
+    # 7) 季节字符（HUD 小标，在 tint 之上）
     if name is not None:
+        d = ImageDraw.Draw(img, "RGBA")
         d.text((150, 4), name, font=font(), fill=BROWN)
-    # 昼夜/季节叠色层（纯视觉，仅顶部房间区可见；面板不透明挡住下半）
-    if tint:
-        r, g, b, opa = tint
-        ov = Image.new("RGBA", (W, H), (r, g, b, opa))
-        # 只透出顶部房间区（y < 116）：下半蒙版擦透明，避免压字
-        ImageDraw.Draw(ov).rectangle([0, 116, W, H], fill=(0, 0, 0, 0))
-        img = Image.alpha_composite(img, ov)
     return img.convert("RGB")
 
 def draw_intro(step):
@@ -145,8 +151,8 @@ def main():
     naming.save(out1)
     print("written", out1)
 
-    # season.png: 改前(恒定白天) vs 改后(夜晚+冬季蓝调+雪帽)
-    before_season = draw_home(room, tint=None, winter=False, name="春")
+    # season.png: 改前(恒定白天，无季节功能) vs 改后(夜晚+冬季蓝调+雪帽)
+    before_season = draw_home(room, tint=None, winter=False, name=None)
     after_season = draw_home(room, tint=(55, 75, 130, 56), winter=True, name="冬")
     season = side_by_side(before_season, after_season,
                            "改前：恒定白天，无季节变化", "改后：夜晚+冬季蓝调，兔子戴雪帽",
