@@ -69,15 +69,13 @@ def draw_home(base, tint=None, winter=False, name=None):
     # 3) HUD（在 tint 之上，不被染）
     d.text((14, 4), "等级 1", font=font(), fill=BROWN)
     d.text((92, 4), "开心", font=font(), fill=RED)
-    # 4) 状态条（与固件一致：row0=118, dyy=14 -> 118/132/146/160，收在 y168，绝不碰列表）
-    #    先画条、后画文字，保证文字绝不被条盖住（修正预览渲染遮挡）
+    # 4) 状态条（忠实固件：文字 x=8 起，条 x=40 起；预览用 TrueType 比设备点阵宽，
+    #    故条起点取 44、宽 116，既与固件视觉一致又消除预览字体溢出造成的假遮挡）
     rows = [("饱食", 90), ("干净", 85), ("玩乐", 70), ("精力", 95)]
     for i, (lab, v) in enumerate(rows):
         y = 118 + i * 14
-        d.rectangle([40, y, 160, y + 8], fill=(232, 220, 210, 255))
-        d.rectangle([40, y, 40 + v, y + 8], fill=(120, 210, 130, 255))
-    for i, (lab, v) in enumerate(rows):
-        y = 118 + i * 14
+        d.rectangle([44, y, 160, y + 8], fill=(232, 220, 210, 255))
+        d.rectangle([44, y, 44 + int(v * 116 / 100), y + 8], fill=(120, 210, 130, 255))
         d.text((8, y), lab, font=font(), fill=BROWN)
     # 5) 照顾列表
     items = ["喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照"]
