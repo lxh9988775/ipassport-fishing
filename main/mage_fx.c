@@ -253,11 +253,11 @@ static void fx_build(void)
     lv_obj_remove_style_all(F.hero);
     lv_obj_set_style_bg_opa(F.hero, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(F.hero, 0, 0);
-    lv_obj_set_size(F.hero, 72, 92);
+    lv_obj_set_size(F.hero, 28, 36);
     /* 关键修复：mage_draw_bg 往 F.hero 容器里画的是「image 子对象」，
      * 必须拿它的指针才能改 src；直接 lv_image_set_src(F.hero,...) 作用在容器上
      * 会越界写坏 LVGL 实例内存 -> 延迟几帧后 Guru 崩溃（进战斗即崩的根因）。 */
-    mage_draw_bg_ret(F.hero, mage_hero_sprite_for_rank(g.rank), 0, 0, 72, 92, &F.heroImg);
+    mage_draw_bg_ret(F.hero, mage_hero_sprite_for_rank(g.rank), 0, 0, 28, 36, &F.heroImg);
     F.heroRankSig = -1;   /* 首帧由 render 按当前职级再校准（晋升后重进战斗也能更新） */
 
     /* 前景草丛：HTML 画两组三角，这里用一排深绿小三角块近似（视差 1.3） */
@@ -745,8 +745,8 @@ void mage_fx_render(void)
         const lv_image_dsc_t *hd = mage_img(mage_hero_sprite_for_rank(g.rank));
         if (hd && F.heroImg) { lv_image_set_src(F.heroImg, hd); F.heroRankSig = g.rank; }
     }
-    lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 36,
-                   (int)(250.0f + hBob) - 92);
+    lv_obj_set_pos(F.hero, (int)(70 - (int)bt.cam + lunge) + shakeX - 14,
+                   (int)(250.0f + hBob) - 36);
     /* 主角受击闪白：只在状态翻转的那一帧设置。
      * 每帧无条件设 img_opa 会持续触发 invalidate -> 卡死。
      * 作用在 image 子对象 F.heroImg（容器 F.hero 设 img_opa 不生效）。 */

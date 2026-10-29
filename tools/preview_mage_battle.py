@@ -106,12 +106,12 @@ def txt_l(d, text, x, y, fnt, fill):
 #   battle_bg <- battle_bg_k.png 240x320 cover
 #   town      <- town_art.png    240x320 直接 resize（非 cover，与固件 load_rgba 一致）
 #   怪物      <- sp_*.png（非 _k）自然尺寸（REAL 尺寸模式）
-SRC_HERO = "sp_hero_k.png"
-SRC_CAT = "sp_cat_k.png"
+SRC_HERO = "sp_hero_t0.png"   # 直接用固件实际精灵（与 mage_sprites.c 同源，保证预览=实机）
+SRC_CAT = "sp_mush.png"       # 出战伙伴（用户实机是蘑菇人·抱抱，48x50）
 SRC_BATTLE_BG = "battle_bg_k.png"
 SRC_TOWN = "town_art.png"
-HERO_W, HERO_H = 72, 92
-CAT_W, CAT_H = 29, 32
+HERO_W, HERO_H = 28, 36
+CAT_W, CAT_H = 24, 25
 
 
 # ============ 战斗背景 + 压暗 + 地面（所有战斗场景共用）============
@@ -693,7 +693,7 @@ def scene_partners(idx=0):
     d = ImageDraw.Draw(im)
     d.rectangle([68, 30, 171, 125], fill=(0x1e, 0x16, 0x3a), outline=GOLD2)
     d.rectangle([71, 33, 168, 122], fill=(0x10, 0x0b, 0x24))
-    draw_sprite(im, "sp_cat.png", 120, 118)      # 出战物种（示例：猫灵）
+    draw_sprite(im, "sp_mush.png", 120, 118)      # 出战物种（用户实机：蘑菇人·抱抱）
     body = [("绒绒 ★", GOLD), ("猫灵 Lv3 资质B(30/45)", WHITE),
             ("技能 迅捷：先手一击", (0xff, 0x6b, 0xd6)),
             ("特性 幸运：宝箱加成", (0x7f, 0xdc, 0x8a)),

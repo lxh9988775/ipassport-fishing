@@ -361,7 +361,7 @@ static void build_ui(void) {
     mage_draw_bg_ret(g_title_grp, "title", 0, 0, SCR_W, SCR_H, &t_bg);
     if (t_bg)   { lv_obj_move_foreground(t_bg);   lv_obj_move_to_index(t_bg, 0);   }
     /* 标题页主角：按当前职级显示分级形象（见习学徒→魔法帝），1:1 免缩放 */
-    mage_draw_sprite_ret(g_title_grp, mage_hero_sprite_for_rank(g.rank), SCR_W / 2, 268, 92, 1.0f, 0.0f, &t_hero);
+    mage_draw_sprite_ret(g_title_grp, mage_hero_sprite_for_rank(g.rank), SCR_W / 2, 268, 36, 1.0f, 0.0f, &t_hero);
     if (t_hero) { lv_obj_move_foreground(t_hero); lv_obj_move_to_index(t_hero, 0); }
 
     /* 命名组 */
@@ -1306,7 +1306,7 @@ static void refresh_ui(void) {
         g_menu.n = 0;   /* 伙伴页改用 4×2 立绘网格（g_part_root），不再用文字列表 */
         lv_label_set_text(g_scene_hint,
             partRelConf ? "OK 确认放生 · 返回 取消"
-            : partMenuOpen ? "↑↓ 选择 · OK 确定 · 返回 关闭"
+            : partMenuOpen ? "↑↓ 选择 · OK 确定 · 长按OK 关闭"
             : "OK 出战 · ↓ 切换 · 长按 菜单");
         break;
     }

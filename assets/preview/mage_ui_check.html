@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>魔法帝之路 · 主角尺寸/形象/比例 核对页</title>
+<style>
+  body{margin:0;background:#14101c;color:#eee;font-family:"Microsoft YaHei",-apple-system,sans-serif;padding:24px;}
+  h1{font-size:20px;color:#ffd24a;margin:0 0 4px;}
+  .sub{color:#9a93b0;font-size:13px;margin-bottom:20px;}
+  .card{background:#1f1830;border:1px solid #3a2f55;border-radius:10px;padding:14px;margin-bottom:18px;}
+  .card h2{font-size:15px;margin:0 0 10px;color:#7fd1ff;}
+  img{width:100%;max-width:520px;display:block;border-radius:6px;background:#0d0a14;}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;}
+  th,td{border:1px solid #3a2f55;padding:6px 8px;text-align:center;}
+  th{background:#2a2140;color:#ffd24a;}
+  .ok{color:#6ee787;} .tag{color:#9a93b0;font-size:12px;}
+  .row{display:flex;gap:14px;flex-wrap:wrap;}
+  .row .col{flex:1;min-width:240px;}
+</style>
+</head>
+<body>
+<h1>魔法帝之路 · 主角尺寸 / 形象 / 比例 核对页</h1>
+<div class="sub">电脑端按固件同一套坐标（240×320）渲染的预览图 · 改完待你确认后再烧录</div>
+
+<div class="card">
+  <h2>① 战斗 BOSS 屏 —— 主角已缩小、BOSS 比主角大（比例协调）</h2>
+  <img src="mage_battle_boss_2x.png">
+  <p class="tag">主角法师（左下持杖小人）≈ 屏高 1/9；BOSS 哥布林明显比主角大，是正常 RPG 比例。</p>
+</div>
+
+<div class="card">
+  <h2>② 采集收获结算屏 —— 主角完整、左下角小角色是出战伙伴·蘑菇</h2>
+  <img src="mage_loot_herb_2x.png">
+  <p class="tag">主角完整可见（头没被裁）；左下角小蘑菇是出战伙伴，本就比主角小。</p>
+</div>
+
+<div class="card">
+  <h2>③ 四阶主角形象对照 —— 进阶时自动换装（与你给的 4 张设计稿对应）</h2>
+  <img src="_tiers_montage.png">
+  <p class="tag">左→右：t0 棕袍(见习) → t1 蓝袍 → t2 紫袍 → t3 金白魔法帝。rank 0-1/2-3/4-5/6 自动切换。</p>
+</div>
+
+<div class="card">
+  <h2>④ 尺寸改动对照表（怪物尺寸完全不动，只缩人物）</h2>
+  <table>
+    <tr><th>角色</th><th>之前（72cfd46）</th><th>现在（待烧）</th><th>依据</th></tr>
+    <tr><td>主角法师</td><td>96×123（比怪大2~3倍）</td><td class="ok">28×36（≈屏1/9）</td><td>你认可的图2尺寸</td></tr>
+    <tr><td>出战伙伴·蘑菇</td><td>48×50</td><td class="ok">24×25（约主角0.67倍）</td><td>宠物本应比主角小</td></tr>
+    <tr><td>史莱姆 / 哥布林 / BOSS</td><td>32 / 40 / 64</td><td class="ok">不变</td><td>你要求怪物大小不变</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>⑤ 策划审核结论（mage-game 八条清单）</h2>
+  <p class="tag">
+  ✅ 界面改动先出对比图（本回合"烧"前已出图）<br>
+  ✅ 中文文案无新增缺字（"长按OK 关闭"沿用已校验）<br>
+  ✅ LVGL 铁律：主角 96→28×36，显存更小；精灵尺寸==绘制 h_pix，不触发删对象空白<br>
+  ✅ Flash 预算：精灵表 5.01MB，远小于 8MB<br>
+  ➖ 命名/不抄袭/难度/故事书：本轮仅改尺寸，不涉及
+  </p>
+</div>
+</body>
+</html>
