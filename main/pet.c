@@ -385,7 +385,7 @@ static void build_home(void) {
     lv_obj_set_size(g_tint, SCR_W, SCR_H);
     lv_obj_set_pos(g_tint, 0, 0);
     lv_obj_set_style_bg_color(g_tint, lv_color_make(255, 250, 230), 0);
-    lv_obj_set_style_bg_opa(g_tint, LV_OPA_12, 0);
+    lv_obj_set_style_bg_opa(g_tint, LV_OPA_10, 0);   /* 默认占位，refresh_home 会按时段/季节动态改写 */
     lv_obj_set_style_border_width(g_tint, 0, 0);
     lv_obj_set_style_radius(g_tint, 0, 0);
     lv_obj_set_style_pad_all(g_tint, 0, 0);
@@ -564,6 +564,7 @@ static void build_passport(void) {
 /* ===================== 首次启动轻引导（v4，A 项） =====================
  * 三段式：0 欢迎 / 1 起名 / 2 照顾提示。默认名“团子”，可在第 1 段用上下键改。
  * 纯文字页（复用 g_layer），不碰任何照顾逻辑（守红线①：不调快衰减/不死亡/不惩罚）。 */
+static void refresh_intro(void);   /* 前向声明：build_intro 内会调用，定义见下方 */
 static void build_intro(void) {
     lv_obj_clean(g_layer);
     g_intro_title = make_label(g_layer, "初次见面", 0, 0, RED_TXT);
