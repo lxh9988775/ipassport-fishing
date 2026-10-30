@@ -60,6 +60,14 @@ static void use_cjk(lv_obj_t *o) {
 #define BAR_G   lv_color_make(120, 210, 130)
 #define BAR_O   lv_color_make(245, 180, 70)
 #define BAR_R   lv_color_make(235, 90, 80)
+#define STAT_BAR_W 158   /* 主屏状态条长度（build / refresh 必须同步） */
+/* 状态条按“属性”固定配色（橙=饱食 蓝=干净 粉=玩乐 绿=精力），与预览 V2 一致 */
+static const uint8_t STAT_RGB[4][3] = {
+    {240, 160, 64},  /* 饱食 橙 */
+    { 91, 168, 224}, /* 干净 蓝 */
+    {240, 111, 160}, /* 玩乐 粉 */
+    {111, 192, 111}, /* 精力 绿 */
+};
 
 /* LVGL9 的 lv_color_make() 是内联函数，不是常量表达式，不能直接用于
    文件作用域静态初始化器（编译会报 "initializer element is not constant"）。
@@ -174,6 +182,22 @@ static lv_obj_t *make_capsule(lv_obj_t *parent, int x, int y, int w, int h) {
     /* 不做 move_to_index 沉底：三个调用点都是"先建胶囊、后建文字"，创建顺序
        已保证文字在胶囊之上；若沉到 index 0 会掉到主屏房间背景图下面被盖住。 */
     return c;
+}
+
+/* 带细边框的圆角卡片（v4 主屏改版：状态卡 / 照顾卡）。纯视觉装饰，创建一次不重绘。 */
+static lv_obj_t *make_card(lv_obj_t *parent, int x, int y, int w, int h,
+                           lv_color_t bg, lv_color_t bord) {
+    lv_obj_t *p = lv_obj_create(parent);
+    lv_obj_set_size(p, w, h);
+    lv_obj_set_pos(p, x, y);
+    lv_obj_set_style_bg_color(p, bg, 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(p, bord, 0);
+    lv_obj_set_style_border_width(p, 2, 0);
+    lv_obj_set_style_radius(p, 14, 0);
+    lv_obj_set_style_pad_all(p, 0, 0);
+    lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    return p;
 }
 
 static bool set_text_cached(lv_obj_t *lbl, const char *txt) {
@@ -369,9 +393,10 @@ static void build_home(void) {
     lv_obj_move_to_index(g_tint, 1);   /* 沉到房间背景(0)之上、面板/兔子之下 */
 
     /* 文字衬底面板（在所有文字/胶囊之前创建，沉在文字下面）：
-       状态条区 y116-178 / 照顾列表区 y176-308；房间家具只安排在面板之外的缝隙 */
-    make_panel(g_home, 4, 116, 164, 62, CREAM);
-    make_panel(g_home, 8, 176, 224, 132, CREAM);
+       状态卡 y116-202 / 照顾卡 y206-316，两张卡之间留 4px 干净间隙。
+       带细边框圆角卡（v4 改版），房间家具只安排在卡片之外的缝隙。 */
+    make_card(g_home, 4, 116, 232, 84, CREAM, BROWN);
+    make_card(g_home, 4, 204, 232, 112, CREAM, BROWN);
 
     /* HUD：等级 · 心情 · 电池 */
     g_lbl_level = make_label(g_home, "等级 1", 14, 4, BROWN);
@@ -437,26 +462,39 @@ static void build_home(void) {
     g_lbl_fb = make_label(g_fb_cap, "", 0, 0, RED_TXT);
     lv_obj_align(g_lbl_fb, LV_ALIGN_CENTER, 0, 0);
 
-    /* 四条状态条（118 起，与反馈胶囊 100~118 相接不重叠） */
+    /* 四条状态条（v4 改版：配色圆点 + 同色进度条，颜色编码属性更直观）。
+       每行：左侧圆点(属性色) → 文字 → 右侧同色条。与反馈胶囊 100~118 不重叠。 */
     static const char *ROW[4] = { "饱食", "干净", "玩乐", "精力" };
-    int bar_x = 40, bar_w = 120, bar_h = 8, row0 = 118, dyy = 14;
+    int bar_x = 60, bar_w = STAT_BAR_W, bar_h = 8, row0 = 133, dyy = 15;
     for (int i = 0; i < 4; ++i) {
         int y = row0 + i * dyy;
-        make_label(g_home, ROW[i], 8, y, BROWN);
-        lv_obj_t *bg = make_panel(g_home, bar_x, y, bar_w, bar_h, lv_color_make(232, 220, 210));
-        (void)bg;
-        g_row_fill[i] = make_panel(g_home, bar_x, y, bar_w, bar_h, BAR_G);
+        lv_color_t c = lv_color_make(STAT_RGB[i][0], STAT_RGB[i][1], STAT_RGB[i][2]);
+        /* 配色圆点 */
+        lv_obj_t *dot = lv_obj_create(g_home);
+        lv_obj_set_size(dot, 10, 10);
+        lv_obj_set_pos(dot, 12, y - 1);
+        lv_obj_set_style_bg_color(dot, c, 0);
+        lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(dot, 0, 0);
+        lv_obj_set_style_radius(dot, 5, 0);
+        lv_obj_clear_flag(dot, LV_OBJ_FLAG_SCROLLABLE);
+        make_label(g_home, ROW[i], 26, y, BROWN);
+        /* 条灰底 + 同色填充（填充宽度由 refresh_home 按比例更新） */
+        make_panel(g_home, bar_x, y, bar_w, bar_h, lv_color_make(232, 220, 210));
+        g_row_fill[i] = make_panel(g_home, bar_x, y, bar_w, bar_h, c);
     }
 
-    /* 照顾列表（6 项；选中胶囊随 refresh_home 移动，x10 营在列表面板内） */
-    g_home_cap = make_capsule(g_home, 10, 176, 208, 22);
-    int ly0 = 177, ldy = 21;
+    /* 照顾卡标题 + 列表（6 项；选中红胶囊随 refresh_home 移动，全宽居中） */
+    make_label(g_home, "状态", 16, 117, BROWN);
+    make_label(g_home, "照顾", 16, 207, BROWN);
+    g_home_cap = make_capsule(g_home, 4, 220, 232, 18);
+    int ly0 = 220, ldy = 15;
     for (int i = 0; i < 6; ++i) {
         g_home_lbl[i] = make_label(g_home, HOME_ITEMS[i], 18, ly0 + i * ldy, BROWN);
     }
 
     g_home_hint = make_label(g_home, "上下选 · OK 做", 0, 0, GRAYTX);
-    lv_obj_align(g_home_hint, LV_ALIGN_BOTTOM_MID, 0, -14);
+    lv_obj_align(g_home_hint, LV_ALIGN_BOTTOM_MID, 0, -22);
 }
 
 /* ===================== 菜单（小游戏列表） ===================== */
@@ -1026,11 +1064,6 @@ static void refresh_batt(void) {
     lv_label_set_text(g_lbl_batt, b);
 }
 
-static void bar_color(lv_obj_t *fill, int v) {
-    lv_color_t c = (v>=45)?BAR_G:(v>=20)?BAR_O:BAR_R;
-    lv_obj_set_style_bg_color(fill, c, 0);
-}
-
 /* ===================== 昼夜 / 季节（v4，纯视觉层） =====================
  * 按 RTC 真实时间算时段与季节；RTC 未校准（tm_year<120，即 2020 年前）时
  * 回退到慢循环，保证演示可见变化。结果只用于改全屏半透明叠色层 g_tint，
@@ -1109,14 +1142,14 @@ static void refresh_home(int now) {
     for (int i = 0; i < 4; ++i) {
         if (vals[i] != s_bar[i]) {
             s_bar[i] = vals[i];
-            lv_obj_set_size(g_row_fill[i], vals[i] * 120 / 100, 8);
-            bar_color(g_row_fill[i], vals[i]);
+            /* 宽度按比例更新；颜色在 build 已固定为属性色（橙/蓝/粉/绿），此处不再按数值上色 */
+            lv_obj_set_size(g_row_fill[i], vals[i] * STAT_BAR_W / 100, 8);
         }
     }
 
     if (g_home_sel != s_sel) {
         s_sel = g_home_sel;
-        lv_obj_set_pos(g_home_cap, 10, 176 + g_home_sel * 21);
+        lv_obj_set_pos(g_home_cap, 4, 220 + g_home_sel * 15);
         /* 选中项文字翻白，否则棕色字压在红色胶囊上看不清（模拟器实测发现） */
         for (int i = 0; i < 6; ++i) {
             if (!g_home_lbl[i]) continue;

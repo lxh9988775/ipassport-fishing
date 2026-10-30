@@ -100,10 +100,10 @@ def draw_home(base, tint=None, winter=False, name=None):
     return img.convert("RGB")
 
 def draw_home_v2(base, winter=False, name=None):
-    """改版主屏（有设计感，待用户确认）：
-       - 状态区：圆角卡 + 细边框 + 四项各配色圆点 + 同色进度条
-       - 照顾列表：同样卡化 + 选中红胶囊
-    层级仍与固件一致：房间背景 -> tint(顶区) -> 卡片(不透明) -> 文字/兔子。"""
+    """改版主屏（有设计感，坐标与固件 pet.c build_home 完全对齐）：
+       - 状态卡 [4,116,236,196] + 细边框 + 四项配色圆点 + 同色进度条
+       - 照顾卡 [4,200,236,316] + 选中红胶囊
+    层级与固件一致：房间背景 -> tint(顶区) -> 卡片(不透明) -> 文字/兔子。"""
     img = base.convert("RGBA")
     if winter:
         ov = Image.new("RGBA", (W, H), (55, 75, 130, 56))
@@ -111,37 +111,36 @@ def draw_home_v2(base, winter=False, name=None):
         img = Image.alpha_composite(img, ov)
     d = ImageDraw.Draw(img, "RGBA")
 
-    # ---- 状态卡 ----
     CARD = CREAM + (255,)
     BORD = (150, 110, 80, 255)
-    d.rounded_rectangle([6, 106, 234, 198], radius=14, fill=CARD, outline=BORD, width=2)
-    d.text((18, 110), "状态", font=font(), fill=BROWN)
+
+    # ---- 状态卡 [4,116,236,200] ----
+    d.rounded_rectangle([4, 116, 236, 200], radius=14, fill=CARD, outline=BORD, width=2)
+    d.text((16, 117), "状态", font=font(), fill=BROWN)
     stat = [("饱食", 90, (240, 160, 64)), ("干净", 85, (91, 168, 224)),
             ("玩乐", 70, (240, 111, 160)), ("精力", 95, (111, 192, 111))]
     for i, (lab, v, col) in enumerate(stat):
-        y = 130 + i * 16
-        # 配色圆点
-        d.ellipse([14, y + 1, 24, y + 11], fill=col + (255,))
-        d.text((32, y), lab, font=font(), fill=BROWN)
-        # 进度条（圆角感：先灰底后同色填充）
-        bx0, bx1 = 74, 212
-        d.rounded_rectangle([bx0, y, bx1, y + 9], radius=4, fill=(232, 220, 210, 255))
+        y = 133 + i * 15          # 133,148,163,178
+        d.ellipse([12, y - 1, 22, y + 9], fill=col + (255,))   # 配色圆点
+        d.text((26, y), lab, font=font(), fill=BROWN)
+        bx0, bx1 = 60, 218                              # bar 宽 158
+        d.rounded_rectangle([bx0, y, bx1, y + 8], radius=4, fill=(232, 220, 210, 255))
         fw = int((bx1 - bx0) * v / 100)
         if fw > 4:
-            d.rounded_rectangle([bx0, y, bx0 + fw, y + 9], radius=4, fill=col + (255,))
+            d.rounded_rectangle([bx0, y, bx0 + fw, y + 8], radius=4, fill=col + (255,))
 
-    # ---- 照顾卡（y200 起，与状态卡 y198 留 2px 干净间隙）----
-    d.rounded_rectangle([6, 200, 234, 314], radius=14, fill=CARD, outline=BORD, width=2)
-    d.text((18, 204), "照顾", font=font(), fill=BROWN)
+    # ---- 照顾卡 [4,204,236,316] ----
+    d.rounded_rectangle([4, 204, 236, 316], radius=14, fill=CARD, outline=BORD, width=2)
+    d.text((16, 207), "照顾", font=font(), fill=BROWN)
     items = ["喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照"]
     sel = 0
     for i, it in enumerate(items):
-        y = 220 + i * 15
+        y = 220 + i * 15          # 220,235,250,265,280,295
         if i == sel:
-            d.rounded_rectangle([10, y - 1, 230, y + 14], radius=7, fill=RED)
-            d.text((22, y), it, font=font(), fill=WHITE)
+            d.rounded_rectangle([4, 220, 236, 238], radius=9, fill=RED)
+            d.text((18, y), it, font=font(), fill=WHITE)
         else:
-            d.text((22, y), it, font=font(), fill=BROWN)
+            d.text((18, y), it, font=font(), fill=BROWN)
 
     # ---- HUD ----
     d.text((14, 4), "等级 1", font=font(), fill=BROWN)
