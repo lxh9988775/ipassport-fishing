@@ -486,9 +486,9 @@ static void build_home(void) {
 
     /* 照顾卡标题 + 列表（6 项；选中红胶囊随 refresh_home 移动，全宽居中） */
     make_label(g_home, "状态", 16, 117, BROWN);
-    make_label(g_home, "照顾", 16, 207, BROWN);
-    g_home_cap = make_capsule(g_home, 4, 220, 232, 18);
-    int ly0 = 220, ldy = 15;
+    make_label(g_home, "照顾", 16, 205, BROWN);
+    g_home_cap = make_capsule(g_home, 4, 222, 232, 18);
+    int ly0 = 222, ldy = 15;
     for (int i = 0; i < 6; ++i) {
         g_home_lbl[i] = make_label(g_home, HOME_ITEMS[i], 18, ly0 + i * ldy, BROWN);
     }
@@ -1150,7 +1150,7 @@ static void refresh_home(int now) {
 
     if (g_home_sel != s_sel) {
         s_sel = g_home_sel;
-        lv_obj_set_pos(g_home_cap, 4, 220 + g_home_sel * 15);
+        lv_obj_set_pos(g_home_cap, 4, 222 + g_home_sel * 15);
         /* 选中项文字翻白，否则棕色字压在红色胶囊上看不清（模拟器实测发现） */
         for (int i = 0; i < 6; ++i) {
             if (!g_home_lbl[i]) continue;

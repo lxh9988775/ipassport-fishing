@@ -131,11 +131,11 @@ def draw_home_v2(base, winter=False, name=None):
 
     # ---- 照顾卡 [4,204,236,316] ----
     d.rounded_rectangle([4, 204, 236, 316], radius=14, fill=CARD, outline=BORD, width=2)
-    d.text((16, 207), "照顾", font=font(), fill=BROWN)
+    d.text((16, 205), "照顾", font=font(), fill=BROWN)
     items = ["喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照"]
     sel = 0
     for i, it in enumerate(items):
-        y = 220 + i * 15          # 220,235,250,265,280,295
+        y = 222 + i * 15          # 222,237,252,267,282,297
         if i == sel:
             d.rounded_rectangle([4, 220, 236, 238], radius=9, fill=RED)
             d.text((18, y), it, font=font(), fill=WHITE)
