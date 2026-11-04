@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """verify_sim_tackle.py —— 网页模拟器实测：钓场有没有画出竿/线/漂/饵、
-换竿画面会不会变、菜单钓点行会不会给解锁提示。
+钓场左上角的「时段 · 天气」标签在不在、换竿画面会不会变、菜单钓点行会不会给解锁提示。
 
 这是「Device tests」的替代（模拟器实测，非真机）。判据全部走像素扫描，
 不用画布坐标反推，绕开模拟器截图的十几像素偏移。
@@ -108,6 +108,56 @@ def rod_roi_bytes(img: Image.Image) -> bytes:
     W, H = im.size
     box = (0, int(H * 0.33), int(W * 0.30), int(H * 0.58))
     return im.crop(box).resize((60, 40)).tobytes()
+
+
+def env_label_dark_ratio(img: Image.Image) -> float:
+    """左上角「时段 · 天气」标签那块半透明黑底占 ROI 的比例。
+
+    标签在面板内 (8,6) → 屏幕 (8,28)，底色是黑 alpha=120 压在天上。
+    天本身是亮的（150,200,240），云是白的，所以这一小块"明显比周围暗"的地方
+    只可能是标签自己 —— 没有别的深色元素落在那个位置（顶栏黑条在 y<24，
+    钓点胶囊在 x>170）。时段染色会把天空整体压暗，但染色后的天空 max 仍 >135，
+    不会被误判成标签。
+
+    返回值：ROI 内 max(RGB)<135 的像素占比。
+    """
+    im = img.convert("RGB")
+    W, H = im.size
+    p = im.load()
+    x0, x1 = int(W * 0.028), int(W * 0.37)      # 屏幕 x 8..85
+    y0, y1 = int(H * 0.085), int(H * 0.170)     # 屏幕 y 28..52（顶栏在 24 以上，已排除）
+    if x1 <= x0 or y1 <= y0:
+        return 0.0
+    dark = 0
+    total = 0
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            r, g, b = p[x, y]
+            total += 1
+            if max(r, g, b) < 135:
+                dark += 1
+    return dark / max(1, total)
+
+
+def bright_pixels_in_band(img: Image.Image, y0f, y1f, x0f=0.03, x1f=0.97,
+                          thresh=120) -> int:
+    """数某个横向条带里"明显亮于底色"的像素个数。
+
+    用来验证"新加的那一行到底画出来没有"：图鉴页底色是深蓝 (6,18,36)，
+    max 只有 36；文字（白/金/蓝/奶油/绿）都远高于阈值。
+    v2 的图鉴页在 lore 与里程碑该在的位置上是空的，所以这里 >0 就是新增行已渲染。
+    """
+    im = img.convert("RGB")
+    W, H = im.size
+    p = im.load()
+    y0, y1 = int(H * y0f), int(H * y1f)
+    x0, x1 = int(W * x0f), int(W * x1f)
+    n = 0
+    for y in range(max(0, y0), min(H, y1)):
+        for x in range(max(0, x0), min(W, x1)):
+            if max(p[x, y]) > thresh:
+                n += 1
+    return n
 
 
 def hint_bar_region(img: Image.Image) -> bytes:
@@ -389,6 +439,13 @@ def main() -> int:
               % (kind, n_dark))
         rod0 = rod_roi_bytes(img)
 
+        # ---- 1b) 钓场左上角应有「时段 · 天气」标签 ----
+        # 判据是那块半透明黑底：天空亮、云白，只有标签底板是暗的。
+        env_ratio = env_label_dark_ratio(img)
+        check(env_ratio >= 0.22,
+              "钓场左上角出现「时段 · 天气」标签底板（暗像素占比 %.0f%%，阈值 22%%）"
+              % (env_ratio * 100))
+
         # ---- 2) 长按开菜单（重试 + 按住期间连拍）----
         opened, img_menu = long_press_to_menu(page)
         check(opened, "长按 OK 打开菜单")
@@ -499,6 +556,32 @@ def main() -> int:
         check(back_ok, "从菜单回到钓场")
         check(rod_changed,
               "换竿后钓场上的鱼竿像素变了（=换竿看得见；近黑像素 %d）" % n_dark1)
+
+        # ---- 5) 图鉴详情页：新增「性格钩子」与「里程碑」两行 ----
+        # v2 的图鉴页在这两行该在的位置上是空的（图鉴底色深蓝 max=36），
+        # 所以只要那条带子里有亮像素，就说明新标签真的画出来了。
+        codex_ok = False
+        lore_px = mile_px = 0
+        for attempt in range(3):
+            if not in_menu(page):
+                long_press_to_menu(page, tries=3)
+            if settle_row(page, 4) != 4:
+                print("  第 %d 次走不到「图鉴」行，重开菜单再来" % (attempt + 1))
+                continue
+            tap(page)                            # OK 打开图鉴
+            time.sleep(1.8)
+            img_cx, _ = shot(page, "sim_08_codex")
+            # 屏幕坐标：lore 行 198..222、里程碑行 244..268（除以 320 得比例）
+            lore_px = bright_pixels_in_band(img_cx, 198 / 320.0, 224 / 320.0)
+            mile_px = bright_pixels_in_band(img_cx, 244 / 320.0, 268 / 320.0)
+            if lore_px >= 20 and mile_px >= 20:
+                codex_ok = True
+                break
+            print("  第 %d 次图鉴页 lore=%d 里程碑=%d 像素，不够，再来"
+                  % (attempt + 1, lore_px, mile_px))
+        check(codex_ok,
+              "图鉴详情页画出「性格钩子」与「里程碑」两行（lore %d px / 里程碑 %d px）"
+              % (lore_px, mile_px))
 
         browser.close()
 

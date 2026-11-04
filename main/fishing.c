@@ -392,7 +392,19 @@ static void build_ui(void) {
     lv_obj_set_size(g_scene, SCR_W, SCR_H - HUD_H - 24);
     lv_obj_set_pos(g_scene, 0, HUD_H);
     lv_obj_set_style_bg_opa(g_scene, LV_OPA_TRANSP, 0);
+    /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，
+     * 子元素坐标是相对【内容区】的，不清零的话所有子元素都比源码里写的
+     * 往右下偏 13px —— 实测证据：菜单选中条比预期低 12~13px、
+     * 右上角「静水塘」胶囊被屏幕右缘切掉、图鉴最后一行被底部提示条压住。
+     * 清零后坐标才名副其实，布局检查器（只加父级 x/y、不计父级内边距）
+     * 也才和实机对得上。 */
+    /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，而子元素
+     * 坐标是相对【内容区】的。不清零的话所有子元素都比源码里写的往右下偏
+     * 13px —— 实测证据：菜单选中条比预期低 12~13px、右上角「静水塘」胶囊被
+     * 屏幕右缘切掉、图鉴最后一行被底部提示条压住。清零后坐标才名副其实，
+     * 布局检查器（只加父级 x/y、不计父级内边距）也才和实机对得上。 */
     lv_obj_set_style_border_width(g_scene, 0, 0);
+    lv_obj_set_style_pad_all(g_scene, 0, 0);
     lv_obj_clear_flag(g_scene, LV_OBJ_FLAG_SCROLLABLE);
 
     /* 环境标签：左上角「时段 · 天气」。
@@ -453,7 +465,15 @@ static void build_ui(void) {
     lv_obj_set_pos(g_reel, 0, HUD_H);
     lv_obj_set_style_bg_color(g_reel, lv_color_make(10, 30, 60), 0);
     lv_obj_set_style_bg_opa(g_reel, LV_OPA_COVER, 0);
+    /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，
+     * 子元素坐标是相对【内容区】的，不清零的话所有子元素都比源码里写的
+     * 往右下偏 13px —— 实测证据：菜单选中条比预期低 12~13px、
+     * 右上角「静水塘」胶囊被屏幕右缘切掉、图鉴最后一行被底部提示条压住。
+     * 清零后坐标才名副其实，布局检查器（只加父级 x/y、不计父级内边距）
+     * 也才和实机对得上。 */
+    /* 清零内边距：面板子元素坐标相对内容区，默认内边距会让整体偏 13px */
     lv_obj_set_style_border_width(g_reel, 0, 0);
+    lv_obj_set_style_pad_all(g_reel, 0, 0);
     lv_obj_clear_flag(g_reel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_reel, LV_OBJ_FLAG_HIDDEN);
 
@@ -511,7 +531,15 @@ static void build_ui(void) {
     lv_obj_set_pos(g_result, 0, HUD_H);
     lv_obj_set_style_bg_color(g_result, lv_color_make(8, 24, 48), 0);
     lv_obj_set_style_bg_opa(g_result, LV_OPA_COVER, 0);
+    /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，
+     * 子元素坐标是相对【内容区】的，不清零的话所有子元素都比源码里写的
+     * 往右下偏 13px —— 实测证据：菜单选中条比预期低 12~13px、
+     * 右上角「静水塘」胶囊被屏幕右缘切掉、图鉴最后一行被底部提示条压住。
+     * 清零后坐标才名副其实，布局检查器（只加父级 x/y、不计父级内边距）
+     * 也才和实机对得上。 */
+    /* 清零内边距：面板子元素坐标相对内容区，默认内边距会让整体偏 13px */
     lv_obj_set_style_border_width(g_result, 0, 0);
+    lv_obj_set_style_pad_all(g_result, 0, 0);
     lv_obj_clear_flag(g_result, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_result, LV_OBJ_FLAG_HIDDEN);
 
@@ -529,7 +557,15 @@ static void build_ui(void) {
     lv_obj_set_pos(g_menu, 0, HUD_H);
     lv_obj_set_style_bg_color(g_menu, lv_color_make(6, 18, 36), 0);
     lv_obj_set_style_bg_opa(g_menu, LV_OPA_COVER, 0);
+    /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，
+     * 子元素坐标是相对【内容区】的，不清零的话所有子元素都比源码里写的
+     * 往右下偏 13px —— 实测证据：菜单选中条比预期低 12~13px、
+     * 右上角「静水塘」胶囊被屏幕右缘切掉、图鉴最后一行被底部提示条压住。
+     * 清零后坐标才名副其实，布局检查器（只加父级 x/y、不计父级内边距）
+     * 也才和实机对得上。 */
+    /* 清零内边距：面板子元素坐标相对内容区，默认内边距会让整体偏 13px */
     lv_obj_set_style_border_width(g_menu, 0, 0);
+    lv_obj_set_style_pad_all(g_menu, 0, 0);
     lv_obj_clear_flag(g_menu, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_menu, LV_OBJ_FLAG_HIDDEN);
 
@@ -552,7 +588,15 @@ static void build_ui(void) {
     lv_obj_set_pos(g_codex, 0, HUD_H);
     lv_obj_set_style_bg_color(g_codex, lv_color_make(6, 18, 36), 0);
     lv_obj_set_style_bg_opa(g_codex, LV_OPA_COVER, 0);
+    /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，
+     * 子元素坐标是相对【内容区】的，不清零的话所有子元素都比源码里写的
+     * 往右下偏 13px —— 实测证据：菜单选中条比预期低 12~13px、
+     * 右上角「静水塘」胶囊被屏幕右缘切掉、图鉴最后一行被底部提示条压住。
+     * 清零后坐标才名副其实，布局检查器（只加父级 x/y、不计父级内边距）
+     * 也才和实机对得上。 */
+    /* 清零内边距：面板子元素坐标相对内容区，默认内边距会让整体偏 13px */
     lv_obj_set_style_border_width(g_codex, 0, 0);
+    lv_obj_set_style_pad_all(g_codex, 0, 0);
     lv_obj_clear_flag(g_codex, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_codex, LV_OBJ_FLAG_HIDDEN);
 

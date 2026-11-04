@@ -351,6 +351,17 @@ def parse_source():
              and o["x"] is not None and o["y"] is not None
              and (o["kind"] != "label" or o["texts"] or o["long_text"])}
 
+    # 面板内边距防线：lv_obj_create() 的默认样式带约 13px 内边距，子元素坐标
+    # 相对【内容区】。不清零的话，所有面板子元素都会比源码写的往右下偏 13px，
+    # 而本检查器只加父级 x/y、不计父级内边距 —— 于是"检查通过"但实机错位。
+    # （实测症状：菜单选中条低 12~13px、右上角胶囊被屏幕右缘切掉、
+    #   图鉴最后一行被底部提示条压住。）所以这里强制要求每个面板显式清零。
+    for panel in sorted(PANELS):
+        if not re.search(r"lv_obj_set_style_pad_all\(\s*%s\s*," % re.escape(panel), raw):
+            note("面板 %s 没有显式 lv_obj_set_style_pad_all(...,0,0)："
+                 "lv_obj_create 默认约 13px 内边距会让它的子元素整体偏 13px，"
+                 "而本检查器不计父级内边距，会误判为「通过」" % panel)
+
     # 覆盖率防线：源码里有几处设置文案，就得解析出几处。
     # 少解析=漏检，必须报出来，不能"解析不出来就当没这回事"。
     # 注意 total 只数【调用点】：set_text_cached 的【函数定义】也长成
