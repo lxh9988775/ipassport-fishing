@@ -1,5 +1,6 @@
-This version makes fishing smoother: you can mute the sound, and the Codex now shows how big each fish grows and what it likes to eat.
+This release gives fishing a bit of personality and some atmosphere: every species now has a character, and the water changes with the hour of the day and the weather.
 
-1. New "Sound" toggle: long-press OK to open the menu and the last row is Sound — one press switches it on or off, and your choice is remembered after a power cycle.
-2. The Codex gains a "Size" line: it shows each fish's adult length range and its favourite bait, even for fish you haven't caught yet — a handy hint on what to use.
-3. Your personal best is now more visible: the old line becomes a gold "Max 24.5 cm · caught 6", so your record stands out at a glance.
+1. All 24 species got a personality: the Codex now adds a line describing what kind of fish it is — a bass is "a brute that charges head-on and never lets go once hooked", while the sailfish is "the deep-sea overlord, an 80 kg giant only a sea rod can reach". Every line is written from the real behaviour of the species, and fish you have not caught yet are described too, so the Codex doubles as a reason to go fishing for them.
+2. The spot changes with time and weather: morning, noon, dusk and night each bring their own light, while clear, cloudy and rainy days take turns. The same water looks like a different place depending on when you show up, and the top-left corner tells you the current conditions, such as "Dusk · Rain".
+3. The Codex now tracks collection milestones: 4 species earns Getting the Feel, 8 earns Coming into Stride, and all 24 earn Rod and Bobber, Complete. The progress line also shows a percentage so you can see how far along you are.
+4. Fixed a few misalignments: the spot name badge at the top right used to get clipped by the screen edge, and the last line of the Codex page used to be cut in half by the bottom hint bar. Both are now properly placed.

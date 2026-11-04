@@ -230,6 +230,33 @@ def make(warm: bool = False, y_offset: int = 0) -> Image.Image:
     return overlay_text(scene, warm)
 
 
+def env_filter(img: Image.Image, period: str, weather: str) -> Image.Image:
+    """给封面整幅上时段/天气色调 —— 配色直接取自 main/fishing.c 的 env_visual()
+    （tools/preview_ui.py 是它的镜像），两处不许各写一份。"""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import preview_ui
+    (r, g, b), opa = preview_ui.env_visual(period, weather)
+    out = img.convert("RGBA")
+    ov = Image.new("RGBA", out.size, (r, g, b, opa))
+    out = Image.alpha_composite(out, ov)
+    if weather == "雨":
+        layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        sc = (W * SCALE) / 240.0
+        for p0, p1 in preview_ui.RAIN_POINTS:
+            ld.line([(p0[0] * sc, p0[1] * sc), (p1[0] * sc, p1[1] * sc)],
+                    fill=(205, 222, 245, 120), width=max(1, int(round(sc))))
+        out = Image.alpha_composite(out, layer)
+    return out.convert("RGB")
+
+
+def make_env(period: str, weather: str) -> Image.Image:
+    scene = build_scene().convert("RGB").resize(
+        (int(W * SCALE), int(H * SCALE)), Image.NEAREST)
+    scene = env_filter(scene, period, weather)
+    return overlay_text(scene, False)
+
+
 def make_compare(paths, out_path) -> None:
     Z = 0.30
     ims = []
@@ -257,14 +284,32 @@ def make_compare(paths, out_path) -> None:
 def main() -> int:
     warm = "--warm" in sys.argv
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    period = weather = None
+    if "--env" in sys.argv:
+        i = sys.argv.index("--env")
+        period, weather = sys.argv[i + 1], sys.argv[i + 2]
     out = args[0] if args else os.path.join(
         COVER_DIR, "fishing-cover-v3-warm-3x4.png" if warm else "fishing-cover-v3-3x4.png")
     os.makedirs(COVER_DIR, exist_ok=True)
 
-    img = make(warm)
+    img = make_env(period, weather) if period else make(warm)
     img.save(out)
     w, h = img.size
     print("saved %s  %dx%d  is3x4=%s" % (out, w, h, w * 4 == h * 3))
+
+    if "--env-compare" in sys.argv:
+        cands = []
+        for tag, per, wea in (("morning-clear", "清晨", "晴"),
+                              ("noon-clear", "正午", "晴"),
+                              ("dusk-rain", "黄昏", "雨"),
+                              ("night-clear", "深夜", "晴")):
+            q = os.path.join(COVER_DIR, "fishing-cover-env-%s-3x4.png" % tag)
+            make_env(per, wea).save(q)
+            cands.append(("时段 %s · %s" % (per, wea), q))
+        make_compare([("现封面 · 晴日", os.path.join(
+            ROOT, "assets", "publish", "v2", "fishing-cover-3x4.png"))] + cands,
+            os.path.join(COVER_DIR, "fishing-cover-env-compare.png"))
+        print("saved env compare")
 
     if "--compare" in sys.argv:
         old = os.path.join(ROOT, "assets", "publish", "v2", "fishing-cover-3x4.png")

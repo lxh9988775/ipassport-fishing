@@ -33,18 +33,20 @@ FISH_ZH = {
     "xiaohuang": "小黄鱼", "daiyu": "带鱼", "bayu": "鲅鱼", "shiban": "石斑鱼",
     "bimu": "比目鱼", "jinqiang": "金枪鱼", "qiyu": "旗鱼", "xiaosha": "小鲨鱼",
 }
-# (素材, 名称, 纵向裁切位置 0=顶 1=底, 鱼竿, 鱼饵)
-# 裁切位置要让"竿尖→浮漂→鱼饵"整套家什都落在画格里（竿在 y116~，饵到 y207），
-# 所以三片都取中段，不再取贴顶/贴底。
+# (素材, 名称, 纵向裁切位置 0=顶 1=底, 鱼竿, 鱼饵, 时段, 天气)
+# 裁切位置要让"竿尖→浮漂→鱼饵"整套家什都落在画格里：竿顶 y138、饵底 y229，
+# 所以裁切中心要落在这套家什的中点（约 y183）上，否则鱼饵会被切掉半截。
 SCENES = [
-    ("bg_pond", "静水塘", 0.49, "rod_hand", "bait_worm"),
-    ("bg_river", "急流河", 0.49, "rod_lure", "bait_dough"),
-    ("bg_sea", "深海", 0.49, "rod_sea", "bait_spinner"),
+    ("bg_pond", "静水塘", 0.61, "rod_hand", "bait_worm", "清晨", "晴"),
+    ("bg_river", "急流河", 0.61, "rod_lure", "bait_dough", "黄昏", "雨"),
+    ("bg_sea", "深海", 0.61, "rod_sea", "bait_spinner", "深夜", "晴"),
 ]
 
-# 与 main/fishing.c 的 ROD_X/ROD_Y/FLOAT_*/BAIT_DY 一致
-ROD_X, ROD_Y = 8, 116
-FLOAT_X, FLOAT_Y, FLOAT_W = 150, 146, 24
+# 与 main/fishing.c 的 ROD_X/ROD_Y/FLOAT_*/BAIT_DY 一致，但注意这些都是【屏幕】坐标：
+# 钓场是 pos=(0, HUD_H) 的面板，子元素坐标是面板内相对坐标，屏幕上要再加 HUD_H。
+HUD_H = 22
+ROD_X, ROD_Y = 8, 22 + 116
+FLOAT_X, FLOAT_Y, FLOAT_W = 150, 22 + 146, 24
 BAIT_DY = 29
 
 INK = (14, 26, 44)
@@ -103,6 +105,27 @@ def make_codex():
     print("saved", out)
 
 
+def apply_env(img: Image.Image, period: str, weather: str, sc: float = 1.0) -> Image.Image:
+    """时段/天气染色层 —— 直接复用 tools/preview_ui.py 的 env_visual()，
+    两处配色不许各写一份（否则实机改了图没跟着改）。"""
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    import preview_ui
+    (r, g, b), opa = preview_ui.env_visual(period, weather)
+    out = img.convert("RGBA")
+    if opa:
+        ov = Image.new("RGBA", out.size, (r, g, b, opa))
+        out = Image.alpha_composite(out, ov)
+    if weather == "雨":
+        layer = Image.new("RGBA", out.size, (0, 0, 0, 0))
+        ld = ImageDraw.Draw(layer)
+        # 雨丝坐标是【游戏坐标】，这里要跟着 sc 一起放大（底图已经放大了）
+        for p0, p1 in preview_ui.RAIN_POINTS:
+            ld.line([(p0[0] * sc, p0[1] * sc), (p1[0] * sc, p1[1] * sc)],
+                    fill=(205, 222, 245, 120), width=max(1, int(round(sc))))
+        out = Image.alpha_composite(out, layer)
+    return out
+
+
 def overlay_tackle(scene, rod_name, bait_name, sc):
     """把鱼竿/鱼线/浮漂/鱼饵按 main/fishing.c 的坐标叠到放大后的钓场图上。
 
@@ -132,11 +155,13 @@ def make_scenes():
     img = Image.new("RGB", (W, H), INK)
     band_h = H // 3
     d = ImageDraw.Draw(img)
-    for i, (key, zh, bias, rod, bait) in enumerate(SCENES):
+    for i, (key, zh, bias, rod, bait, period, weather) in enumerate(SCENES):
         bg = Image.open(os.path.join(PNG, key + ".png")).convert("RGB")
         # 按宽度铺满、纵向居中裁切
         sc = W / bg.width
         bg = bg.resize((W, int(bg.height * sc)), Image.NEAREST).convert("RGBA")
+        # 时段/天气染色层：与 main/fishing.c 的 env_visual() 同一套配色
+        bg = apply_env(bg, period, weather, sc)
         overlay_tackle(bg, rod, bait, sc)
         top = max(0, int((bg.height - band_h) * bias))
         band = bg.crop((0, top, W, top + band_h)).convert("RGB")
@@ -149,6 +174,13 @@ def make_scenes():
                W - 36, i * band_h + 104)
         d.rounded_rectangle(box, radius=14, fill=(12, 22, 38))
         d.text((W - 36 - tw - 22, i * band_h + 42), zh, font=f, fill=PAPER)
+        # 时段·天气标注（画面外的说明性角标，和钓点胶囊同一套样式）
+        env_text = "%s · %s" % (period, weather)
+        fe = font(30)
+        we = d.textlength(env_text, font=fe)
+        box2 = (36, i * band_h + 34, 36 + we + 44, i * band_h + 92)
+        d.rounded_rectangle(box2, radius=12, fill=(12, 22, 38))
+        d.text((36 + 22, i * band_h + 46), env_text, font=fe, fill=(176, 200, 226))
 
     corner_note(d)
     out = os.path.join(OUT, "fishing-shot-scenes-3x4.png")
