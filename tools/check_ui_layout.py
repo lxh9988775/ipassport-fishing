@@ -35,7 +35,8 @@ SCR_W, SCR_H = 240, 320
 # 运行期互斥的面板（来源：show_only() 的 which 编号）
 PANELS = {"g_scene": 0, "g_reel": 1, "g_result": 2, "g_menu": 3, "g_codex": 4}
 # 铺满整屏的层：四角被圆角涂黑是设计的一部分（遮的是背景边缘，不是内容）
-FULL_BLEED = set(PANELS) | {"g_bg", "hud"}
+# g_tint 是氛围染色层，同样铺满整屏、同样只判出屏不参与压盖关系。
+FULL_BLEED = set(PANELS) | {"g_bg", "hud", "g_tint"}
 
 # 最坏情况代入：把 snprintf 模板换成"能出现的最长一行"，按上限判定
 SUBST = {
@@ -61,6 +62,11 @@ SUBST = {
     "体型 %d-%d 厘米": "体型 10-250 厘米",
     "%s · 栖息于%s": "传说 · 栖息于静水塘",
     "收录 %d/%d   累计钓获 %d": "收录 24/24   累计钓获 8888",
+    # 图鉴底部两行（收集进度 + 里程碑），以及左上角环境标签
+    "收录 %d/%d（%d%%）  钓获 %d": "收录 24/24（100%）  钓获 8888",
+    "集齐 %d 种 · %s": "集齐 24 种 · 竿影大成",
+    "已集齐 %d 种 · %s": "已集齐 24 种 · 竿影大成",
+    "%s · %s": "黄昏 · 雨",
 }
 WIDEST_S = "路亚竿"
 WIDEST_D = "8888"
@@ -85,7 +91,7 @@ ALLOW_OVERLAP = {
     frozenset(("g_batt_body", "g_batt_fill")),
 }
 # 容器/背景层：只判出屏，不参与"谁压住谁"（它们本来就是铺满的底）
-CONTAINERS = set(PANELS) | {"g_bg", "hud"}
+CONTAINERS = set(PANELS) | {"g_bg", "hud", "g_tint"}
 
 NOTES: list[str] = []
 
@@ -327,7 +333,9 @@ def parse_source():
                 if got:
                     o["texts"] |= got
                     continue
-                if "desc" in b:
+                if "desc" in b or "lore" in b:
+                    # f->desc / f->lore 的内容都来自 SPECIES 表：取 fishing_logic.c 里
+                    # 最长的那条中文文案，按实际折行算高度（lore 最长 22 字 = 2 行）。
                     o["long_text"] = True
                     continue
                 for key, val in EXPR_FALLBACK:

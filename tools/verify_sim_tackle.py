@@ -73,7 +73,7 @@ def _stats(img: Image.Image):
 def classify(img: Image.Image) -> str:
     dark_r, sky_r, red_row, track = _stats(img)
     # 顺序很重要：收线页底色也是深蓝，只看"深色占比"会把它认成菜单。
-    # 菜单独有的标记是那条锐胜红选中胶囊；收线页独有的是深蓝轨道色块。
+    # 菜单独有的标记是那条高亮红选中胶囊；收线页独有的是深蓝轨道色块。
     if red_row >= 40:
         return "menu"
     if track >= 300:
@@ -314,7 +314,7 @@ def long_press_to_menu(page, tries=6):
 def white_mask(img: Image.Image, box) -> bytes:
     """把区域里的近白像素抽成 0/1 掩码 —— 只比"文字"，不比底色。
 
-    菜单选中行底下是锐胜红胶囊、未选中是深蓝。光标一挪底色就变，拿原始像素直接比
+    菜单选中行底下是高亮红胶囊、未选中是深蓝。光标一挪底色就变，拿原始像素直接比
     一定会"有变化"，那是假通过（实测踩过：以为文字从 开 变 关，其实是延迟的
     方向键把光标推走、红条移了位）。白字掩码只反映字形本身，与选中与否无关。
     """

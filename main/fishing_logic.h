@@ -117,6 +117,10 @@ typedef enum {
 typedef struct {
     const char *name;      /* 中文名 */
     const char *desc;      /* 一句话简介 */
+    const char *lore;      /* 性格钩子：一句"这鱼什么脾气/有什么故事"。
+                             * desc 是客观说明（长什么样、多大），lore 是性格与故事，
+                             * 两者分开：玩家看 desc 判断能不能钓，看 lore 决定想不想钓。
+                             * 纯文案，不参与任何平衡计算。 */
     uint8_t  spot;         /* 栖息地 spot_t */
     uint8_t  rarity;       /* rarity_t */
     uint8_t  bait_mask;    /* 偏好饵料位掩码：bit0 蚯蚓 bit1 面团 bit2 亮片 */

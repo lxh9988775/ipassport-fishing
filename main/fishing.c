@@ -81,6 +81,21 @@ static void use_cjk(lv_obj_t *o) {
 #define FLOAT_BITE_Y (FLOAT_Y + 8)    /* 咬钩：下沉一下 */
 #define BAIT_DY     29            /* 饵吊在漂下：漂高 32 - 3 */
 
+/* ===================== 钓点氛围：时段 / 天气（纯视觉） =====================
+ *
+ * 为什么用"游戏内时钟"而不是真实时间：这台机器是纯离线玩法，没有 RTC 也没有 SNTP，
+ * 固件里唯一能拿到的时钟是开机以来的单调毫秒（xTaskGetTickCount）。所以这里定义
+ * 一条"钓鱼日"：1 个游戏小时 = 1 分钟真实时间，24 个游戏小时 = 1 个钓鱼日（现实
+ * 24 分钟走完一昼夜）。重启后重新开始 —— 离线设备没有别的时间可依。
+ *
+ * 天气按"钓鱼日"序号做确定性整数散列：同一天永远是同一种天气，隔天轮换。
+ *
+ * 红线：这块只影响观感。咬钩时长、鱼种分布、得分倍率一律不动，
+ * fishing_logic.c 一个字节都没改过。 */
+#define ENV_HOUR_MS   60000u              /* 1 个游戏小时 = 1 分钟真实时间 */
+#define ENV_DAY_MS    (24u * ENV_HOUR_MS) /* 1 个钓鱼日 = 24 分钟真实时间 */
+#define ENV_RAIN_DROPS 14                 /* 雨丝条数（静态，不做动画） */
+
 /* ===================== 时钟 / NVS ===================== */
 static uint32_t now_ms(void) {
     return (uint32_t)(xTaskGetTickCount() * portTICK_PERIOD_MS);
@@ -186,6 +201,13 @@ static lv_obj_t *g_line        = NULL;   /* 鱼线：竿尖 -> 浮漂，2 个点
 static lv_obj_t *g_floatbob    = NULL;
 static lv_obj_t *g_bait        = NULL;   /* 钩上的饵（随饵料选择切换） */
 static lv_obj_t *g_fish_scene  = NULL;
+
+/* 氛围层：时段 + 天气。g_tint 盖在背景图之上、场景面板之下（z 序靠创建顺序），
+ * 所以只压背景、不会盖住竿和浮漂；雨丝同理，是"落在场景前面"的雨。 */
+static lv_obj_t *g_tint        = NULL;                 /* 全屏染色层 */
+static lv_obj_t *g_rain[ENV_RAIN_DROPS] = { 0 };        /* 雨丝：静态短线 */
+static lv_point_precise_t g_rain_pts[ENV_RAIN_DROPS][2];
+static lv_obj_t *g_lbl_env     = NULL;                 /* 左上角「时段 · 天气」 */
 static lv_point_precise_t g_line_pts[2];
 
 /* 收线界面 */
@@ -217,6 +239,8 @@ static lv_obj_t *g_cdx_name    = NULL;
 static lv_obj_t *g_cdx_meta    = NULL;   /* 已收录：最大纪录 + 钓获数；未收录：稀有度 + 栖息地 */
 static lv_obj_t *g_cdx_size    = NULL;   /* 体长范围 + 偏好饵料（收录与否都显示，是"怎么钓"的提示） */
 static lv_obj_t *g_cdx_desc    = NULL;
+static lv_obj_t *g_cdx_lore    = NULL;   /* 性格钩子：这鱼什么脾气（新增，纯文案） */
+static lv_obj_t *g_cdx_mile    = NULL;   /* 收集里程碑：下一个里程碑叫什么、还差几种 */
 static lv_obj_t *g_cdx_prog    = NULL;
 
 /* ===================== 按键队列 ===================== */
@@ -272,6 +296,37 @@ static void build_ui(void) {
     g_bg = lv_img_create(scr);
     lv_img_set_src(g_bg, BG_IMG[0]);
     lv_obj_set_pos(g_bg, 0, 0);
+
+    /* ---- 氛围层（时段/天气） ----
+     * 顺序就是 z 序：g_bg → g_tint → 雨丝 → …… → g_scene。
+     * 所以染色层和雨丝都压在背景上、又在场景面板之下，竿/浮漂/鱼不会被染到。
+     * 雨丝是静态短线（不做下落动画）：一帧一帧挪位置就是每帧 invalidate，
+     * 那是这套代码里最不能碰的性能命门。 */
+    g_tint = lv_obj_create(scr);
+    lv_obj_set_size(g_tint, SCR_W, SCR_H);
+    lv_obj_set_pos(g_tint, 0, 0);
+    lv_obj_set_style_bg_color(g_tint, lv_color_make(0, 0, 0), 0);
+    lv_obj_set_style_bg_opa(g_tint, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(g_tint, 0, 0);
+    lv_obj_set_style_radius(g_tint, 0, 0);
+    lv_obj_set_style_pad_all(g_tint, 0, 0);
+    lv_obj_clear_flag(g_tint, LV_OBJ_FLAG_SCROLLABLE);
+
+    for (int i = 0; i < ENV_RAIN_DROPS; ++i) {
+        int rx = 12 + (i * 17) % 228;      /* 横向铺开 */
+        int ry = 28 + (i * 61) % 268;      /* 高度错开，避免排成整齐的栅栏 */
+        g_rain_pts[i][0].x = rx;
+        g_rain_pts[i][0].y = ry;
+        g_rain_pts[i][1].x = rx - 6;       /* 斜向左下，像正在落的雨 */
+        g_rain_pts[i][1].y = ry + 16;
+        g_rain[i] = lv_line_create(scr);
+        lv_obj_set_pos(g_rain[i], 0, 0);
+        lv_obj_set_style_line_width(g_rain[i], 1, 0);
+        lv_obj_set_style_line_color(g_rain[i], lv_color_make(205, 222, 245), 0);
+        lv_obj_set_style_line_opa(g_rain[i], 120, 0);
+        lv_line_set_points(g_rain[i], g_rain_pts[i], 2);
+        lv_obj_add_flag(g_rain[i], LV_OBJ_FLAG_HIDDEN);   /* 默认不下雨 */
+    }
 
     /* ---- 顶栏 HUD ----
      * 屏只有 240px 宽、左右还被圆角各吃掉约 16px，所以刻意只放三项：
@@ -339,6 +394,15 @@ static void build_ui(void) {
     lv_obj_set_style_bg_opa(g_scene, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(g_scene, 0, 0);
     lv_obj_clear_flag(g_scene, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* 环境标签：左上角「时段 · 天气」。
+     * 底下一层半透明黑底 —— 天空是亮蓝的，白字直接压上去看不清。
+     * 位置 (8,6) 是场景面板内坐标（面板从屏幕 y=22 起），所以在屏幕上约 y=28；
+     * 那个高度圆角只切掉 x=0 一列，x=8 安全。 */
+    g_lbl_env = make_label(g_scene, "", 8, 6, lv_color_white());
+    lv_obj_set_style_bg_color(g_lbl_env, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(g_lbl_env, 120, 0);
+    lv_obj_set_style_pad_all(g_lbl_env, 2, 0);
 
     /* 钓点名：挂在场景面板右上角的小胶囊里。
      * 放在 g_scene 内部 → 切到菜单/图鉴时随场景一起隐藏，show_only() 不用改。
@@ -472,7 +536,7 @@ static void build_ui(void) {
     g_menu_selbar = lv_obj_create(g_menu);
     lv_obj_set_size(g_menu_selbar, SCR_W - 12, 26);
     lv_obj_set_pos(g_menu_selbar, 6, 70);
-    lv_obj_set_style_bg_color(g_menu_selbar, lv_color_make(153, 0, 58), 0); /* 锐胜红 */
+    lv_obj_set_style_bg_color(g_menu_selbar, lv_color_make(153, 0, 58), 0); /* 高亮红 */
     lv_obj_set_style_bg_opa(g_menu_selbar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(g_menu_selbar, 0, 0);
     lv_obj_set_style_radius(g_menu_selbar, 4, 0);
@@ -494,22 +558,35 @@ static void build_ui(void) {
 
     g_cdx_img  = lv_img_create(g_codex);
     lv_obj_set_pos(g_cdx_img, 92, 14);
-    g_cdx_name = make_label(g_codex, "", 8, 56, lv_color_white());
+    g_cdx_name = make_label(g_codex, "", 8, 54, lv_color_white());
     /* 稀有度/完美标记上移到名称行，meta 只留体长+钓数：
      * 原来「传说 · 最大 888.8 厘米 · 已钓 8888 条 · 完美✓」要 345px，屏只有 240px。
      * DOT 模式兜底 —— 万一以后文案又变长，末尾显示省略号，绝不出屏、绝不折行。 */
-    g_cdx_meta = make_label(g_codex, "", 8, 80, lv_color_make(255, 208, 90));  /* 金色：突出"最大纪录" */
+    g_cdx_meta = make_label(g_codex, "", 8, 78, lv_color_make(255, 208, 90));  /* 金色：突出"最大纪录" */
     lv_obj_set_width(g_cdx_meta, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_meta, LV_LABEL_LONG_DOT);
     /* 体型范围 + 偏好饵料：这是"这条鱼能长多大、爱吃什么"的攻略信息，
      * 收录与否都显示 —— 没钓到之前它正好告诉玩家该去哪、用什么饵。 */
-    g_cdx_size = make_label(g_codex, "", 8, 106, lv_color_make(150, 215, 255));
+    g_cdx_size = make_label(g_codex, "", 8, 102, lv_color_make(150, 215, 255));
     lv_obj_set_width(g_cdx_size, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_size, LV_LABEL_LONG_DOT);
-    g_cdx_desc = make_label(g_codex, "", 8, 134, lv_color_white());
+    g_cdx_desc = make_label(g_codex, "", 8, 126, lv_color_white());
     lv_obj_set_width(g_cdx_desc, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_desc, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(g_cdx_desc, 4, 0);
+    /* 性格钩子（lore）：这鱼什么脾气、有没有什么故事。
+     * desc 是客观说明（长什么样），lore 是性格与钩子，两者分开写，玩家
+     * 看完 desc 判断"能不能钓"，看完 lore 决定"想不想钓"。
+     * 位置压在 desc 之下、里程碑之上；最坏 2 行（lore 最长 22 字 × 16px = 352px
+     * ÷ 224px 行宽 = 2 行），行高 20 + 行距 4 = 44px，126+44+6=176 起排不压 desc。 */
+    g_cdx_lore = make_label(g_codex, "", 8, 176, lv_color_make(255, 236, 205));
+    lv_obj_set_width(g_cdx_lore, SCR_W - 16);
+    lv_label_set_long_mode(g_cdx_lore, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(g_cdx_lore, 4, 0);
+    /* 里程碑：纯提示，不奖励任何数值。只说"下一个里程碑叫什么、还差几种"。 */
+    g_cdx_mile = make_label(g_codex, "", 8, 224, lv_color_make(150, 230, 175));
+    lv_obj_set_width(g_cdx_mile, SCR_W - 16);
+    lv_label_set_long_mode(g_cdx_mile, LV_LABEL_LONG_DOT);
     g_cdx_prog = make_label(g_codex, "", 8, 248, lv_color_make(190, 210, 240));
 }
 
@@ -597,10 +674,123 @@ static void place_tackle(int bob_y) {
     lv_line_set_points(g_line, g_line_pts, 2);
 }
 
+/* ===================== 钓点氛围：时段 / 天气 =====================
+ * 全部是纯计算 + 纯视觉，不碰 fishing_logic.c 的任何平衡数值。 */
+
+typedef enum {
+    ENV_MORNING = 0,   /* 清晨 5..9 点 */
+    ENV_NOON,          /* 正午 10..16 点 */
+    ENV_DUSK,          /* 黄昏 17..19 点 */
+    ENV_NIGHT,         /* 深夜 20..4 点 */
+    ENV_PERIOD_COUNT
+} env_period_t;
+
+typedef enum {
+    ENV_CLEAR = 0,     /* 晴 */
+    ENV_CLOUDY,        /* 阴 */
+    ENV_RAIN,          /* 雨 */
+    ENV_WEATHER_COUNT
+} env_weather_t;
+
+static int env_hour(uint32_t now) { return (int)((now / ENV_HOUR_MS) % 24u); }
+static int env_day(uint32_t now)  { return (int)(now / ENV_DAY_MS); }
+
+static env_period_t env_period_of(int hour) {
+    if (hour >= 5 && hour < 10) return ENV_MORNING;
+    if (hour >= 10 && hour < 17) return ENV_NOON;
+    if (hour >= 17 && hour < 20) return ENV_DUSK;
+    return ENV_NIGHT;
+}
+
+/* 天气：按"钓鱼日"序号做整数散列（不是随机数，没有状态，也不会每帧跳）。
+ * 同一天永远是同一种天气，隔天轮换；晴 60% / 阴 25% / 雨 15%。 */
+static env_weather_t env_weather_of(int day) {
+    uint32_t h = (uint32_t)day * 2654435761u;
+    h ^= h >> 15;
+    h *= 2246822519u;
+    h ^= h >> 13;
+    unsigned r = (unsigned)(h % 20u);
+    if (r < 12u) return ENV_CLEAR;
+    if (r < 17u) return ENV_CLOUDY;
+    return ENV_RAIN;
+}
+
+static const char *env_period_name(env_period_t p) {
+    switch (p) {
+        case ENV_MORNING: return "清晨";
+        case ENV_NOON:    return "正午";
+        case ENV_DUSK:    return "黄昏";
+        default:          return "深夜";
+    }
+}
+
+static const char *env_weather_name(env_weather_t w) {
+    switch (w) {
+        case ENV_CLEAR:  return "晴";
+        case ENV_CLOUDY: return "阴";
+        default:         return "雨";
+    }
+}
+
+/* 时段底色 + 天气覆盖，合成一层盖在背景上的半透明色块。
+ * 纯整数运算（不用浮点），LVGL 的 opacity 取 0..255。 */
+static void env_visual(env_period_t p, env_weather_t w, lv_color_t *out, int *opa) {
+    int r, g, b, o;
+    switch (p) {
+        case ENV_MORNING: r = 255; g = 178; b =  96; o =  44; break;  /* 暖橙 */
+        case ENV_NOON:    r = 255; g = 250; b = 225; o =   0; break;  /* 晴天不染色 */
+        case ENV_DUSK:    r = 255; g = 124; b =  62; o =  72; break;  /* 橙红 */
+        default:          r =  24; g =  44; b = 108; o = 120; break;  /* 冷蓝夜色 */
+    }
+    if (w == ENV_CLOUDY) {
+        r = (r * 45 + 130 * 55) / 100;      /* 往灰蓝靠 */
+        g = (g * 45 + 138 * 55) / 100;
+        b = (b * 45 + 148 * 55) / 100;
+        if (o < 66) o = 66;
+    } else if (w == ENV_RAIN) {
+        r = (r * 35 +  92 * 65) / 100;      /* 更冷更暗 */
+        g = (g * 35 + 110 * 65) / 100;
+        b = (b * 35 + 150 * 65) / 100;
+        if (o < 96) o = 96;
+    }
+    *out = lv_color_make(r, g, b);
+    *opa = o;
+}
+
+/* 已画值门闸：时段/天气没变就一个 LVGL 调用都不做。
+ * 主循环 20ms 一帧，无条件重设样式 = 每帧让整屏失效重绘。 */
+static int s_env_key = -1;
+
+static void refresh_env(void) {
+    const uint32_t now = (uint32_t)now_ms();
+    const env_period_t  p = env_period_of(env_hour(now));
+    const env_weather_t w = env_weather_of(env_day(now));
+    const int key = (int)p * ENV_WEATHER_COUNT + (int)w;
+
+    if (key != s_env_key) {
+        s_env_key = key;
+        lv_color_t c;
+        int opa;
+        env_visual(p, w, &c, &opa);
+        lv_obj_set_style_bg_color(g_tint, c, 0);
+        lv_obj_set_style_bg_opa(g_tint, opa, 0);
+        for (int i = 0; i < ENV_RAIN_DROPS; ++i) {
+            if (w == ENV_RAIN) lv_obj_clear_flag(g_rain[i], LV_OBJ_FLAG_HIDDEN);
+            else              lv_obj_add_flag(g_rain[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%s · %s", env_period_name(p), env_weather_name(w));
+    set_text_cached(g_lbl_env, buf);
+}
+
 static void refresh_scene(const fishing_status_t *st) {
     /* 背景图只在钓点真的换了才重设 —— 这是原来的头号开销源：
      * lv_image_set_src 没有"同源短路"，每帧都会 invalidate 整张 240x320（153,600 字节）。 */
     set_img_by_key(g_bg, &s_bg_spot, (int)st->spot, BG_IMG[st->spot]);
+
+    /* 氛围（时段/天气）：自己带已画值门闸，时段没变就一个 LVGL 调用都不做。 */
+    refresh_env();
 
     /* 换竿 / 换饵要看得见：菜单里选完，钓场上的竿和钩上的饵当场就换。
      * 这两组 sprite 早就编进了固件，但 v2 的界面从没引用过 ——
@@ -758,6 +948,38 @@ static const char *first_bait_name(uint8_t mask) {
     return NULL;
 }
 
+/* ===================== 收集里程碑（纯提示，不奖励任何数值） =====================
+ * 图鉴要能给出长期目标感：每集齐一批就点亮一个名号。
+ * 纯文案 —— 不进逻辑层、不写存档、不影响计分和掉落，只是把"下一个名号叫什么、
+ * 还差几种"讲清楚。阈值最后一个用 FISH_SPECIES_COUNT 派生，将来加鱼不用改这里。 */
+typedef struct {
+    int need;              /* 集齐多少种算达成 */
+    const char *name;      /* 里程碑名 */
+} codex_mile_t;
+
+static const codex_mile_t CODEX_MILES[] = {
+    {  4, "初识水性" },
+    {  8, "渐入佳境" },
+    { 12, "半塘好手" },
+    { 16, "远近闻名" },
+    { 20, "一方霸主" },
+    { FISH_SPECIES_COUNT, "竿影大成" },
+};
+#define CODEX_MILE_COUNT ((int)(sizeof(CODEX_MILES) / sizeof(CODEX_MILES[0])))
+
+/* 下一个还没达成的里程碑（返回它的达成数，名字写到 *name）。
+ * 全都达成了就返回最后一条，调用方靠"已集齐"分支区分。 */
+static int codex_next_mile(int collected, const char **name) {
+    for (int i = 0; i < CODEX_MILE_COUNT; ++i) {
+        if (collected < CODEX_MILES[i].need) {
+            *name = CODEX_MILES[i].name;
+            return CODEX_MILES[i].need;
+        }
+    }
+    *name = CODEX_MILES[CODEX_MILE_COUNT - 1].name;
+    return CODEX_MILES[CODEX_MILE_COUNT - 1].need;
+}
+
 static void refresh_codex(const fishing_status_t *st) {
     (void)st;
     int idx = fishing_codex_cursor();
@@ -787,6 +1009,8 @@ static void refresh_codex(const fishing_status_t *st) {
         set_text_cached(g_cdx_meta, buf);
         set_text_cached(g_cdx_desc, "还没有见过它，钓上来就能解锁");
     }
+    /* 性格钩子：收录与否都显示 —— 没见过时它正好是"为什么要去钓它"的由头。 */
+    set_text_cached(g_cdx_lore, f->lore);
     /* 体型范围 + 偏好饵料：收录与否都显示 —— 没钓到时它正好是"去哪钓、用什么饵"的提示。 */
     {
         const int lo = f->len_min_mm / 10;
@@ -798,7 +1022,22 @@ static void refresh_codex(const fishing_status_t *st) {
     }
     fishing_status_t s2;
     fishing_get_status(&s2);
-    snprintf(buf, sizeof(buf), "收录 %d/%d   累计钓获 %d", s2.codex_total, FISH_SPECIES_COUNT, s2.total_catch);
+    /* 里程碑：下一个名号 + 集齐它需要多少种 */
+    {
+        const char *mname = NULL;
+        int need = codex_next_mile(s2.codex_total, &mname);
+        if (s2.codex_total >= FISH_SPECIES_COUNT) {
+            snprintf(buf, sizeof(buf), "已集齐 %d 种 · %s", FISH_SPECIES_COUNT, mname);
+        } else {
+            snprintf(buf, sizeof(buf), "集齐 %d 种 · %s", need, mname);
+        }
+        set_text_cached(g_cdx_mile, buf);
+    }
+    /* 收集进度 + 百分比 + 累计钓获条数（百分比用整数算，避免浮点） */
+    snprintf(buf, sizeof(buf), "收录 %d/%d（%d%%）  钓获 %d",
+             s2.codex_total, FISH_SPECIES_COUNT,
+             s2.codex_total * 100 / FISH_SPECIES_COUNT,
+             s2.total_catch);
     set_text_cached(g_cdx_prog, buf);
     /* 「上下翻·OK详情·长按返回」是面板固定文案，已移到 show_only(4) 里只在切面板时写一次 */
 }

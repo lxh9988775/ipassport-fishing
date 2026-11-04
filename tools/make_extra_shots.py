@@ -49,7 +49,7 @@ BAIT_DY = 29
 
 INK = (14, 26, 44)
 PAPER = (233, 240, 250)
-ACCENT = (153, 0, 58)          # 锐胜红
+ACCENT = (153, 0, 58)          # 高亮红
 NOTE = "游戏素材示意 · In-game art"
 
 
