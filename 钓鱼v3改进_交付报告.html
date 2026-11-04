@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>竿影浮标 v3 改进 · 交付报告（待 AIpp总监检核）</title>
+<style>
+  :root{
+    --ink:#161a22; --sub:#5a6172; --line:#e3e6ec; --bg:#f6f7f9; --card:#ffffff;
+    --accent:#99003a; --ok:#1f7a44; --warn:#8a5a00; --bad:#a32020;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.75 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1000px;margin:0 auto;padding:32px 20px 72px}
+  header{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--accent);
+    border-radius:10px;padding:22px 26px;margin-bottom:22px}
+  h1{margin:0 0 8px;font-size:24px;letter-spacing:.3px}
+  .meta{color:var(--sub);font-size:14px}
+  h2{font-size:19px;margin:30px 0 12px;padding-bottom:8px;border-bottom:2px solid var(--line)}
+  h3{font-size:16px;margin:20px 0 8px;color:#2a3140}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:18px 22px;margin-bottom:16px}
+  table{width:100%;border-collapse:collapse;font-size:14.5px;margin:10px 0}
+  th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+  th{background:#f0f2f6;font-weight:600}
+  code{background:#eef0f4;border-radius:4px;padding:1px 6px;font-size:13px;
+    font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+  .ok{color:var(--ok);font-weight:600}
+  .warn{color:var(--warn);font-weight:600}
+  .bad{color:var(--bad);font-weight:600}
+  .pill{display:inline-block;padding:1px 9px;border-radius:11px;font-size:13px;font-weight:600}
+  .pill.ok{background:#e4f4ea;color:var(--ok)}
+  .pill.warn{background:#fbf0d9;color:var(--warn)}
+  .pill.bad{background:#fbe6e6;color:var(--bad)}
+  img{max-width:100%;display:block;margin:12px 0;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .fig{font-size:13px;color:var(--sub);margin:-4px 0 16px}
+  ul{margin:8px 0 8px 22px;padding:0}
+  li{margin:4px 0}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:760px){.grid{grid-template-columns:1fr}}
+  .kv{display:grid;grid-template-columns:150px 1fr;gap:4px 12px;font-size:14.5px}
+  .kv b{color:var(--sub);font-weight:600}
+  .foot{color:var(--sub);font-size:13px;text-align:center;margin-top:28px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>竿影浮标（钓鱼）· v3 改进交付报告</h1>
+  <div class="meta">
+    依据：《竿影浮标（钓鱼）· 改进任务下达书》与《AIpp总监_竿影浮标改进执行手册 v2》　·
+    分支 <code>fishing-app</code>　·　提交 <code>e9407cc</code> / <code>73a08e4</code>　·
+    状态：<b>待 AIpp总监检核，未合并未烧录</b>
+  </div>
+</header>
+
+<div class="card">
+  <h2>一、结论速览</h2>
+  <table>
+    <tr><th style="width:110px">改进项</th><th style="width:88px">状态</th><th>说明</th></tr>
+    <tr><td><b>A 鱼的性格 lore</b></td><td><span class="pill ok">已完成</span></td>
+      <td>24 鱼种各一句性格/故事钩子；图鉴详情页新增「性格钩子」行；纯文案，零美术。</td></tr>
+    <tr><td><b>B 钓点时段/天气</b></td><td><span class="pill ok">已完成</span></td>
+      <td>四时段 × 三天气纯视觉：背景染色层 + 静态雨丝 + 左上角「时段·天气」标签。</td></tr>
+    <tr><td><b>D 收集里程碑</b></td><td><span class="pill ok">已完成</span></td>
+      <td>图鉴页新增里程碑行；进度行加百分比。纯文本提示，无奖励数值。</td></tr>
+    <tr><td><b>C 每日挑战</b></td><td><span class="pill warn">未做</span></td>
+      <td>手册标注「次要/可选」。理由与后续做法见第五节，待裁定。</td></tr>
+    <tr><td><b>附带修复</b></td><td><span class="pill ok">已完成</span></td>
+      <td>发现并修复一处既有缺陷：面板容器默认内边距导致全部子元素偏移 13px，连带三处可见错位。</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>二、A · 鱼的人格化 lore</h2>
+  <p>图鉴原本只有一句客观简介（<code>desc</code>：长什么样、多大）。这次给每条鱼补一句
+    <b>性格钩子</b>（<code>lore</code>：这鱼什么脾气、有什么故事）。两者刻意分开：
+    <code>desc</code> 回答「能不能钓」，<code>lore</code> 回答「想不想钓」。</p>
+  <ul>
+    <li>数据结构：<code>fish_species_t</code> 增加 <code>const char *lore</code>；<code>SPECIES[]</code> 24 条各填一句。</li>
+    <li>文案按真实习性写，不编离谱设定；最长 22 字，最坏 2 行，不挤版。</li>
+    <li>展示位置：图鉴详情页新增 <code>g_cdx_lore</code>，压在简介之下、里程碑之上，奶油色区分于其他行。</li>
+    <li>未收录的鱼同样显示 lore —— 它正好是「为什么要去钓它」的由头。</li>
+    <li>lore 不参与计分、概率与解锁判定，纯文案。</li>
+  </ul>
+  <p class="fig">示例：鲈鱼「横冲直撞的狠角色，钩住就别想松口」／旗鱼「传说中的深海霸主，八万克巨物，唯海竿远投可遇」</p>
+</div>
+
+<div class="card">
+  <h2>三、B · 钓点时段 / 天气（纯视觉）</h2>
+  <h3>时间从哪来</h3>
+  <p>本机是纯离线玩法：全仓无 RTC、无 SNTP，固件里唯一能拿到的时钟是开机以来的单调毫秒。因此定义一条
+    <b>钓鱼日</b>：<b>1 个游戏小时 = 1 分钟真实时间，24 个游戏小时 = 1 个钓鱼日</b>（现实 24 分钟走完一昼夜）。
+    天气按钓鱼日序号做整数散列，同一天永远是同一种天气，隔天轮换（晴 60% / 阴 25% / 雨 15%）。
+    重启后重新计时 —— 离线设备没有别的时间可依。</p>
+  <h3>怎么表现</h3>
+  <ul>
+    <li>背景图之上叠一层半透明染色：清晨暖橙 / 正午不染 / 黄昏橙红 / 深夜冷蓝；阴天整体压灰，雨天更冷更暗。</li>
+    <li>雨天另画 14 条静态斜线雨丝（<b>不做下落动画</b> —— 每帧挪位置就是每帧整屏失效重绘，那是本工程最不能碰的性能命门）。</li>
+    <li>左上角新增「时段 · 天气」标签（半透明黑底），玩家能读出当前氛围。</li>
+    <li>已画值门闸 <code>s_env_key</code>：时段与天气没变则一个 LVGL 调用都不做。</li>
+    <li>新增 z 序：背景 → 染色层 → 雨丝 → 顶栏 → 场景面板。染色与雨只压背景，不盖竿和浮漂。</li>
+  </ul>
+  <img src="assets/preview/05-env-matrix.png" alt="时段×天气矩阵">
+  <p class="fig">时段 × 天气 全矩阵（3 列：晴/阴/雨；4 行：清晨/正午/黄昏/深夜），按真机 240×320 坐标渲染。
+    原始文件：<code>assets/preview/05-env-matrix.png</code>；单张原图：<code>env-morning-clear.png</code> /
+    <code>env-dusk-rain.png</code> / <code>env-night-clear.png</code>。</p>
+</div>
+
+<div class="card">
+  <h2>四、D · 收集成就里程碑</h2>
+  <ul>
+    <li>图鉴页新增 <code>g_cdx_mile</code>：下一个里程碑名 + 集齐它需要多少种。
+      名号梯度：4 初识水性 / 8 渐入佳境 / 12 半塘好手 / 16 远近闻名 / 20 一方霸主 / 24 竿影大成。</li>
+    <li>进度行改为「收录 X/24（Y%）　钓获 N」，百分比整数计算，不用浮点。</li>
+    <li>里程碑阈值最后一个由 <code>FISH_SPECIES_COUNT</code> 派生，将来加鱼不必改这里。</li>
+    <li>纯文本提示：不进逻辑层、不写存档、不给任何数值优势。</li>
+  </ul>
+  <img src="assets/verify/sim_08_codex.png" alt="实机图鉴页">
+  <p class="fig">真机（网页模拟器跑 CI 产物）渲染的图鉴详情页。自上而下：名称 / 金色最大纪录 / 蓝色体型与饵料 /
+    白色简介 / <b>奶油色性格钩子</b> / <b>绿色里程碑</b> / 浅蓝进度行。</p>
+</div>
+
+<div class="card">
+  <h2>五、C · 每日挑战（未做 · 待裁定）</h2>
+  <p>手册与下达书均把 C 标注为「次要 / 可选」，签字栏也写明「A/B（C/D 可选）落地后」交检核。本次未实施，
+    具体理由与后续方案如下，供裁定：</p>
+  <table>
+    <tr><th style="width:200px">顾虑</th><th>具体内容</th></tr>
+    <tr><td>菜单要挤成 7 行</td>
+      <td>现有 6 行菜单行距 30px，第 7 行落在面板内 y=254，选中条底部 276 已超面板下沿 274。
+        要加就得把行距压到 26px，等于改动 v2 已稳定的菜单版式。</td></tr>
+    <tr><td>要引入每日进度状态</td>
+      <td>「今天的挑战做完了没有」是跨会话状态，需要额外持久化与一套新的状态迁移，
+        不是加一行文案那么简单。</td></tr>
+    <tr><td>实测判据要重做</td>
+      <td>现有模拟器实测按「正好 6 条白字带」定位光标，加到 7 行后导航判据要整体重写。</td></tr>
+    <tr><td>与「不堆数值」的风险</td>
+      <td>每日挑战天然是「限定目标」，做不好很容易变成限时惩罚 —— 与任务书「不把加内容做成堆数值惩罚」相抵。</td></tr>
+  </table>
+  <p><b>后续建议</b>：把 C 单独作为一轮做，且先定两件事 ——（1）菜单入口是否接受行距压缩，或改用别的入口
+    （例如钓点胶囊内的次级入口）；（2）每日挑战给的是奖励还是纯荣誉榜。这两条定了我再做，
+    可以做得比现在更稳。D 项的里程碑已经提供了复玩目标感，不至于空窗。</p>
+</div>
+
+<div class="card">
+  <h2>六、附带修复：面板容器默认内边距导致整体偏移 13px</h2>
+  <p><code>lv_obj_create()</code> 的默认样式带约 13px 内边距，而面板子元素的坐标是相对<b>内容区</b>的。
+    v2 的五个面板（场景 / 收线 / 结算 / 菜单 / 图鉴）都没显式清零，于是所有子元素都比源码写的坐标
+    往右下偏约 13px；而布局检查器只加父级 x/y、不计父级内边距，所以一直报「通过」，实机却是错的。</p>
+  <h3>实测证据</h3>
+  <ul>
+    <li>菜单选中条：源码设面板内 y=70+3×30=160 → 屏幕应为 182，实测 <b>194.4</b>；
+      另一轮光标在第 1 行，源码 122 → 实测 <b>135</b>。两次一致。</li>
+    <li>图鉴七行文字：全部比预期低 15px（其中约 2px 是字号在行盒内的下沉量）。</li>
+  </ul>
+  <h3>连带修掉的三处可见错位</h3>
+  <ul>
+    <li>右上角「静水塘」胶囊被屏幕右缘切掉半边（源码注释写的是绝对位置 (172,28)~(229,47)，
+      说明作者本就按「无内缩」设计）。</li>
+    <li>图鉴最后一行被底部提示条压掉下半截。</li>
+    <li>收线页轨道底部超出面板下沿（面板 22~296，轨道却到 305）。</li>
+  </ul>
+  <h3>改法与防线</h3>
+  <ul>
+    <li>五个面板各加一行 <code>lv_obj_set_style_pad_all(...,0,0)</code>，坐标从此名副其实。</li>
+    <li>布局检查器新增一条 note：任何面板没显式清零内边距就报出来 —— 正是「检查器说通过、实机错位」的盲区。</li>
+    <li>修复后在真固件上复测：图鉴七行落在 79.7 / 102.6 / 125.6 / 149.9 / 199.8 / 248.4 / 271.4，
+      与设计坐标逐条吻合；进度行底部 284.9，距提示条顶部 295.7 留出 10px；胶囊完整显示。</li>
+  </ul>
+</div>
+
+<div class="card">
+  <h2>七、红线自检</h2>
+  <table>
+    <tr><th style="width:34px">#</th><th style="width:210px">红线</th><th>自检结果</th></tr>
+    <tr><td>1</td><td>三层分离不破坏</td><td><span class="pill ok">通过</span> 时段/天气/里程碑全在 UI 层（fishing.c），逻辑层未沾。</td></tr>
+    <tr><td>2</td><td>不动整屏重画优化</td><td><span class="pill ok">通过</span>
+      <code>set_text_cached</code> / <code>set_img_by_key</code> / 各面板 <code>s_*</code> 门闸 /
+      <code>show_only</code> 全部原样；新增控件一律走 <code>set_text_cached</code> + 自己的 <code>s_env_key</code> 门闸。</td></tr>
+    <tr><td>3</td><td>不改 fishing_logic.c 平衡数值</td><td><span class="pill ok">通过</span>
+      去掉字符串后全文件 <b>545 个数字 token 逐个一致</b>，24 条 <code>desc</code> 逐字一致；
+      只在结构体加 <code>lore</code> 字段并填 24 句文案。</td></tr>
+    <tr><td>4</td><td>sprite 原图不进固件、须 RGB565+抖动</td><td><span class="pill ok">通过</span>
+      本轮<b>未新增任何图片资源</b>，氛围全部用 LVGL 图形与现有素材实现。</td></tr>
+    <tr><td>5</td><td>图鉴 ID 不重排、不写死 24</td><td><span class="pill ok">通过</span>
+      里程碑末档由 <code>FISH_SPECIES_COUNT</code> 派生；图鉴仍按 <code>FISH_CODEX_CAP</code> 64 预留。</td></tr>
+    <tr><td>6</td><td>改 schema_ver 必写 migrate</td><td><span class="pill ok">通过</span>
+      <code>FISHING_SCHEMA_VER</code> 保持 <b>1</b>：存档序列化的是计数/标志/最佳体长，不含鱼种结构体，
+      加字段不改变存档格式；旧存档照读。</td></tr>
+    <tr><td>7</td><td>禁「小锐 / 锐胜 / 短剧」</td><td><span class="pill ok">通过</span>
+      全仓 grep <b>0 命中</b>（原有 5 处颜色注释改为「高亮红」，仅注释，不改色值）。</td></tr>
+    <tr><td>8</td><td>不切错分支 / 不用 git add -A</td><td><span class="pill ok">通过</span>
+      全程 <code>fishing-app</code>；每次提交前看全量 <code>git status</code>，只用显式路径 add。</td></tr>
+    <tr><td>9</td><td>不把加内容做成堆数值惩罚</td><td><span class="pill ok">通过</span>
+      A/B/D 全为文案与视觉增量，未改任何数值、未加限时、未加惩罚。</td></tr>
+  </table>
+
+  <h3>审核清单八条</h3>
+  <table>
+    <tr><th style="width:34px">#</th><th style="width:150px">清单项</th><th>自检结果</th></tr>
+    <tr><td>1</td><td>命名</td><td><span class="pill ok">通过</span> 全仓 grep 0 命中。</td></tr>
+    <tr><td>2</td><td>不抄袭</td><td><span class="pill ok">通过</span> lore 自研；氛围为原创配色与自制雨丝，未克隆任何社区素材。</td></tr>
+    <tr><td>3</td><td>界面对比图</td><td><span class="pill ok">通过</span>
+      <code>assets/preview/05-env-matrix.png</code>（时段×天气全矩阵）、<code>assets/preview/04-codex.png</code>（图鉴新版）、
+      <code>assets/verify/sim_00_evidence.png</code>（真固件实测）。</td></tr>
+    <tr><td>4</td><td>字库</td><td><span class="pill ok">通过</span> 重生成 <b>508 字形</b>，
+      <code>check_cjk_coverage.py</code> 判定 <b>0 缺字</b>，屏上文案单行宽度全部在屏宽内。</td></tr>
+    <tr><td>5</td><td>LVGL</td><td><span class="pill ok">通过</span> 新增控件均为 <code>lv_obj_create</code> +
+      <code>set_text_cached</code>；染色层与雨丝为常驻层，置于场景面板之下；未在 LVGL 任务外调用
+      <code>lv_obj_*</code>；已画值门闸到位。</td></tr>
+    <tr><td>6</td><td>Flash</td><td><span class="pill ok">通过</span> 本轮零新增图片；固件 1,648,416 B，
+      较上一版 1,648,352 B 仅 +64 B（字库增量）。</td></tr>
+    <tr><td>7</td><td>难度</td><td><span class="pill ok">通过</span> A/B/D 均为内容/视觉增量。</td></tr>
+    <tr><td>8</td><td>故事书</td><td><span class="pill warn">不适用</span> 本线无故事书页；lore 对齐「鱼有性格」设计意图。</td></tr>
+  </table>
+
+  <h3>禁改清单（v2 成果）逐条核对</h3>
+  <table>
+    <tr><th style="width:210px">v2 成果</th><th>核对</th></tr>
+    <tr><td>收线小游戏核心玩法</td><td><span class="pill ok">未动</span> 状态机、捕捉区、去抖、完美钓获判定全部未改。</td></tr>
+    <tr><td>24 鱼种 + 3 竿 + 3 钓点 + 4 稀有度数值</td><td><span class="pill ok">未动</span> 545 个数字 token 逐个一致。</td></tr>
+    <tr><td>声音开关 + NVS</td><td><span class="pill ok">未动</span> 未改 <code>nvs_load_sound</code>/<code>nvs_save_sound</code>。</td></tr>
+    <tr><td>长按键菜单 + 输入去抖</td><td><span class="pill ok">未动</span> 未改 <code>fishing_hold_sample</code> / <code>fishing_hold_take_stale_click</code>。</td></tr>
+    <tr><td>中文化字库</td><td><span class="pill ok">仅扩充</span> 419 → 508 字形，0 缺字。</td></tr>
+    <tr><td>整屏重画优化</td><td><span class="pill ok">未动</span> 门闸与 <code>show_only</code> 原样。</td></tr>
+    <tr><td>版本化存档</td><td><span class="pill ok">未动</span> schema 仍为 1，magic 仍为 FSH2。</td></tr>
+    <tr><td>浮漂/竿/饵 sprite 已接入</td><td><span class="pill ok">未动</span> 位置常量与绘制顺序均未改。</td></tr>
+    <tr><td>顶栏布局 + 电量修复</td><td><span class="pill ok">未动</span> 仅随内边距修复整体上移 13px，元素间相对关系不变。</td></tr>
+    <tr><td>图鉴详情页</td><td><span class="pill warn">有增补</span>
+      名称/纪录/体型/简介四项内容与配色未动，仅新增「性格钩子」「里程碑」两行并整体上移腾位（任务书 A/D 明确要求）。</td></tr>
+    <tr><td>钓点解锁门槛提示</td><td><span class="pill ok">未动</span> 「再钓 N 条解锁 X」原样。</td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <h2>八、验证记录</h2>
+  <div class="kv">
+    <b>本地护栏</b><span>check_c_sanity / check_ui_layout（30 元素·无出屏无重叠）/ check_cjk_coverage（508 字形·0 缺字）/ verify_logic —— 全绿</span>
+    <b>C 单测</b><span>test_fishing_spots（44 项）/ test_fishing_hold_menu / test_fishing_reel_hold / fishing_logic_test —— 全绿</span>
+    <b>云端编译</b><span>CI run 41769287622 <span class="ok">success</span>（对应提交 <code>73a08e4</code>）</span>
+    <b>固件</b><span>1,648,416 B，sha256 <code>beac1329…</code>，3 段镜像</span>
+    <b>真固件实测</b><span>网页模拟器 12/12 全绿（含新增的「时段·天气标签」「图鉴 lore 与里程碑两行」两条判据）</span>
+    <b>设备实测</b><span><span class="warn">未做</span> 本机无串口设备，未烧录、未上真机验证</span>
+  </div>
+  <img src="assets/verify/sim_00_evidence.png" alt="真固件实测证据">
+  <p class="fig">真固件（CI 产物）实测的四个关键画面：钓场氛围标签 / 菜单 / 图鉴新布局 / 换竿后画面变化。</p>
+</div>
+
+<div class="card">
+  <h2>九、待 AIpp总监裁定</h2>
+  <ul>
+    <li><b>第三节的时段定义</b>：本机无 RTC，采用「1 真实分钟 = 1 游戏小时」的钓鱼日时钟。若认为应改为
+      纯静态时段或另设触发方式，请指示。</li>
+    <li><b>第五节的 C 每日挑战</b>：本轮未做，理由与后续方案已列，请裁定是否另起一轮、入口与奖励形态如何定。</li>
+    <li><b>第六节的内边距修复</b>：属既有缺陷修复，改变了五个面板的全部子元素位置（整体上移 13px）。
+      已附修复前后实测坐标，请确认是否接受。</li>
+    <li><b>图鉴页排布</b>：新增两行后共 8 行文字（名称/纪录/体型/简介/性格/里程碑/进度 + 鱼图）。
+      若认为偏满，可考虑把「体型与饵料」并入里程碑行。</li>
+  </ul>
+</div>
+
+<p class="foot">竿影浮标 v3 改进 · 交付报告 · 分支 fishing-app · 提交 e9407cc / 73a08e4 · 待 AIpp总监检核</p>
+
+</div>
+</body>
+</html>
