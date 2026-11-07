@@ -20,6 +20,7 @@
 #include "nvs.h"
 #include "esp_timer.h"
 #include "esp_system.h"
+#include "esp_mac.h"
 #include "lvgl.h"
 #include "bsp_display.h"
 #include "bsp_button.h"
@@ -108,7 +109,7 @@ void ember_on_key(bsp_btn_t btn, bsp_btn_ev_t ev, void *user) {
 static nvs_handle_t s_nvs;
 
 static void nvs_load(void) {
-    esp_err_t r = nvs_open(NVS_NS, NVS_READWRITE, &s_nvs);
+    esp_err_t r = nvs_open("ember", NVS_READWRITE, &s_nvs);
     if (r != ESP_OK) { memset(&g, 0, sizeof(g)); return; }
     uint16_t night = 1; nvs_get_u16(s_nvs, "night", &night); g.night = night;
     for (int i = 0; i < N_LAMPS; i++) {
@@ -250,7 +251,7 @@ static void build_ui(void) {
     lv_obj_set_style_pad_all(g_eye_r, 0, 0);
     lv_obj_align(g_eye_r, LV_ALIGN_CENTER, 9, -6);
 
-    static lv_point_t mouth_pts[] = {{-7, 4}, {0, 9}, {7, 4}};
+    static lv_point_precise_t mouth_pts[] = {{-7, 4}, {0, 9}, {7, 4}};
     g_mouth = lv_line_create(g_core);
     lv_line_set_points(g_mouth, mouth_pts, 3);
     lv_obj_set_style_line_color(g_mouth, lv_color_black(), 0);
