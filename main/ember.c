@@ -147,7 +147,8 @@ static void recompute_fire(void) {
     ember_colorFor(tot4, g.borrowed, &c);
     /* 唯一底色偏移：每台设备 ±2° 微差（seed 决定，持久稳定） */
     float off = (float)((int32_t)(g.seed & 0x7) - 3);   /* -3..+3 */
-    if (off > 2) off = 2; if (off < -2) off = -2;
+    if (off > 2) off = 2;
+    if (off < -2) off = -2;
     g.fire_h = c.h + off * 0.6f;
     g.fire_s = c.s;
     g.fire_l = c.l;

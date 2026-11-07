@@ -4,12 +4,13 @@
 #include "ember_color.h"
 #include <math.h>
 #include <string.h>
+#include <stdio.h>
 
 /* ---------------- 常量（与 JS 同源） ---------------- */
 const ember_dim_t EMBER_DIMS[EMBER_NDIM] = {
     { 208.0f, 0.52f, 0.33f, "#28577F", "墨蓝", "工作" },
     {  44.0f, 0.80f, 0.64f, "#ECC559", "蜜金", "关系" },
-    {   6.0f, 0.82f, 0.52f, "#E83420", "热爱" },
+    {   6.0f, 0.82f, 0.52f, "#E83420", "朱绯", "热爱" },
     { 158.0f, 0.42f, 0.50f, "#49B58D", "苔青", "身体" },
 };
 const ember_hsl_t EMBER_BASE     = { 32.7f, 0.61f, 0.64f };
@@ -99,8 +100,10 @@ void ember_analyze(const uint8_t tot[EMBER_NDIM], int *W, int *main_i, int *seco
 /* ---------------- HSL -> RGB ---------------- */
 void ember_hslToRgb(float h, float s, float l, ember_rgb_t *out) {
     h = ember_norm(h) / 360.0f;
-    if (s < 0) s = 0; if (s > 1) s = 1;
-    if (l < 0) l = 0; if (l > 1) l = 1;
+    if (s < 0) s = 0;
+    if (s > 1) s = 1;
+    if (l < 0) l = 0;
+    if (l > 1) l = 1;
     if (s == 0.0f) {
         int v = (int)roundf(l * 255.0f);
         out->r = out->g = out->b = v;
@@ -201,9 +204,11 @@ static float ramp_val(const float *arr, float x) {
 void ember_relightPixel(float l0, float s0, float hDeg, float sat,
                         const ember_rgb_t *tip, float tipWeight, ember_rgb_t *out) {
     float L = ramp_val(RAMP_L, l0) * 0.86f + l0 * 0.14f;
-    if (L < 0) L = 0; if (L > 1) L = 1;
+    if (L < 0) L = 0;
+    if (L > 1) L = 1;
     float S = ramp_val(RAMP_S, l0) * sat * (0.82f + 0.28f * s0);
-    if (S < 0) S = 0; if (S > 0.95f) S = 0.95f;
+    if (S < 0) S = 0;
+    if (S > 0.95f) S = 0.95f;
     ember_hslToRgb(hDeg, S, L, out);
     if (tip && tipWeight > 0.0f && l0 < 0.38f) {
         float w = tipWeight * 0.5f * (1.0f - l0 / 0.38f);

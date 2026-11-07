@@ -3,7 +3,7 @@ idf_component_register(
          "ember.c"
          "ember_color.c"
     INCLUDE_DIRS "."
-    REQUIRES bsp nvs_flash lvgl freertos
+    REQUIRES bsp nvs_flash lvgl freertos esp_timer
 )
 
 # 《余烬》中文子集字体：由 lv_font_conv 从思源黑体生成（tools 下用 lv_font_conv 重生）。
