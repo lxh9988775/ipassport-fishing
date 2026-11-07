@@ -340,7 +340,7 @@ static void end_night(void) {
     ember_colorFor(tot4, false, &c);
     const char *line = c.balanced ? NIGHT_WORD_BALANCED : NIGHT_WORDS[c.main_i >= 0 ? c.main_i : 0];
     lv_label_set_text(g_card_line, line);
-    char buf[40];
+    char buf[80];
     snprintf(buf, sizeof(buf), "今夜：%s  %s", g.color_name, g.color_hex);
     lv_label_set_text(g_card_name, buf);
 }
@@ -467,7 +467,7 @@ static void refresh_ui(void) {
     /* 选中项名提示（非 overlay / 非卡时） */
     if (!g.show_color && !g.ember_card) {
         const char *nm = (g.sel < N_LAMPS) ? DIM_NAME[g.sel] : "熄灯";
-        char buf[48]; snprintf(buf, sizeof(buf),
+        char buf[80]; snprintf(buf, sizeof(buf),
             "↑↓选灯  OK添柴  长OK看火色   当前：%s", nm);
         if (poke_state == 0) lv_label_set_text(g_lbl_hint, buf);
     }
