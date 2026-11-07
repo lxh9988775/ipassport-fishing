@@ -25,8 +25,9 @@ CONFIG_LV_DEF_REFR_PERIOD=20
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 # LVGL 内置 malloc 池大小(KB)。它是独立静态区、不与系统堆共享,配大了会白白占用 RAM。
-# 本 demo UI 简单,24KB 足够;若自建复杂界面出现绘制卡死/看门狗,调大此值。
-CONFIG_LV_MEM_SIZE_KILOBYTES=24
+# 《余烬》火焰为多层矢量对象 + 夜森林大图 + 中文子集字库,24KB 在构建期偏紧易触发
+# LV_MEM 触顶自旋（LVGL 铁律 3）；本工程实测提到 64KB 才稳。
+CONFIG_LV_MEM_SIZE_KILOBYTES=64
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
