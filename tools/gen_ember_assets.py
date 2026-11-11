@@ -6,24 +6,23 @@
 
 格式（关键，修正上一版真 bug）：
   * 背景 LV_COLOR_FORMAT_RGB565，uint16_t 小端数组（240x320，静态永不 recolor）。
-    手册 X-02 要求；本工程 bg_sprites.c / pet_room.c 已上板验证过该格式。
   * 精灵 LV_COLOR_FORMAT_ARGB8888，uint32_t 小端数组。
     小端存 0xAARRGGBB -> 内存字节 [BB,GG,RR,AA] = [B,G,R,A]，
-    正是 LVGL v9 lv_color32_t 的顺序（pet_costumes.c / fish_sprites.c 同款）。
-    上一版逐字节写 [R,G,B,A]，红蓝整体互换（暖窗变蓝球、萤火变青点），本版修正。
-  * 余烬卡整屏 RGB565 预烘：宝可梦 Full-Art 全图卡，插画满版、文字只留角标。
+    正是 LVGL v9 lv_color32_t 的顺序。上一版逐字节写 [R,G,B,A] 红蓝互换，已修正。
+  * 余烬卡整屏 RGB565 预烘：宝可梦 Full-Art 全图卡，插画满版、文字极少。
+  * UI 层（2026-11-11 真机返工）：真机验证只有 lv_img 可靠绘制，
+    lv_label / lv_obj 经 HIDDEN 恢复后全部不显示。故把所有 HUD、四灯、
+    键提示、覆盖屏文字都预烘成 ARGB8888 透明贴图，运行时只切 src。
+    透明图 = 4x4 全 0，切到它就等于隐藏，不再使用 LV_OBJ_FLAG_HIDDEN。
+
+白边修复（真机反馈「右边还有白线条」）：
+  ember_bg_clean.png 右侧 x=236..239 四列是纯白 (255,255,255)，320 行全白，
+  是 AI 出图留白。这里按镜像邻接列回填，杜绝白线随图上板。
 
 为什么不按 X-01 用运行时 RGB565A8 重染：
   240x320 RGB565A8 双平面需 W*H*3=230KB 可写 RAM；ESP32-C3 无 PSRAM，
   LV_MEM 仅 96KB，放不下。故改为「构建期按同源 relightPixel 逐像素点亮，
   多档火色预烘成 Flash 常量图，运行时只 lv_img_set_src 切档」。
-  核心约束全部保住：静态背景不换色 / 精灵唯一换色对象 / 真实母版骨架 /
-  脸属白热芯与焰尖同色 / 森林取样点恒值 / 零周期重绘。
-
-分层（手册 M-03）：
-  img_bg     静态夜森林，永不 recolor
-  img_spirit 唯一换色对象：骨架 R=l0 / G=s0 / A=shape，同源 relightPixel 点亮
-  img_card   S4 余烬卡整屏全图图（按火色档切），动态文字由 LVGL 叠加
 
 火色档位一律取自 tools/ember_facts.json，禁止手写 hex。
 """
@@ -34,17 +33,55 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BG = os.path.join(ROOT, "generated-images", "ember_bg_clean.png")
 SK = os.path.join(ROOT, "generated-images", "ember_spirit_skeleton.png")
-MASTER = os.path.join(ROOT, "generated-images", "ember_spirit_master.png")
 FONT = os.path.join(ROOT, "assets", "fonts", "SourceHanSansCN-Normal.otf")
 FACTS = os.path.join(ROOT, "tools", "ember_facts.json")
 OUT_C = os.path.join(ROOT, "assets", "ember", "ember_assets.c")
 OUT_H = os.path.join(ROOT, "assets", "ember", "ember_assets.h")
 
 W, H = 240, 320
-SP_W, SP_H = 190, 320          # 骨架 alpha>8 的 bbox = x[0,188] y[0,319]
+SP_W, SP_H = 190, 320
 RAMP_X = [0, .15, .32, .50, .70, .88, 1.0]
 RAMP_L = [.05, .14, .31, .50, .68, .80, .86]
 RAMP_S = [1, 1, .96, .90, .80, .62, .48]
+
+# UI 贴图尺寸
+WOOD_W, WOOD_H = 96, 54
+HINT_W, HINT_H = 240, 30
+LAMP_W, LAMP_H = 240, 56
+NONE_W, NONE_H = 4, 4
+LAMP_XY = [(53, 264), (98, 274), (144, 268), (190, 258)]
+
+C_CREAM = (250, 238, 214, 255)
+C_GOLD = (255, 214, 150, 255)
+C_DIM = (206, 194, 172, 255)
+
+HINTS = [
+    "〇 开始",                                    # 0 S0 首夜
+    "◁ 观火　〇 添柴　▷ 看火相",                  # 1 S1 今夜
+    "◁ 上一盏　〇 添柴　▷ 下一盏",                # 2 S2 添柴
+    "任意键返回",                                 # 3 S3 火相
+    "柴尽了·明早见",                              # 4 S4 余烬卡
+    "〇 回到今夜",                                # 5 S5 复燃
+    "你又在硬撑了。",                             # 6 S6 浮层
+    "〇 借　▷ 算了",                              # 7 S7 借柴确认
+    "柴尽了　〇 借明天的柴　▷ 算了",               # 8 S2 柴尽
+]
+
+OVERLAYS = [
+    ("今晚，火先亮着。", "小余在等你。", "〇 开始"),                    # S0
+    ("今天分得匀，火很稳。", "四盏灯，各有各的热。", "任意键返回"),      # S3
+    ("你不在的时候，", "它自己缓过来了。", "〇 回到今夜"),              # S5
+    ("要借明天的柴吗？", "火会亮，也会发灰。", "〇 借　▷ 算了"),        # S7
+]
+
+CARD_WORDS_BY_FRAME = [
+    ("今天你把热留给了手头的事，", "歇下来时，它替你亮着。"),
+    ("你又为人操心了。", "被记挂的人，夜里不冷。"),
+    ("那点热爱你还留着，", "没被日子磨掉，挺好的。"),
+    ("你终于没忘了身体。", "它悄悄多烧了一截。"),
+    ("四盏都点到一点，不偏不倚，", "这样睡得最安稳。"),
+    ("借来的火会发灰，", "明早记得还自己一点热。"),
+]
 
 
 # ---------------- 颜色（与 C 端 ember_color.c / JS 端同源） ----------------
@@ -57,9 +94,12 @@ def hex2hsl(hexv):
     if d == 0:
         return 0.0, 0.0, l
     s = d/(2-d) if l > 0.5 else d/(mx+mn)
-    if mx == r:   h = ((g-b)/d) % 6
-    elif mx == g: h = (b-r)/d + 2
-    else:         h = (r-g)/d + 4
+    if mx == r:
+        h = ((g-b)/d) % 6
+    elif mx == g:
+        h = (b-r)/d + 2
+    else:
+        h = (r-g)/d + 4
     return h * 60, s, l
 
 
@@ -86,7 +126,6 @@ def hsl2rgb_vec(h_deg, s, l):
 
 
 def relight(l0, s0, h, sat, tip):
-    """与 tools/ember_color_mirror.py（C/JS 对拍 468 用例 0 偏差）同源。"""
     L = np.interp(l0, RAMP_X, RAMP_L)*0.86 + l0*0.14
     L = np.clip(L, 0, 1)
     S = np.interp(l0, RAMP_X, RAMP_S)*sat*(0.82 + 0.28*s0)
@@ -102,16 +141,22 @@ def relight(l0, s0, h, sat, tip):
 
 # ---------------- 资源 ----------------
 def load_bg():
-    """静态夜森林：裁右下角 AI 水印。永不 recolor。"""
+    """静态夜森林：裁右下角 AI 水印 + 修右侧 4 列纯白边。永不 recolor。"""
     im = Image.open(BG).convert("RGB").resize((W, H), Image.LANCZOS)
     a = np.asarray(im, np.uint8).copy()
     cover = a[290:305, 150:185].mean(axis=(0, 1)).astype(np.uint8)
     a[300:320, 190:240] = cover
+    # 真机白线根因：源图右缘 x=233..239 是渐变到纯白的 AI 留白
+    # （x=235 均值 231/217/196，x=236..239 全 320 行纯白）。按邻接列镜像回填 8 列，
+    # 彻底消除任何 1px 浅线，且不动森林内部取样点。
+    edge = 8
+    for x in range(W - edge, W):
+        src = 2*(W - edge - 1) - x
+        a[:, x] = a[:, src]
     return a
 
 
 def load_skeleton():
-    """骨架：R=色阶位置 l0, G=笔触密度 s0, A=形状。裁到实体 bbox。"""
     im = Image.open(SK).convert("RGBA").resize((W, H), Image.LANCZOS)
     arr = np.asarray(im)[0:SP_H, 0:SP_W]
     return (arr[:, :, 0].astype(np.float32)/255.0,
@@ -120,7 +165,6 @@ def load_skeleton():
 
 
 def pack_rgb565(rgb):
-    """RGB uint8[H,W,3] -> uint16 小端数组（LV_COLOR_FORMAT_RGB565 native）。"""
     r = rgb[:, :, 0].astype(np.uint16)
     g = rgb[:, :, 1].astype(np.uint16)
     b = rgb[:, :, 2].astype(np.uint16)
@@ -128,8 +172,6 @@ def pack_rgb565(rgb):
 
 
 def pack_argb8888(rgb, alpha):
-    """uint32 小端 -> 内存 [B,G,R,A]，LVGL ARGB8888 正确顺序。
-    全透明像素写 0，显著压缩 C 文本体积。"""
     r = rgb[:, :, 0].astype(np.uint32)
     g = rgb[:, :, 1].astype(np.uint32)
     b = rgb[:, :, 2].astype(np.uint32)
@@ -139,8 +181,13 @@ def pack_argb8888(rgb, alpha):
     return v.reshape(-1)
 
 
+def pack_rgba(rgba):
+    """RGBA uint8[H,W,4] -> uint32 小端（内存 B,G,R,A）。透明像素写 0。"""
+    arr = np.asarray(rgba, np.uint8)
+    return pack_argb8888(arr[:, :, :3], arr[:, :, 3])
+
+
 def composite(fire_hex, brightness, glow_r, bg, l0, s0, alpha, tip):
-    """与电脑端对比图渲染器同源的合成：背景*亮度 + 火色光晕 + 重染精灵。"""
     h, s, _ = hex2hsl(fire_hex)
     r, g, b = relight(l0, s0, h, s, tip)
     base = bg.astype(np.float32) * brightness
@@ -156,8 +203,7 @@ def composite(fire_hex, brightness, glow_r, bg, l0, s0, alpha, tip):
     out = np.clip(out, 0, 255)
     a01 = (alpha[..., None]/255.0)
     sp = np.stack([r, g, b], -1).astype(np.float32)
-    blended = out[:, 0:SP_W]*(1-a01) + sp*a01
-    out[:, 0:SP_W] = np.clip(blended, 0, 255)
+    out[:, 0:SP_W] = np.clip(out[:, 0:SP_W]*(1-a01) + sp*a01, 0, 255)
     return np.clip(out, 0, 255).astype(np.uint8)
 
 
@@ -165,12 +211,14 @@ def font(sz):
     return ImageFont.truetype(FONT, sz)
 
 
-def render_card(fire_hex, bg, l0, s0, alpha, tip):
-    """S4 余烬卡：整屏一张宝可梦 Full-Art 全图卡。
+def center_text(d, txt, y, fnt, fill, width=W):
+    bb = d.textbbox((0, 0), txt, font=fnt)
+    tw = bb[2] - bb[0]
+    d.text(((width - tw)//2, y), txt, font=fnt, fill=fill)
 
-    插画满版出血、卡名与编号只落角上、圆角+暖金描边+火光晕做实体卡质感。
-    只烘固定视觉；第N夜 / 色号 / 夜话 / 明早见 由固件 LVGL 动态叠加。
-    """
+
+def render_card(fire_hex, bg, l0, s0, alpha, tip, idx):
+    """S4 余烬卡：整屏 Full-Art 全图卡。卡名/色号/夜话/收尾语全部烘进图。"""
     desk = composite(fire_hex, 0.46, 58, bg, l0, s0, alpha, tip)
     yy, xx = np.mgrid[0:H, 0:W]
     vig = np.clip(1 - np.sqrt(((xx-120)/155)**2 + ((yy-160)/195)**2)*0.55, 0.26, 1)
@@ -193,8 +241,8 @@ def render_card(fire_hex, bg, l0, s0, alpha, tip):
     a = np.asarray(art, np.float32).copy()
     yy2 = np.arange(ih, dtype=np.float32)[:, None]
     top_a = np.clip(1 - yy2/44, 0, 1)*0.70
-    bot_a = np.clip(1 - (ih-1-yy2)/50, 0, 1)*0.82
-    amt = np.clip(np.maximum(top_a, bot_a), 0, 0.82)[..., None]
+    bot_a = np.clip(1 - (ih-1-yy2)/62, 0, 1)*0.88
+    amt = np.clip(np.maximum(top_a, bot_a), 0, 0.88)[..., None]
     a = a*(1-amt) + np.array([10, 14, 12], np.float32)*amt
     art = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8), "RGB")
 
@@ -208,8 +256,76 @@ def render_card(fire_hex, bg, l0, s0, alpha, tip):
     d.rounded_rectangle([cx0-1, cy0-1, cx1+1, cy1+1], radius=rad+1,
                         outline=(242, 216, 176, 110), width=1)
     tx, ty = cx0+edge, cy0+edge
-    d.text((tx+14, ty+11), "余 烬", font=font(17), fill=(248, 232, 205, 255))
+    d.text((tx+14, ty+9), "余 烬", font=font(17), fill=C_CREAM)
+    d.text((cx1-82, ty+13), fire_hex, font=font(12), fill=C_GOLD)
+    w1, w2 = CARD_WORDS_BY_FRAME[idx]
+    center_text(d, w1, 246, font(12), C_CREAM)
+    center_text(d, w2, 262, font(12), C_CREAM)
+    center_text(d, "柴尽了·明早见", 280, font(12), C_DIM)
     return np.asarray(screen.convert("RGB"), np.uint8)
+
+
+# ---------------- UI 贴图（全部 ARGB8888，透明区 alpha=0） ----------------
+def ui_none():
+    return np.zeros((NONE_H, NONE_W, 4), np.uint8)
+
+
+def ui_wood(n):
+    """左上 HUD：34px 大数字 +『柴』，按余柴 0..5 各一张。"""
+    im = Image.new("RGBA", (WOOD_W, WOOD_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([0, 0, WOOD_W-1, WOOD_H-1], radius=10, fill=(8, 12, 14, 165))
+    d.text((8, 0), str(n), font=font(38), fill=C_CREAM)
+    d.text((56, 26), "柴", font=font(15), fill=C_DIM)
+    return np.asarray(im, np.uint8)
+
+
+def ui_hint(txt):
+    """底部键提示条：深色半透明底 + 居中亮字。"""
+    im = Image.new("RGBA", (HINT_W, HINT_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([4, 1, HINT_W-5, HINT_H-2], radius=8, fill=(8, 12, 14, 205))
+    center_text(d, txt, 6, font(15), C_CREAM)
+    return np.asarray(im, np.uint8)
+
+
+def ui_lamps(bits):
+    """四灯：按 4 bit 亮灭组合，坐标与界面规范 V1 一致。贴到 y=248。"""
+    im = Image.new("RGBA", (LAMP_W, LAMP_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    for i, (x, y) in enumerate(LAMP_XY):
+        ly = y - 248
+        on = (bits >> i) & 1
+        col = (255, 206, 140, 255) if on else (74, 68, 60, 235)
+        d.ellipse([x-5, ly-5, x+5, ly+5], fill=col,
+                  outline=(20, 18, 16, 210), width=1)
+    return np.asarray(im, np.uint8)
+
+
+def ui_sel(i):
+    """选中灯的金圈。贴到 y=248，叠在四灯之上。"""
+    im = Image.new("RGBA", (LAMP_W, LAMP_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    x, y = LAMP_XY[i]
+    ly = y - 248
+    d.ellipse([x-9, ly-9, x+9, ly+9], outline=C_GOLD, width=2)
+    return np.asarray(im, np.uint8)
+
+
+def ui_overlay(kind):
+    """覆盖屏整屏：淡夜色遮罩 + 文字区深底板 + 底部键提示。
+
+    不用整屏重遮罩，保留真实夜森林与火灵可见（场景即界面）。
+    """
+    a, b, hint = OVERLAYS[kind]
+    im = Image.new("RGBA", (W, H), (10, 14, 16, 100))
+    d = ImageDraw.Draw(im)
+    d.rounded_rectangle([10, 100, W-11, 178], radius=12, fill=(10, 14, 16, 210))
+    center_text(d, a, 116, font(19), C_CREAM)
+    center_text(d, b, 148, font(15), C_DIM)
+    d.rounded_rectangle([4, 286, W-5, 315], radius=8, fill=(8, 12, 14, 225))
+    center_text(d, hint, 293, font(15), C_GOLD)
+    return np.asarray(im, np.uint8)
 
 
 # ---------------- C 写出 ----------------
@@ -237,15 +353,36 @@ def dsc(f, name, cf, w, h, arr):
     f.write("};\n\n")
 
 
+def dsc_arr(f, name, cf, w, h, prefix, n):
+    stride = w*2 if cf == "RGB565" else w*4
+    f.write("const lv_img_dsc_t %s[%d] = {\n" % (name, n))
+    for i in range(n):
+        arr = "%s_%d" % (prefix, i)
+        f.write("    { .header.magic = LV_IMAGE_HEADER_MAGIC,\n")
+        f.write("      .header.cf = LV_COLOR_FORMAT_%s,\n" % cf)
+        f.write("      .header.w = %d, .header.h = %d, .header.stride = %d,\n"
+                % (w, h, stride))
+        f.write("      .data_size = sizeof(%s),\n" % arr)
+        f.write("      .data = (const uint8_t *)%s },\n" % arr)
+    f.write("};\n\n")
+
+
+def write_group(f, group, images, w, h):
+    """images: list of RGBA np arrays -> C 数组 + dsc 数组。"""
+    for i, im in enumerate(images):
+        write_arr(f, "uint32_t %s_%d" % (group, i), pack_rgba(im), "u32")
+    dsc_arr(f, "ember_%s_dsc" % group, "ARGB8888", w, h, "%s" % group, len(images))
+
+
 def main():
     facts = json.load(open(FACTS, encoding="utf-8"))
     steps = facts["q3to2"]["steps"]
-    frames = [("F0_暮橙", steps[0]),
+    frames = [("F0_mu_cheng", steps[0]),
               ("F1", steps[2]),
               ("F2", steps[3]),
               ("F3", steps[4]),
-              ("F4_热爱3工作2", steps[5]),
-              ("F5_借柴黑蓝", facts["borrowed"]["engineHex"])]
+              ("F4_love3_work2", steps[5]),
+              ("F5_borrowed", facts["borrowed"]["engineHex"])]
     N = len(frames)
 
     bg = load_bg()
@@ -255,63 +392,67 @@ def main():
 
     bg_flat = pack_rgb565(bg)
     spirit_flats, card_flats, meta = [], [], []
-    for name, hexv in frames:
+    for i, (name, hexv) in enumerate(frames):
         h, s, _ = hex2hsl(hexv)
         r, g, b = relight(l0, s0, h, s, tip)
         spirit_flats.append(pack_argb8888(np.stack([r, g, b], -1), alpha))
-        card_flats.append(pack_rgb565(render_card(hexv, bg, l0, s0, alpha, tip)))
+        card_flats.append(pack_rgb565(render_card(hexv, bg, l0, s0, alpha, tip, i)))
         meta.append((name, hexv, round(h, 2), round(s, 3)))
 
     os.makedirs(os.path.dirname(OUT_C), exist_ok=True)
     with open(OUT_C, "w", encoding="utf-8") as f:
-        f.write("/* 由 tools/gen_ember_assets.py 自动生成，请勿手工编辑。\n")
-        f.write(" * 背景 RGB565(uint16 小端) / 精灵 ARGB8888(uint32 小端 = 内存 B,G,R,A)。\n")
-        f.write(" * 色号取自 tools/ember_facts.json；精灵经同源 relightPixel 逐像素点亮。 */\n")
+        f.write("/* Auto-generated by tools/gen_ember_assets.py -- do not edit.\n")
+        f.write(" * bg/card RGB565 (uint16 LE), spirit + UI ARGB8888 (uint32 LE = B,G,R,A).\n")
+        f.write(" * UI layers are pre-rendered bitmaps: no lv_label / HIDDEN on device.\n")
+        f.write(" * Fire colors come from tools/ember_facts.json only. */\n")
         f.write('#include "lvgl.h"\n\n')
+
         write_arr(f, "uint16_t ember_bg_map", bg_flat, "u16")
         for i, flat in enumerate(spirit_flats):
             write_arr(f, "uint32_t ember_spirit_map_%d" % i, flat, "u32")
         for i, flat in enumerate(card_flats):
             write_arr(f, "uint16_t ember_card_map_%d" % i, flat, "u16")
+
+        # UI 组（ARGB8888）
+        write_group(f, "ember_none", [ui_none()], NONE_W, NONE_H)
+        write_group(f, "ember_wood", [ui_wood(n) for n in range(6)], WOOD_W, WOOD_H)
+        write_group(f, "ember_hint", [ui_hint(t) for t in HINTS], HINT_W, HINT_H)
+        write_group(f, "ember_lamp", [ui_lamps(b) for b in range(16)], LAMP_W, LAMP_H)
+        write_group(f, "ember_sel", [ui_sel(i) for i in range(4)], LAMP_W, LAMP_H)
+        write_group(f, "ember_ovl", [ui_overlay(k) for k in range(4)], W, H)
+
         dsc(f, "ember_bg_dsc", "RGB565", W, H, "ember_bg_map")
-        f.write("const lv_img_dsc_t ember_spirit_dsc[%d] = {\n" % N)
-        for i in range(N):
-            f.write("    { .header.magic = LV_IMAGE_HEADER_MAGIC,\n")
-            f.write("      .header.cf = LV_COLOR_FORMAT_ARGB8888,\n")
-            f.write("      .header.w = %d, .header.h = %d, .header.stride = %d,\n"
-                    % (SP_W, SP_H, SP_W*4))
-            f.write("      .data_size = sizeof(ember_spirit_map_%d),\n" % i)
-            f.write("      .data = (const uint8_t *)ember_spirit_map_%d },\n" % i)
-        f.write("};\n\n")
-        f.write("const lv_img_dsc_t ember_card_dsc[%d] = {\n" % N)
-        for i in range(N):
-            f.write("    { .header.magic = LV_IMAGE_HEADER_MAGIC,\n")
-            f.write("      .header.cf = LV_COLOR_FORMAT_RGB565,\n")
-            f.write("      .header.w = %d, .header.h = %d, .header.stride = %d,\n"
-                    % (W, H, W*2))
-            f.write("      .data_size = sizeof(ember_card_map_%d),\n" % i)
-            f.write("      .data = (const uint8_t *)ember_card_map_%d },\n" % i)
-        f.write("};\n")
+        dsc_arr(f, "ember_spirit_dsc", "ARGB8888", SP_W, SP_H, "ember_spirit_map", N)
+        dsc_arr(f, "ember_card_dsc", "RGB565", W, H, "ember_card_map", N)
 
     with open(OUT_H, "w", encoding="utf-8") as f:
-        f.write("/* 由 tools/gen_ember_assets.py 自动生成，请勿手工编辑。 */\n")
+        f.write("/* Auto-generated by tools/gen_ember_assets.py -- do not edit. */\n")
         f.write("#pragma once\n#include \"lvgl.h\"\n\n")
         f.write("#define EMBER_FIRE_FRAMES %d\n" % N)
+        f.write("#define EMBER_UI_WOOD_N 6\n")
+        f.write("#define EMBER_UI_HINT_N %d\n" % len(HINTS))
+        f.write("#define EMBER_UI_LAMP_N 16\n")
+        f.write("#define EMBER_UI_SEL_N 4\n")
+        f.write("#define EMBER_UI_OVL_N 4\n")
         f.write("#define EMBER_SCR_W %d\n#define EMBER_SCR_H %d\n" % (W, H))
         f.write("#define EMBER_SPIRIT_W %d\n#define EMBER_SPIRIT_H %d\n\n" % (SP_W, SP_H))
         f.write("extern const lv_img_dsc_t ember_bg_dsc;\n")
         f.write("extern const lv_img_dsc_t ember_spirit_dsc[EMBER_FIRE_FRAMES];\n")
         f.write("extern const lv_img_dsc_t ember_card_dsc[EMBER_FIRE_FRAMES];\n")
+        f.write("extern const lv_img_dsc_t ember_none_dsc[1];\n")
+        f.write("extern const lv_img_dsc_t ember_wood_dsc[EMBER_UI_WOOD_N];\n")
+        f.write("extern const lv_img_dsc_t ember_hint_dsc[EMBER_UI_HINT_N];\n")
+        f.write("extern const lv_img_dsc_t ember_lamp_dsc[EMBER_UI_LAMP_N];\n")
+        f.write("extern const lv_img_dsc_t ember_sel_dsc[EMBER_UI_SEL_N];\n")
+        f.write("extern const lv_img_dsc_t ember_ovl_dsc[EMBER_UI_OVL_N];\n")
 
     print("wrote %s (%.2f MB)" % (OUT_C, os.path.getsize(OUT_C)/1024/1024))
     print("frames:")
     for m in meta:
         print("   ", m)
-    print("bg samples (20,28)(120,95)(212,292):",
-          tuple(int(v) for v in bg[28, 20]),
-          tuple(int(v) for v in bg[95, 120]),
-          tuple(int(v) for v in bg[292, 212]))
-    print("spirit bbox:", SP_W, "x", SP_H, "nonzero px:", int((alpha > 8).sum()))
+    print("bg right edge after fix:", tuple(int(v) for v in bg[160, 239]),
+          tuple(int(v) for v in bg[160, 235]))
+    print("UI groups: none1 wood6 hint%d lamp16 sel4 ovl4" % len(HINTS))
 
 
 if __name__ == "__main__":
