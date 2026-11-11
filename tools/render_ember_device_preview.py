@@ -81,13 +81,21 @@ def over(base, layer, x=0, y=0):
 bg = rgb565(get_arr("ember_bg_map", "uint16_t"), W, H)
 spirit = argb8888(get_arr("ember_spirit_map_0", "uint32_t"), SP_W, SP_H)
 card = rgb565(get_arr("ember_card_map_0", "uint16_t"), W, H)
-wood = [argb8888(get_arr("ember_wood_%d" % i, "uint32_t"), 96, 54) for i in range(6)]
-hint = [argb8888(get_arr("ember_hint_%d" % i, "uint32_t"), 240, 30) for i in range(9)]
-lamp = [argb8888(get_arr("ember_lamp_%d" % i, "uint32_t"), 240, 56) for i in range(16)]
-sel = [argb8888(get_arr("ember_sel_%d" % i, "uint32_t"), 240, 56) for i in range(4)]
-ovl = [argb8888(get_arr("ember_ovl_%d" % i, "uint32_t"), W, H) for i in range(4)]
+wood = [rgb565(get_arr("ember_wood_%d" % i, "uint16_t"), 96, 54) for i in range(6)]
+hint = [rgb565(get_arr("ember_hint_%d" % i, "uint16_t"), 240, 30) for i in range(9)]
+lamp = [argb8888(get_arr("ember_lamp_%d" % i, "uint32_t"), 160, 40) for i in range(16)]
+sel = [argb8888(get_arr("ember_sel_%d" % i, "uint32_t"), 160, 40) for i in range(4)]
+ovl = [rgb565(get_arr("ember_ovl_%d" % i, "uint16_t"), 240, 80) for i in range(4)]
 
 os.makedirs(OUT, exist_ok=True)
+
+
+def paste_rgb(base, layer, x, y):
+    """不透明 RGB565 层：直接覆盖拷贝，不做混合（与真机 LVGL 行为一致）。"""
+    out = base.copy()
+    h, w = layer.shape[:2]
+    out[y:y+h, x:x+w] = layer
+    return out
 
 
 def scene():
@@ -96,10 +104,18 @@ def scene():
 
 def main_screen(wood_n=5, bits=0, sel_i=0, hint_i=1):
     im = scene()
-    im = over(im, wood[wood_n], 8, 5)
-    im = over(im, lamp[bits], 0, 248)
-    im = over(im, sel[sel_i], 0, 248)
-    im = over(im, hint[hint_i], 0, 288)
+    im = paste_rgb(im, wood[wood_n], 8, 5)
+    im = over(im, lamp[bits], 40, 247)
+    im = over(im, sel[sel_i], 40, 247)
+    im = paste_rgb(im, hint[hint_i], 0, 288)
+    return im
+
+
+def overlay_screen(kind, hint_i):
+    """覆盖屏：文字条 + 底部提示条，中间完整透出夜森林与火灵。"""
+    im = scene()
+    im = paste_rgb(im, ovl[kind], 0, 100)
+    im = paste_rgb(im, hint[hint_i], 0, 288)
     return im
 
 
@@ -107,9 +123,9 @@ shots = {
     "device_S1_tonight": main_screen(5, 0, 0, 1),
     "device_S2_add":     main_screen(3, 3, 1, 2),
     "device_S2_empty":   main_screen(0, 15, 3, 8),
-    "device_S0_first":   over(scene(), ovl[0]),
-    "device_S3_phase":   over(scene(), ovl[1]),
-    "device_S7_borrow":  over(scene(), ovl[3]),
+    "device_S0_first":   overlay_screen(0, 0),
+    "device_S3_phase":   overlay_screen(1, 3),
+    "device_S7_borrow":  overlay_screen(3, 7),
     "device_S4_card":    card,
 }
 for name, arr in shots.items():

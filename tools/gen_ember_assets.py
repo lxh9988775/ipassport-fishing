@@ -10,14 +10,25 @@
     小端存 0xAARRGGBB -> 内存字节 [BB,GG,RR,AA] = [B,G,R,A]，
     正是 LVGL v9 lv_color32_t 的顺序。上一版逐字节写 [R,G,B,A] 红蓝互换，已修正。
   * 余烬卡整屏 RGB565 预烘：宝可梦 Full-Art 全图卡，插画满版、文字极少。
-  * UI 层（2026-11-11 真机返工）：真机验证只有 lv_img 可靠绘制，
-    lv_label / lv_obj 经 HIDDEN 恢复后全部不显示。故把所有 HUD、四灯、
-    键提示、覆盖屏文字都预烘成 ARGB8888 透明贴图，运行时只切 src。
-    透明图 = 4x4 全 0，切到它就等于隐藏，不再使用 LV_OBJ_FLAG_HIDDEN。
+
+UI 层两次真机返工：
+  1) 2026-11-11 第一次：真机只有 lv_img 可靠绘制，lv_label / lv_obj 经
+     HIDDEN 恢复后全部不显示。故把所有 HUD / 四灯 / 键提示 / 覆盖屏文字
+     预烘成 ARGB8888 透明贴图，运行时只切 src。
+  2) 2026-11-11 第二次（板子发烫）：8 层 ARGB8888 里有两个整屏 240x320
+     半透明层，且所有对象被强制固定 240x320 —— 即使隐藏成 4x4 透明图，
+     对象仍占满全屏，LVGL 每帧要逐像素 alpha 混合几十万像素，
+     ESP32-C3 单核 / 无 PSRAM 持续满载。现改为：
+       - wood / hint / ovl / none 全部 RGB565 不透明（LVGL 直接 memcpy，零混合）
+       - 覆盖屏由「整屏淡遮罩」改为 240x80 不透明文字条，底部提示复用 hint 图
+       - 隐藏图 1x1，对象随之缩小，不再常驻整屏区域
+       - 四灯 / 选中圈保留 ARGB8888（只有小圆点有 alpha），尺寸裁到 160x40
+       - 固件不再调用 lv_obj_set_size 固定尺寸
+     运行时唯一需要 alpha 混合的只剩精灵层（190x320）。
 
 白边修复（真机反馈「右边还有白线条」）：
   ember_bg_clean.png 右侧 x=236..239 四列是纯白 (255,255,255)，320 行全白，
-  是 AI 出图留白。这里按镜像邻接列回填，杜绝白线随图上板。
+  是 AI 出图留白。这里按镜像邻接列回填 8 列，杜绝白线随图上板。
 
 为什么不按 X-01 用运行时 RGB565A8 重染：
   240x320 RGB565A8 双平面需 W*H*3=230KB 可写 RAM；ESP32-C3 无 PSRAM，
@@ -44,16 +55,19 @@ RAMP_X = [0, .15, .32, .50, .70, .88, 1.0]
 RAMP_L = [.05, .14, .31, .50, .68, .80, .86]
 RAMP_S = [1, 1, .96, .90, .80, .62, .48]
 
-# UI 贴图尺寸
+# UI 贴图尺寸（2026-11-11 二次返工：不透明 RGB565 小图 + 1x1 隐藏图）
 WOOD_W, WOOD_H = 96, 54
 HINT_W, HINT_H = 240, 30
-LAMP_W, LAMP_H = 240, 56
-NONE_W, NONE_H = 4, 4
+OVL_W, OVL_H = 240, 80       # 覆盖屏文字条（贴到 y=100），不再整屏半透明
+LAMP_W, LAMP_H = 160, 40    # 四灯 + 选中圈，裁到真实占用区域
+LAMP_OX, LAMP_OY = 40, 247  # 上板坐标
+NONE_W, NONE_H = 1, 1       # 隐藏图 1x1：对象缩到最小，不再常驻整屏
 LAMP_XY = [(53, 264), (98, 274), (144, 268), (190, 258)]
 
 C_CREAM = (250, 238, 214, 255)
 C_GOLD = (255, 214, 150, 255)
 C_DIM = (206, 194, 172, 255)
+DEEP = (10, 14, 16)         # 不透明深色底板
 
 HINTS = [
     "〇 开始",                                    # 0 S0 首夜
@@ -265,66 +279,69 @@ def render_card(fire_hex, bg, l0, s0, alpha, tip, idx):
     return np.asarray(screen.convert("RGB"), np.uint8)
 
 
-# ---------------- UI 贴图（全部 ARGB8888，透明区 alpha=0） ----------------
+# ---------------- UI 贴图 ----------------
+# 二次返工：除精灵外全部「不透明 RGB565」，LVGL 直接 memcpy，不做 alpha 混合。
+# 四灯 / 选中圈因只有小圆点有内容，保留小尺寸 ARGB8888（160x40）。
 def ui_none():
-    return np.zeros((NONE_H, NONE_W, 4), np.uint8)
+    """1x1 隐藏图：取背景左上近似色，切到它时对象缩到 1x1，视觉无痕。"""
+    return np.array([[[16, 26, 20]]], np.uint8)
 
 
 def ui_wood(n):
-    """左上 HUD：34px 大数字 +『柴』，按余柴 0..5 各一张。"""
-    im = Image.new("RGBA", (WOOD_W, WOOD_H), (0, 0, 0, 0))
+    """左上 HUD：34px 大数字 +『柴』，不透明深底板。"""
+    im = Image.new("RGB", (WOOD_W, WOOD_H), DEEP)
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle([0, 0, WOOD_W-1, WOOD_H-1], radius=10, fill=(8, 12, 14, 165))
-    d.text((8, 0), str(n), font=font(38), fill=C_CREAM)
-    d.text((56, 26), "柴", font=font(15), fill=C_DIM)
+    d.rounded_rectangle([0, 0, WOOD_W-1, WOOD_H-1], radius=10, fill=DEEP)
+    d.text((8, 0), str(n), font=font(38), fill=C_CREAM[:3])
+    d.text((56, 26), "柴", font=font(15), fill=C_DIM[:3])
     return np.asarray(im, np.uint8)
 
 
 def ui_hint(txt):
-    """底部键提示条：深色半透明底 + 居中亮字。"""
-    im = Image.new("RGBA", (HINT_W, HINT_H), (0, 0, 0, 0))
+    """底部键提示条：不透明深底 + 居中亮字。"""
+    im = Image.new("RGB", (HINT_W, HINT_H), DEEP)
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle([4, 1, HINT_W-5, HINT_H-2], radius=8, fill=(8, 12, 14, 205))
-    center_text(d, txt, 6, font(15), C_CREAM)
+    d.rounded_rectangle([4, 1, HINT_W-5, HINT_H-2], radius=8, fill=DEEP)
+    center_text(d, txt, 6, font(15), C_CREAM[:3])
     return np.asarray(im, np.uint8)
 
 
 def ui_lamps(bits):
-    """四灯：按 4 bit 亮灭组合，坐标与界面规范 V1 一致。贴到 y=248。"""
+    """四灯：按 4 bit 亮灭组合，坐标与界面规范 V1 一致。贴到 (40,247)。"""
     im = Image.new("RGBA", (LAMP_W, LAMP_H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     for i, (x, y) in enumerate(LAMP_XY):
-        ly = y - 248
+        lx, ly = x - LAMP_OX, y - LAMP_OY
         on = (bits >> i) & 1
         col = (255, 206, 140, 255) if on else (74, 68, 60, 235)
-        d.ellipse([x-5, ly-5, x+5, ly+5], fill=col,
+        d.ellipse([lx-5, ly-5, lx+5, ly+5], fill=col,
                   outline=(20, 18, 16, 210), width=1)
     return np.asarray(im, np.uint8)
 
 
 def ui_sel(i):
-    """选中灯的金圈。贴到 y=248，叠在四灯之上。"""
+    """选中灯的金圈。贴到 (40,247)，叠在四灯之上。"""
     im = Image.new("RGBA", (LAMP_W, LAMP_H), (0, 0, 0, 0))
     d = ImageDraw.Draw(im)
     x, y = LAMP_XY[i]
-    ly = y - 248
-    d.ellipse([x-9, ly-9, x+9, ly+9], outline=C_GOLD, width=2)
+    lx, ly = x - LAMP_OX, y - LAMP_OY
+    d.ellipse([lx-9, ly-9, lx+9, ly+9], outline=C_GOLD, width=2)
     return np.asarray(im, np.uint8)
 
 
 def ui_overlay(kind):
-    """覆盖屏整屏：淡夜色遮罩 + 文字区深底板 + 底部键提示。
+    """覆盖屏文字条（240x80，贴到 y=100）。
 
-    不用整屏重遮罩，保留真实夜森林与火灵可见（场景即界面）。
+    不再整屏半透明遮罩：夜森林与火灵在文字条上下完整可见，
+    「场景即界面」的设计意图保留，同时消除 76,800 像素/帧的全屏混合。
+    底部键提示复用 ember_hint_dsc，由固件按屏切图。
     """
-    a, b, hint = OVERLAYS[kind]
-    im = Image.new("RGBA", (W, H), (10, 14, 16, 100))
+    a, b, _ = OVERLAYS[kind]
+    im = Image.new("RGB", (OVL_W, OVL_H), DEEP)
     d = ImageDraw.Draw(im)
-    d.rounded_rectangle([10, 100, W-11, 178], radius=12, fill=(10, 14, 16, 210))
-    center_text(d, a, 116, font(19), C_CREAM)
-    center_text(d, b, 148, font(15), C_DIM)
-    d.rounded_rectangle([4, 286, W-5, 315], radius=8, fill=(8, 12, 14, 225))
-    center_text(d, hint, 293, font(15), C_GOLD)
+    d.rounded_rectangle([10, 0, OVL_W-11, OVL_H-1], radius=12, fill=DEEP)
+    center_text(d, a, 16, font(19), C_CREAM[:3])
+    center_text(d, b, 48, font(15), C_DIM[:3])
     return np.asarray(im, np.uint8)
 
 
@@ -367,11 +384,19 @@ def dsc_arr(f, name, cf, w, h, prefix, n):
     f.write("};\n\n")
 
 
-def write_group(f, group, images, w, h):
-    """images: list of RGBA np arrays -> C 数组 + dsc 数组。
+def write_group_rgb(f, group, images, w, h):
+    """不透明 RGB565 组：LVGL 直接拷贝，零 alpha 混合。"""
+    for i, im in enumerate(images):
+        write_arr(f, "uint16_t %s_%d" % (group, i),
+                  pack_rgb565(np.asarray(im, np.uint8)), "u16")
+    dsc_arr(f, "%s_dsc" % group, "RGB565", w, h, group, len(images))
 
-    group 本身已带 ember_ 前缀（如 ember_none），dsc 名必须是
-    <group>_dsc = ember_none_dsc，与头文件 / 固件 extern 完全一致。
+
+def write_group(f, group, images, w, h):
+    """小尺寸 ARGB8888 组（仅四灯 / 选中圈，透明区占绝大多数）。
+
+    group 本身已带 ember_ 前缀（如 ember_lamp），dsc 名必须是
+    <group>_dsc = ember_lamp_dsc，与头文件 / 固件 extern 完全一致。
     """
     for i, im in enumerate(images):
         write_arr(f, "uint32_t %s_%d" % (group, i), pack_rgba(im), "u32")
@@ -406,7 +431,8 @@ def main():
     os.makedirs(os.path.dirname(OUT_C), exist_ok=True)
     with open(OUT_C, "w", encoding="utf-8") as f:
         f.write("/* Auto-generated by tools/gen_ember_assets.py -- do not edit.\n")
-        f.write(" * bg/card RGB565 (uint16 LE), spirit + UI ARGB8888 (uint32 LE = B,G,R,A).\n")
+        f.write(" * bg/card/UI RGB565 (uint16 LE, opaque); spirit ARGB8888 (uint32 LE = B,G,R,A).\n")
+        f.write(" * Only spirit + small lamp/sel layers need alpha blending.\n")
         f.write(" * UI layers are pre-rendered bitmaps: no lv_label / HIDDEN on device.\n")
         f.write(" * Fire colors come from tools/ember_facts.json only. */\n")
         f.write('#include "lvgl.h"\n\n')
@@ -417,13 +443,14 @@ def main():
         for i, flat in enumerate(card_flats):
             write_arr(f, "uint16_t ember_card_map_%d" % i, flat, "u16")
 
-        # UI 组（ARGB8888）
-        write_group(f, "ember_none", [ui_none()], NONE_W, NONE_H)
-        write_group(f, "ember_wood", [ui_wood(n) for n in range(6)], WOOD_W, WOOD_H)
-        write_group(f, "ember_hint", [ui_hint(t) for t in HINTS], HINT_W, HINT_H)
+        # UI：不透明 RGB565（零混合）
+        write_group_rgb(f, "ember_none", [ui_none()], NONE_W, NONE_H)
+        write_group_rgb(f, "ember_wood", [ui_wood(n) for n in range(6)], WOOD_W, WOOD_H)
+        write_group_rgb(f, "ember_hint", [ui_hint(t) for t in HINTS], HINT_W, HINT_H)
+        write_group_rgb(f, "ember_ovl", [ui_overlay(k) for k in range(4)], OVL_W, OVL_H)
+        # 小圆点 / 金圈：小尺寸 ARGB8888
         write_group(f, "ember_lamp", [ui_lamps(b) for b in range(16)], LAMP_W, LAMP_H)
         write_group(f, "ember_sel", [ui_sel(i) for i in range(4)], LAMP_W, LAMP_H)
-        write_group(f, "ember_ovl", [ui_overlay(k) for k in range(4)], W, H)
 
         dsc(f, "ember_bg_dsc", "RGB565", W, H, "ember_bg_map")
         dsc_arr(f, "ember_spirit_dsc", "ARGB8888", SP_W, SP_H, "ember_spirit_map", N)
@@ -439,7 +466,9 @@ def main():
         f.write("#define EMBER_UI_SEL_N 4\n")
         f.write("#define EMBER_UI_OVL_N 4\n")
         f.write("#define EMBER_SCR_W %d\n#define EMBER_SCR_H %d\n" % (W, H))
-        f.write("#define EMBER_SPIRIT_W %d\n#define EMBER_SPIRIT_H %d\n\n" % (SP_W, SP_H))
+        f.write("#define EMBER_SPIRIT_W %d\n#define EMBER_SPIRIT_H %d\n" % (SP_W, SP_H))
+        f.write("#define EMBER_LAMP_OX %d\n#define EMBER_LAMP_OY %d\n" % (LAMP_OX, LAMP_OY))
+        f.write("#define EMBER_OVL_Y 100\n\n")
         f.write("extern const lv_img_dsc_t ember_bg_dsc;\n")
         f.write("extern const lv_img_dsc_t ember_spirit_dsc[EMBER_FIRE_FRAMES];\n")
         f.write("extern const lv_img_dsc_t ember_card_dsc[EMBER_FIRE_FRAMES];\n")
@@ -456,7 +485,8 @@ def main():
         print("   ", m)
     print("bg right edge after fix:", tuple(int(v) for v in bg[160, 239]),
           tuple(int(v) for v in bg[160, 235]))
-    print("UI groups: none1 wood6 hint%d lamp16 sel4 ovl4" % len(HINTS))
+    print("UI: none1 wood6 hint%d lamp16 sel4 ovl4 | RGB565 opaque except lamp/sel" % len(HINTS))
+    print("render load: spirit is the ONLY full-size ARGB layer; hidden objects are 1x1")
 
 
 if __name__ == "__main__":

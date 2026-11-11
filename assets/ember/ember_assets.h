@@ -12,6 +12,9 @@
 #define EMBER_SCR_H 320
 #define EMBER_SPIRIT_W 190
 #define EMBER_SPIRIT_H 320
+#define EMBER_LAMP_OX 40
+#define EMBER_LAMP_OY 247
+#define EMBER_OVL_Y 100
 
 extern const lv_img_dsc_t ember_bg_dsc;
 extern const lv_img_dsc_t ember_spirit_dsc[EMBER_FIRE_FRAMES];

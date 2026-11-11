@@ -18,10 +18,19 @@
  *   img_wood / img_lamps / img_sel / img_hint  常显 HUD 贴图。
  *   全部放 Flash，不占 LV_MEM；无任何程序化几何拼形。
  *
+ * 2026-11-11 二次真机返工（用户反馈「板子现在很烫」）：
+ *   上一版 8 层全是 ARGB8888 半透明贴图，含整屏 240x320 遮罩，且每层被
+ *   lv_obj_set_size 强制固定 240x320 —— 隐藏成 4x4 透明图后对象仍占满全屏，
+ *   LVGL 每帧逐像素 alpha 混合几十万像素，C3 单核持续满载。
+ *   现改：UI 全为不透明 RGB565（直接 memcpy）、覆盖屏缩成 240x80 文字条、
+ *   隐藏图 1x1、去掉所有固定尺寸、主循环改事件驱动（200ms 而非 40ms 轮询）。
+ *   运行时唯一大面积混合层只剩精灵；diag 日志量化锁等待与切图次数。
+ *
  * LVGL 铁律（ESP32-C3 单核 / 无 PSRAM）：
  *   1) 按键回调只入队，所有 lv_obj_* 在 bsp_lvgl_lock()/unlock() 内；
  *   2) refresh_ui 用「上次绘制索引」比对，只在索引翻转时切图，绝不周期重绘；
- *   3) 无 label / 无样式动画 / 无 HIDDEN 恢复。
+ *   3) 无 label / 无样式动画 / 无 HIDDEN 恢复；
+ *   4) 不做整屏半透明层，不固定图片对象尺寸。
  *
  * 三键矩阵（界面设计规范 V1）：◁左=UP  〇中=OK  ▷右=DOWN
  * 8 屏：S0 首夜 / S1 今夜 / S2 添柴 / S3 火相 / S4 夜话·余烬 /
@@ -198,15 +207,15 @@ static void recompute_fire(void) {
 }
 
 /* ---------------- UI 构建 ---------------- */
-static lv_obj_t *mk_img(lv_obj_t *parent, const lv_img_dsc_t *d,
-                        int x, int y, int w, int h) {
+static lv_obj_t *mk_img(lv_obj_t *parent, const lv_img_dsc_t *d, int x, int y) {
     lv_obj_t *o = lv_img_create(parent);
     lv_img_set_src(o, d);
     lv_obj_set_pos(o, x, y);
-    /* 固定尺寸：切到 4x4 透明图时对象尺寸不跳变，
-       且 LVGL 不会按新图尺寸重排位置（透明区不绘制、不占视觉） */
-    lv_obj_set_size(o, w, h);
     lv_obj_set_style_pad_all(o, 0, 0);
+    /* 不固定尺寸：隐藏时切到 1x1 图，对象随之缩到 1x1。
+       上一版给每层强制 240x320，即使隐藏仍常驻整屏透明区，
+       LVGL 每帧要遍历 8 层全屏做混合 —— 这是板子发烫的主因。
+       位置是绝对坐标，切图造成的尺寸变化不会挪动左上角。 */
     return o;
 }
 
@@ -216,19 +225,19 @@ static void build_ui(void) {
     lv_obj_set_style_bg_opa(scr, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(scr, 0, 0);
 
-    /* 层级由创建顺序决定：底图 → 精灵 → 覆盖屏 → 卡片 → HUD → 键提示。
-       除底图/精灵外，首帧一律切在透明图，由 refresh_ui 按当前屏决定显示什么，
-       避免 S0/S3 等非主屏残留 HUD。 */
-    g_bg     = mk_img(scr, &ember_bg_dsc, 0, 0, 240, 320);
-    g_spirit = mk_img(scr, &ember_spirit_dsc[0], 0, 0, 190, 320);
-    g_ovl    = mk_img(scr, &ember_none_dsc[0], 0, 0, 240, 320);
-    g_card   = mk_img(scr, &ember_none_dsc[0], 0, 0, 240, 320);
-    g_wood   = mk_img(scr, &ember_none_dsc[0], 8, 5, 96, 54);
-    g_lamps  = mk_img(scr, &ember_none_dsc[0], 0, 248, 240, 56);
-    g_sel    = mk_img(scr, &ember_none_dsc[0], 0, 248, 240, 56);
-    g_hint   = mk_img(scr, &ember_none_dsc[0], 0, 288, 240, 30);
+    /* 层级：底图 → 精灵(唯一大面积 ARGB 层) → 覆盖文字条 → 卡片 → HUD → 键提示。
+       除底图/精灵外首帧一律 1x1 隐藏图；所有 UI 图为不透明 RGB565，
+       LVGL 直接拷贝，不做逐像素 alpha 混合。 */
+    g_bg     = mk_img(scr, &ember_bg_dsc, 0, 0);
+    g_spirit = mk_img(scr, &ember_spirit_dsc[0], 0, 0);
+    g_ovl    = mk_img(scr, &ember_none_dsc[0], 0, 100);
+    g_card   = mk_img(scr, &ember_none_dsc[0], 0, 0);
+    g_wood   = mk_img(scr, &ember_none_dsc[0], 8, 5);
+    g_lamps  = mk_img(scr, &ember_none_dsc[0], 40, 247);
+    g_sel    = mk_img(scr, &ember_none_dsc[0], 40, 247);
+    g_hint   = mk_img(scr, &ember_none_dsc[0], 0, 288);
 
-    ESP_LOGI(TAG, "ui ready: 8 image layers, no labels / no HIDDEN");
+    ESP_LOGI(TAG, "ui ready: RGB565 UI / 1x1 hidden / spirit only ARGB layer");
 }
 
 /* ---------------- 屏幕流程 ---------------- */
@@ -322,8 +331,14 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
 }
 
 /* ---------------- 刷新（只切变化的图，绝不周期重绘） ---------------- */
+static uint32_t s_switch_cnt;       /* 诊断：本统计周期内实际切图次数 */
+static uint32_t s_lock_wait_sum;    /* 诊断：等 LVGL 锁累计毫秒 */
+static uint32_t s_lock_wait_max;
+static uint32_t s_loop_cnt;
+
 static void set_ui_src(lv_obj_t *o, const lv_img_dsc_t *d) {
     lv_img_set_src(o, d);
+    s_switch_cnt++;
 }
 
 static void refresh_ui(void) {
@@ -342,12 +357,20 @@ static void refresh_ui(void) {
         default: break;
     }
 
-    /* 键提示：主屏给玩法提示；覆盖屏 / 卡片自带提示，故不叠；
-       高频连按浮层优先级最高 */
+    /* 键提示：覆盖屏不再用整屏半透明贴图，底部提示条统一复用 hint 图；
+       卡片屏自带「柴尽了·明早见」故不叠；高频连按浮层优先级最高 */
     int hint = -1;
     if (main_scr) {
         if (g.screen == SC_ADD && g.wood_left <= 0) hint = HINT_EMPTY;
         else hint = (g.screen == SC_ADD) ? HINT_ADD : HINT_TONIGHT;
+    } else {
+        switch (g.screen) {
+            case SC_FIRST:   hint = HINT_FIRST;   break;
+            case SC_PHASE:   hint = HINT_PHASE;   break;
+            case SC_RELIGHT: hint = HINT_RELIGHT; break;
+            case SC_BORROW:  hint = HINT_BORROW;  break;
+            default: break;
+        }
     }
     if (poke) hint = HINT_POKE;
 
@@ -411,14 +434,43 @@ static void refresh_ui(void) {
     }
 }
 
-/* ---------------- 主循环 ---------------- */
+/* ---------------- 主循环（事件驱动 + 渲染负载诊断） ---------------- */
 static void game_task(void *arg) {
     (void)arg;
+    int64_t diag_t0 = (int64_t)(esp_timer_get_time() / 1000);
     while (1) {
         btn_ev_t e;
-        while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE) handle_btn(e.btn, e.ev);
-        if (bsp_lvgl_lock(100)) { refresh_ui(); bsp_lvgl_unlock(); }
-        vTaskDelay(pdMS_TO_TICKS(40));
+        /* 阻塞等按键；200ms 超时只用于让高频连按浮层自然消失。
+           静止时 5Hz 醒一次做稳定比对，不再 25Hz 空转轮询。 */
+        if (xQueueReceive(s_btn_q, &e, pdMS_TO_TICKS(200)) == pdTRUE) {
+            do { handle_btn(e.btn, e.ev); }
+            while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE);
+        }
+
+        int64_t t0 = esp_timer_get_time();
+        if (bsp_lvgl_lock(100)) {
+            uint32_t wait_ms = (uint32_t)((esp_timer_get_time() - t0) / 1000);
+            s_lock_wait_sum += wait_ms;
+            if (wait_ms > s_lock_wait_max) s_lock_wait_max = wait_ms;
+            refresh_ui();
+            bsp_lvgl_unlock();
+        }
+        s_loop_cnt++;
+
+        int64_t now = (int64_t)(esp_timer_get_time() / 1000);
+        if (now - diag_t0 >= 5000) {
+            uint32_t n = s_loop_cnt ? s_loop_cnt : 1;
+            ESP_LOGI(TAG, "diag lock_wait avg=%lu max=%lu ms loops=%lu swaps=%lu",
+                     (unsigned long)(s_lock_wait_sum / n),
+                     (unsigned long)s_lock_wait_max,
+                     (unsigned long)s_loop_cnt,
+                     (unsigned long)s_switch_cnt);
+            s_lock_wait_sum = 0;
+            s_lock_wait_max = 0;
+            s_loop_cnt = 0;
+            s_switch_cnt = 0;
+            diag_t0 = now;
+        }
     }
 }
 
