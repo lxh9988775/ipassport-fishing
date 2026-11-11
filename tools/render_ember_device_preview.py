@@ -8,7 +8,7 @@
   * 精灵透明层与背景合成是否正确、有无红蓝翻转
 产物写入 build/ember_compare/device_*.png。
 """
-import os, re
+import os, re, sys
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
@@ -19,6 +19,30 @@ W, H = 240, 320
 SP_W, SP_H = 190, 320
 
 src = open(C, encoding="utf-8").read()
+
+
+def check_symbols():
+    """CI 曾因 dsc 名多拼一层前缀导致 undefined reference；本地先卡住。"""
+    defs = set(re.findall(r"const lv_img_dsc_t (\w+)(?:\[[^\]]*\])?\s*=", src))
+    hdr = open(os.path.join(ROOT, "assets", "ember", "ember_assets.h"),
+               encoding="utf-8").read()
+    fw = open(os.path.join(ROOT, "main", "ember.c"), encoding="utf-8").read()
+    need_h = set(re.findall(r"extern const lv_img_dsc_t (\w+)", hdr))
+    need_fw = set(re.findall(r"extern const lv_img_dsc_t (\w+)", fw))
+    miss_h, miss_fw = need_h - defs, need_fw - defs
+    print("dsc 定义 %d 个 | 头文件 extern %d 个 | 固件 extern %d 个"
+          % (len(defs), len(need_h), len(need_fw)))
+    if miss_h:
+        print("头文件声明但 C 里没有:", sorted(miss_h))
+    if miss_fw:
+        print("固件 extern 但 C 里没有:", sorted(miss_fw))
+    if miss_h or miss_fw:
+        print("RESULT: SYMBOL MISMATCH ❌")
+        sys.exit(1)
+    print("RESULT: SYMBOLS OK ✅")
+
+
+check_symbols()
 
 
 def get_arr(name, dtype):

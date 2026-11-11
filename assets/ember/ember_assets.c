@@ -90448,7 +90448,7 @@ static const uint32_t ember_none_0[16] = {
     0, 0, 0, 0, 0, 0, 0, 0,
 };
 
-const lv_img_dsc_t ember_ember_none_dsc[1] = {
+const lv_img_dsc_t ember_none_dsc[1] = {
     { .header.magic = LV_IMAGE_HEADER_MAGIC,
       .header.cf = LV_COLOR_FORMAT_ARGB8888,
       .header.w = 4, .header.h = 4, .header.stride = 16,
@@ -94362,7 +94362,7 @@ static const uint32_t ember_wood_5[5184] = {
     0xA5080C0E, 0, 0, 0, 0, 0, 0, 0,
 };
 
-const lv_img_dsc_t ember_ember_wood_dsc[6] = {
+const lv_img_dsc_t ember_wood_dsc[6] = {
     { .header.magic = LV_IMAGE_HEADER_MAGIC,
       .header.cf = LV_COLOR_FORMAT_ARGB8888,
       .header.w = 96, .header.h = 54, .header.stride = 384,
@@ -102522,7 +102522,7 @@ static const uint32_t ember_hint_8[7200] = {
     0, 0, 0, 0, 0, 0, 0, 0,
 };
 
-const lv_img_dsc_t ember_ember_hint_dsc[9] = {
+const lv_img_dsc_t ember_hint_dsc[9] = {
     { .header.magic = LV_IMAGE_HEADER_MAGIC,
       .header.cf = LV_COLOR_FORMAT_ARGB8888,
       .header.w = 240, .header.h = 30, .header.stride = 960,
@@ -129498,7 +129498,7 @@ static const uint32_t ember_lamp_15[13440] = {
     0, 0, 0, 0, 0, 0, 0, 0,
 };
 
-const lv_img_dsc_t ember_ember_lamp_dsc[16] = {
+const lv_img_dsc_t ember_lamp_dsc[16] = {
     { .header.magic = LV_IMAGE_HEADER_MAGIC,
       .header.cf = LV_COLOR_FORMAT_ARGB8888,
       .header.w = 240, .header.h = 56, .header.stride = 960,
@@ -136313,7 +136313,7 @@ static const uint32_t ember_sel_3[13440] = {
     0, 0, 0, 0, 0, 0, 0, 0,
 };
 
-const lv_img_dsc_t ember_ember_sel_dsc[4] = {
+const lv_img_dsc_t ember_sel_dsc[4] = {
     { .header.magic = LV_IMAGE_HEADER_MAGIC,
       .header.cf = LV_COLOR_FORMAT_ARGB8888,
       .header.w = 240, .header.h = 56, .header.stride = 960,
@@ -174748,7 +174748,7 @@ static const uint32_t ember_ovl_3[76800] = {
     0x640A0E10, 0x640A0E10, 0x640A0E10, 0x640A0E10, 0x640A0E10, 0x640A0E10, 0x640A0E10, 0x640A0E10,
 };
 
-const lv_img_dsc_t ember_ember_ovl_dsc[4] = {
+const lv_img_dsc_t ember_ovl_dsc[4] = {
     { .header.magic = LV_IMAGE_HEADER_MAGIC,
       .header.cf = LV_COLOR_FORMAT_ARGB8888,
       .header.w = 240, .header.h = 320, .header.stride = 960,

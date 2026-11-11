@@ -368,10 +368,14 @@ def dsc_arr(f, name, cf, w, h, prefix, n):
 
 
 def write_group(f, group, images, w, h):
-    """images: list of RGBA np arrays -> C 数组 + dsc 数组。"""
+    """images: list of RGBA np arrays -> C 数组 + dsc 数组。
+
+    group 本身已带 ember_ 前缀（如 ember_none），dsc 名必须是
+    <group>_dsc = ember_none_dsc，与头文件 / 固件 extern 完全一致。
+    """
     for i, im in enumerate(images):
         write_arr(f, "uint32_t %s_%d" % (group, i), pack_rgba(im), "u32")
-    dsc_arr(f, "ember_%s_dsc" % group, "ARGB8888", w, h, "%s" % group, len(images))
+    dsc_arr(f, "%s_dsc" % group, "ARGB8888", w, h, group, len(images))
 
 
 def main():
