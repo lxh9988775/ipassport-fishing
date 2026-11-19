@@ -8,6 +8,7 @@
 #define EMBER_UI_LAMP_N 16
 #define EMBER_UI_SEL_N 4
 #define EMBER_UI_OVL_N 4
+#define EMBER_BREATH_N 8
 #define EMBER_SCR_W 240
 #define EMBER_SCR_H 320
 #define EMBER_SPIRIT_W 190
@@ -25,3 +26,7 @@ extern const lv_img_dsc_t ember_hint_dsc[EMBER_UI_HINT_N];
 extern const lv_img_dsc_t ember_lamp_dsc[EMBER_UI_LAMP_N];
 extern const lv_img_dsc_t ember_sel_dsc[EMBER_UI_SEL_N];
 extern const lv_img_dsc_t ember_ovl_dsc[EMBER_UI_OVL_N];
+extern const lv_img_dsc_t ember_breath_dsc[EMBER_BREATH_N];
+extern const lv_img_dsc_t ember_spark_dsc[1];
+extern const lv_img_dsc_t ember_mote_dsc[1];
+extern const lv_img_dsc_t ember_rain_dsc[1];

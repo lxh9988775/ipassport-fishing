@@ -64,6 +64,14 @@ LAMP_OX, LAMP_OY = 40, 247  # 上板坐标
 NONE_W, NONE_H = 1, 1       # 隐藏图 1x1：对象缩到最小，不再常驻整屏
 LAMP_XY = [(53, 264), (98, 274), (144, 268), (190, 258)]
 
+# M1「火会喘气」动效小图块（V3 方案第 05 章 / 手册常驻动效约束）
+# 全是小尺寸 ARGB8888；每帧混合面积写进 diag 核对，绝不做整屏层。
+BREATH_W, BREATH_H = 40, 40   # 呼吸环包围盒（最大半径 19 + 描边）
+BREATH_N = 8                  # 8 档半径，3.2s 周期切档，到位即停
+SPARK_W, SPARK_H = 4, 4       # 火星
+MOTE_W, MOTE_H = 2, 2         # 萤火
+RAIN_W, RAIN_H = 2, 10        # 雨丝
+
 C_CREAM = (250, 238, 214, 255)
 C_GOLD = (255, 214, 150, 255)
 C_DIM = (206, 194, 172, 255)
@@ -345,6 +353,45 @@ def ui_overlay(kind):
     return np.asarray(im, np.uint8)
 
 
+# ---------------- M1 动效小图块 ----------------
+def ui_breath(i):
+    """呼吸环第 i 档：细描边圆环，半径 12→19 线性铺 8 档。
+    淡金白，仅 1px 描边 + 抗锯齿，包围盒 40x40。非判定环：无缺口、无高亮段。"""
+    im = Image.new("RGBA", (BREATH_W, BREATH_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    r = 12 + i * (7.0 / (BREATH_N - 1))
+    c = BREATH_W / 2 - 0.5
+    # 透明度随半径轻微呼吸：小（收）时亮一点，大（放）时淡一点
+    a = int(120 - i * 5)
+    d.ellipse([c-r, c-r, c+r, c+r], outline=(233, 226, 209, a), width=1)
+    return np.asarray(im, np.uint8)
+
+
+def ui_spark():
+    """火星 4x4：暖白芯 + 柔边，用于上飘粒子。"""
+    im = Image.new("RGBA", (SPARK_W, SPARK_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.ellipse([0, 0, 3, 3], fill=(255, 214, 150, 210))
+    d.point((1, 1), fill=(255, 240, 205, 255))
+    return np.asarray(im, np.uint8)
+
+
+def ui_mote():
+    """萤火 2x2：淡黄点。"""
+    im = Image.new("RGBA", (MOTE_W, MOTE_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.rectangle([0, 0, 1, 1], fill=(232, 214, 160, 190))
+    return np.asarray(im, np.uint8)
+
+
+def ui_rain():
+    """雨丝 2x10：淡青细线。"""
+    im = Image.new("RGBA", (RAIN_W, RAIN_H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    d.line([(1, 0), (0, 9)], fill=(150, 180, 190, 120), width=1)
+    return np.asarray(im, np.uint8)
+
+
 # ---------------- C 写出 ----------------
 def write_arr(f, decl, flat, fmt):
     f.write("static const %s[%d] = {\n" % (decl, len(flat)))
@@ -452,6 +499,13 @@ def main():
         write_group(f, "ember_lamp", [ui_lamps(b) for b in range(16)], LAMP_W, LAMP_H)
         write_group(f, "ember_sel", [ui_sel(i) for i in range(4)], LAMP_W, LAMP_H)
 
+        # M1 动效小图块（全部 ARGB8888，小包围盒）
+        write_group(f, "ember_breath", [ui_breath(i) for i in range(BREATH_N)],
+                    BREATH_W, BREATH_H)
+        write_group(f, "ember_spark", [ui_spark()], SPARK_W, SPARK_H)
+        write_group(f, "ember_mote", [ui_mote()], MOTE_W, MOTE_H)
+        write_group(f, "ember_rain", [ui_rain()], RAIN_W, RAIN_H)
+
         dsc(f, "ember_bg_dsc", "RGB565", W, H, "ember_bg_map")
         dsc_arr(f, "ember_spirit_dsc", "ARGB8888", SP_W, SP_H, "ember_spirit_map", N)
         dsc_arr(f, "ember_card_dsc", "RGB565", W, H, "ember_card_map", N)
@@ -465,6 +519,7 @@ def main():
         f.write("#define EMBER_UI_LAMP_N 16\n")
         f.write("#define EMBER_UI_SEL_N 4\n")
         f.write("#define EMBER_UI_OVL_N 4\n")
+        f.write("#define EMBER_BREATH_N %d\n" % BREATH_N)
         f.write("#define EMBER_SCR_W %d\n#define EMBER_SCR_H %d\n" % (W, H))
         f.write("#define EMBER_SPIRIT_W %d\n#define EMBER_SPIRIT_H %d\n" % (SP_W, SP_H))
         f.write("#define EMBER_LAMP_OX %d\n#define EMBER_LAMP_OY %d\n" % (LAMP_OX, LAMP_OY))
@@ -478,6 +533,10 @@ def main():
         f.write("extern const lv_img_dsc_t ember_lamp_dsc[EMBER_UI_LAMP_N];\n")
         f.write("extern const lv_img_dsc_t ember_sel_dsc[EMBER_UI_SEL_N];\n")
         f.write("extern const lv_img_dsc_t ember_ovl_dsc[EMBER_UI_OVL_N];\n")
+        f.write("extern const lv_img_dsc_t ember_breath_dsc[EMBER_BREATH_N];\n")
+        f.write("extern const lv_img_dsc_t ember_spark_dsc[1];\n")
+        f.write("extern const lv_img_dsc_t ember_mote_dsc[1];\n")
+        f.write("extern const lv_img_dsc_t ember_rain_dsc[1];\n")
 
     print("wrote %s (%.2f MB)" % (OUT_C, os.path.getsize(OUT_C)/1024/1024))
     print("frames:")

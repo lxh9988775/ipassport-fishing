@@ -66,6 +66,20 @@
 #define POKE_TRIGGER 5
 #define POKE_SHOW_MS 2000
 
+/* M1「火会喘气」动效常量（V3 方案第 05 章 / 任务书第 72-73、92 行）
+ * 火势 fire 是连续量 6..100，按夜型每秒衰减，下限 6 不灭；
+ * 呼吸环 3.2s 周期 8 档往复（非判定环）；火星/萤火/雨丝为小图块，
+ * 10Hz 低频步进、只在主屏显示。每帧 alpha 混合 < 10000px，写进 diag。
+ * 光晕/焰尖连续补间属换色过渡（M2），本阶段不启用。 */
+#define BREATH_N      8
+#define N_SPARK       6
+#define N_MOTE        8
+#define N_RAIN        12
+#define ANIM_TICK_MS  100
+#define FIRE_MIN      6.0f
+#define FIRE_MAX      100.0f
+#define FIRE_START    62.0f
+
 /* UI 贴图索引（与 tools/gen_ember_assets.py 的 HINTS / OVERLAYS 一一对应） */
 #define HINT_FIRST    0
 #define HINT_TONIGHT  1
@@ -83,6 +97,11 @@
 
 static const char *TAG = "ember";
 
+/* M1 天气：由 night 派生，只改衰减速度 / 火星方向 / 雨丝 / 萤火密度，
+ * 不打分、不排名、不惩罚。数值与 tools/ember_facts.json / 数值镜像同源。 */
+static const float WEATHER_DECAY[4] = { 0.55f, 0.95f, 0.80f, 0.50f };
+static const char *WEATHER_NAME[4] = { "静夜", "风夜", "雨夜", "访客夜" };
+
 /* 外部资源：全部是 lv_img_dsc_t，固件不再引用任何 LVGL 字体 */
 extern const lv_img_dsc_t ember_bg_dsc;
 extern const lv_img_dsc_t ember_spirit_dsc[EMBER_FIRE_FRAMES];
@@ -93,6 +112,11 @@ extern const lv_img_dsc_t ember_hint_dsc[9];
 extern const lv_img_dsc_t ember_lamp_dsc[16];
 extern const lv_img_dsc_t ember_sel_dsc[4];
 extern const lv_img_dsc_t ember_ovl_dsc[4];
+/* M1 动效小图块（头文件 ember_assets.h 已声明；此处用裸数组长度避免重复宏名） */
+extern const lv_img_dsc_t ember_breath_dsc[8];
+extern const lv_img_dsc_t ember_spark_dsc[1];
+extern const lv_img_dsc_t ember_mote_dsc[1];
+extern const lv_img_dsc_t ember_rain_dsc[1];
 
 /* ---------------- 屏幕状态 ---------------- */
 typedef enum {
@@ -118,18 +142,38 @@ typedef struct {
     int      poke_cnt;
     int64_t  poke_t0;
     int64_t  poke_until;
+    /* M1: 火势连续量 + 天气（0静/1风/2雨/3访客）+ 动画计时 */
+    float    fire;          /* 连续火势 6..100，每秒按夜型衰减 */
+    int      weather;       /* 由 night 派生的夜型索引 */
+    int64_t  anim_last_ms;  /* 上次动画步进时刻，用于限频到 10Hz */
+    int      breath_frame;  /* 当前呼吸环档 0..7 */
 } game_t;
 static game_t g;
 
 /* ---------------- UI 对象（全部 lv_img，常显，靠切 src 显隐） ---------------- */
 static lv_obj_t *g_bg, *g_spirit, *g_ovl, *g_card;
 static lv_obj_t *g_wood, *g_lamps, *g_sel, *g_hint;
+/* M1 动效对象：呼吸环 1 + 火星 6 + 萤火 8 + 雨丝 12，全部小图块常驻 */
+static lv_obj_t *g_breath;
+static lv_obj_t *g_spark[N_SPARK];
+static lv_obj_t *g_mote[N_MOTE];
+static lv_obj_t *g_rain[N_RAIN];
 
 /* 绘制索引快照：-1 表示该层当前切在透明图 */
 static struct {
     int frame, card_frame, ovl, wood, lamp_bits, sel, hint;
     screen_t screen;
 } drawn;
+
+/* M1 动效绘制快照：记录每个对象的上次坐标/档位，值不变就完全不碰 LVGL。
+   这是「不烫」的核心——10Hz 步进里绝大多数 tick 只有一个小对象真正移动。 */
+static struct {
+    int breath;                       /* 呼吸环档 0..7，-1=隐藏 */
+    int sx[N_SPARK], sy[N_SPARK];     /* 火星坐标，-9999=隐藏 */
+    int mx[N_MOTE],  my[N_MOTE];      /* 萤火坐标 */
+    int rx[N_RAIN],  ry[N_RAIN];      /* 雨丝坐标 */
+    int blend_px;                     /* 本 tick 实际混合像素（diag） */
+} adrawn;
 
 /* ---------------- BSP ---------------- */
 typedef struct { bsp_btn_t btn; bsp_btn_ev_t ev; } btn_ev_t;
@@ -206,6 +250,44 @@ static void recompute_fire(void) {
     }
 }
 
+/* ---------------- M1 动画核心（纯数值 + 坐标，不改火色档） ---------------- */
+/* 确定性伪随机：同一 seed + 索引重放位置一致，静态序列可复现 */
+static uint32_t anim_rand(uint32_t seed, int idx) {
+    uint32_t x = seed ^ ((uint32_t)idx * 2654435761u);
+    x ^= x >> 16; x *= 2246822519u; x ^= x >> 13; x *= 3266489917u; x ^= x >> 16;
+    return x;
+}
+
+/* 夜型由 night 派生（4 夜一轮）：无需玩家选，符合任务书「无难度档」 */
+static void derive_weather(void) {
+    g.weather = (int)((g.night - 1) % 4);
+}
+
+/* 呼吸环档位：3.2s 一周，8 档 0→7→0 往复。用整数查表代替 cosf，
+   不依赖 libm、零浮点开销，且与 tools/test_ember_anim.py 的序列逐点一致。
+   表 = round((0.5-0.5cos(2π·k/32))·7)，k=0..31（每 100ms 一步）。非判定环。 */
+static const uint8_t BREATH_SEQ[32] = {
+    0,0,0,1,1,2,2,3,3,4,5,5,6,6,7,7,7,7,7,6,6,5,5,4,4,3,2,2,1,1,0,0
+};
+static int breath_frame(int64_t now_ms) {
+    int k = (int)((now_ms / 100) % 32);
+    return (int)BREATH_SEQ[k];
+}
+
+/* 火势连续衰减：每秒按当前夜型扣减，下限 6（不灭、不硬结束）。
+   按真实经过时间计算，长时间后台也不跳变；只在主屏两屏推进。 */
+static void decay_fire(int64_t now_ms) {
+    if (g.anim_last_ms == 0) { g.anim_last_ms = now_ms; return; }
+    int64_t dt = now_ms - g.anim_last_ms;
+    if (dt < 0) dt = 0;
+    if (dt > 1000) dt = 1000;              /* 单步封顶，避免恢复时一次掉光 */
+    g.anim_last_ms = now_ms;
+    if (g.screen != SC_TONIGHT && g.screen != SC_ADD) return;
+    g.fire -= WEATHER_DECAY[g.weather & 3] * (float)dt / 1000.0f;
+    if (g.fire < FIRE_MIN) g.fire = FIRE_MIN;
+    if (g.fire > FIRE_MAX) g.fire = FIRE_MAX;
+}
+
 /* ---------------- UI 构建 ---------------- */
 static lv_obj_t *mk_img(lv_obj_t *parent, const lv_img_dsc_t *d, int x, int y) {
     lv_obj_t *o = lv_img_create(parent);
@@ -237,7 +319,14 @@ static void build_ui(void) {
     g_sel    = mk_img(scr, &ember_none_dsc[0], 40, 247);
     g_hint   = mk_img(scr, &ember_none_dsc[0], 0, 288);
 
-    ESP_LOGI(TAG, "ui ready: RGB565 UI / 1x1 hidden / spirit only ARGB layer");
+    /* M1 动效层：全部小图块，首帧 1x1 隐藏；层级压在精灵之上、HUD 之下。
+       粒子仅在主屏出现，坐标由 refresh_anim 每 100ms 计算，只对变化者 set_pos。 */
+    g_breath = mk_img(scr, &ember_none_dsc[0], 100, 252);   /* 呼吸环包围盒 40x40 */
+    for (int i = 0; i < N_SPARK; i++) g_spark[i] = mk_img(scr, &ember_none_dsc[0], 0, 0);
+    for (int i = 0; i < N_MOTE;  i++) g_mote[i]  = mk_img(scr, &ember_none_dsc[0], 0, 0);
+    for (int i = 0; i < N_RAIN;  i++) g_rain[i]  = mk_img(scr, &ember_none_dsc[0], 0, 0);
+
+    ESP_LOGI(TAG, "ui ready: RGB565 UI / 1x1 hidden / spirit only ARGB layer / M1 anim small tiles");
 }
 
 /* ---------------- 屏幕流程 ---------------- */
@@ -253,6 +342,8 @@ static void next_night(void) {
     g.wood_left = w;
     g.screen = SC_TONIGHT;
     recompute_fire();
+    derive_weather();                 /* M1: 过夜换夜型 */
+    g.fire = FIRE_START;              /* M1: 新夜火势复位 */
     nvs_save();
 }
 
@@ -298,6 +389,8 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
             if (btn == BSP_BTN_OK) {
                 g.lamp[g.sel]++; g.tot[g.sel]++; g.borrowed = true; g.debt++;
                 recompute_fire(); nvs_save();
+                g.fire += 14.0f;                       /* M1: 借柴回一口火（视觉） */
+                if (g.fire > FIRE_MAX) g.fire = FIRE_MAX;
                 g.screen = SC_ADD;
             }
             return;
@@ -325,6 +418,10 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
                 if (g.wood_left <= 0) { g.screen = SC_BORROW; return; }
                 g.lamp[g.sel]++; g.tot[g.sel]++; g.wood_left--;
                 recompute_fire(); nvs_save();
+                /* M1: 添柴回一口火，收益随火势（火越弱回得越多），不看时机。
+                   这是动效反馈，不改四灯/余烬卡（那是 M2/M3 的收益公式）。 */
+                g.fire += 8.0f + 14.0f * (1.0f - g.fire / 100.0f);
+                if (g.fire > FIRE_MAX) g.fire = FIRE_MAX;
             }
             return;
     }
@@ -335,10 +432,99 @@ static uint32_t s_switch_cnt;       /* 诊断：本统计周期内实际切图�
 static uint32_t s_lock_wait_sum;    /* 诊断：等 LVGL 锁累计毫秒 */
 static uint32_t s_lock_wait_max;
 static uint32_t s_loop_cnt;
+static uint32_t s_blend_max;        /* diag：本统计周期单帧混合像素峰值 */
 
 static void set_ui_src(lv_obj_t *o, const lv_img_dsc_t *d) {
     lv_img_set_src(o, d);
     s_switch_cnt++;
+}
+
+/* 把一个动效小对象移到 (x,y)；坐标没变就完全不碰 LVGL。
+   -9999 表示本 tick 该对象隐藏（切 1x1 none 图）。blend 累加真实包围盒面积。 */
+static void place_anim(lv_obj_t *o, int *lastx, int *lasty, int x, int y,
+                       bool visible, const lv_img_dsc_t *d, int area) {
+    if (!visible) {
+        if (*lastx != -9999) {
+            lv_img_set_src(o, &ember_none_dsc[0]);   /* 切回 1x1，对象自动缩到最小 */
+            s_switch_cnt++;
+            *lastx = -9999; *lasty = -9999;
+        }
+        return;
+    }
+    if (*lastx == -9999) {                            /* 从隐藏恢复：先切回图 */
+        lv_img_set_src(o, d);
+        s_switch_cnt++;
+    }
+    if (*lastx != x || *lasty != y) {
+        lv_obj_set_pos(o, x, y);                      /* 只改位置，含量小、不重排 */
+        *lastx = x; *lasty = y;
+    }
+    adrawn.blend_px += area;                          /* diag：本帧混合面积 */
+}
+
+/* M1 动效渲染：只在主屏推进，10Hz 由主循环调用。
+   火旺→焰尖高/火星多/呼吸环相位前移；火弱→收敛但下限 6 不灭。
+   所有对象是小图块，单帧混合远小于 10000px；无整屏层、无精灵缩放。 */
+static void refresh_anim(int64_t now_ms) {
+    bool main_scr = (g.screen == SC_TONIGHT || g.screen == SC_ADD);
+    adrawn.blend_px = 0;
+
+    /* 呼吸环：40x40，位置固定在火灵下方；切 8 档 src 而非缩放对象 */
+    int bf = breath_frame(now_ms);
+    if (!main_scr) bf = -1;
+    if (bf != adrawn.breath) {
+        lv_img_set_src(g_breath, (bf >= 0) ? &ember_breath_dsc[bf] : &ember_none_dsc[0]);
+        s_switch_cnt++;
+        adrawn.breath = bf;
+    }
+    if (bf >= 0) adrawn.blend_px += 40 * 40;
+
+    /* 火星：数量随火势 (2..N_SPARK)，4x4，从焰底上飘；风夜/雨夜横向偏移 */
+    float t = (float)now_ms / 1000.0f;
+    int nspark = 2 + (int)(g.fire / 100.0f * (N_SPARK - 2));
+    if (nspark > N_SPARK) nspark = N_SPARK;
+    int wind = (g.weather == 1) ? 1 : ((g.weather == 2) ? 1 : 0);  /* 风/雨夜斜飘 */
+    for (int i = 0; i < N_SPARK; i++) {
+        bool on = main_scr && (i < nspark);
+        uint32_t r = anim_rand(g.seed, 100 + i);
+        float life = t * 0.35f + (float)(r & 0xFF) / 255.0f;
+        life -= (int)life;                            /* 0..1 循环 */
+        int x = 108 + (int)((r >> 8) % 24) + wind * (int)(life * 26.0f);
+        int y = 250 - (int)(life * (56.0f + g.fire * 0.45f));
+        place_anim(g_spark[i], &adrawn.sx[i], &adrawn.sy[i], x, y,
+                   on, &ember_spark_dsc[0], 4 * 4);
+    }
+
+    /* 萤火：2x2，密度随夜型（访客夜最多、雨夜最少），缓慢横向摆动 */
+    float fly = (g.weather == 3) ? 2.2f : (g.weather == 2) ? 0.5f
+              : (g.weather == 1) ? 0.7f : 1.0f;
+    int nmote = (int)(4.0f * fly + 0.5f);
+    if (nmote > N_MOTE) nmote = N_MOTE;
+    /* 萤火摆动用 ±3px 整数偏移（相位 = 时间+索引），代替 sinf/cosf，去 libm 依赖 */
+    static const int8_t WOBBLE[16] = { 0,1,2,3,3,2,1,0,-1,-2,-3,-3,-2,-1,0,1 };
+    for (int i = 0; i < N_MOTE; i++) {
+        bool on = main_scr && (i < nmote);
+        uint32_t r = anim_rand(g.seed, 300 + i);
+        int bx = (int)(r % 240);
+        int by = 70 + (int)((r >> 8) % 200);
+        int ph = (int)(now_ms / 200) + i * 3;
+        int x = bx + WOBBLE[((ph % 16) + 16) % 16];
+        int y = by + WOBBLE[(((ph / 2) % 16) + 16) % 16];
+        place_anim(g_mote[i], &adrawn.mx[i], &adrawn.my[i], x, y,
+                   on, &ember_mote_dsc[0], 2 * 2);
+    }
+
+    /* 雨丝：2x10，仅雨夜；从顶到底循环下落。访客夜的影子用萤火密度表达 */
+    bool rain_on = main_scr && (g.weather == 2);
+    for (int i = 0; i < N_RAIN; i++) {
+        uint32_t r = anim_rand(g.seed, 500 + i);
+        int x = (int)(r % 240);
+        /* 先对时间取模再相加，避免长时间运行后 (int) 溢出 */
+        int fall = (int)((uint32_t)(t * 150.0f) % 320u);
+        int y = ((int)(r % 320) + fall) % 320;
+        place_anim(g_rain[i], &adrawn.rx[i], &adrawn.ry[i], x, y,
+                   rain_on, &ember_rain_dsc[0], 2 * 10);
+    }
 }
 
 static void refresh_ui(void) {
@@ -434,41 +620,52 @@ static void refresh_ui(void) {
     }
 }
 
-/* ---------------- 主循环（事件驱动 + 渲染负载诊断） ---------------- */
+/* ---------------- 主循环（事件驱动 + 10Hz 动效 + 渲染负载诊断） ---------------- */
 static void game_task(void *arg) {
     (void)arg;
     int64_t diag_t0 = (int64_t)(esp_timer_get_time() / 1000);
     while (1) {
         btn_ev_t e;
-        /* 阻塞等按键；200ms 超时只用于让高频连按浮层自然消失。
-           静止时 5Hz 醒一次做稳定比对，不再 25Hz 空转轮询。 */
-        if (xQueueReceive(s_btn_q, &e, pdMS_TO_TICKS(200)) == pdTRUE) {
+        /* 阻塞等按键；100ms 超时 = M1 的 10Hz 动画 tick。
+           有按键立即处理，无按键 10Hz 醒一次推进火势/粒子。
+           动效只在主屏、只有值变化才碰 LVGL，静止非主屏仍近乎零刷新。 */
+        if (xQueueReceive(s_btn_q, &e, pdMS_TO_TICKS(ANIM_TICK_MS)) == pdTRUE) {
             do { handle_btn(e.btn, e.ev); }
             while (xQueueReceive(s_btn_q, &e, 0) == pdTRUE);
         }
+
+        int64_t now = (int64_t)(esp_timer_get_time() / 1000);
+        decay_fire(now);                              /* 连续量衰减，纯数值 */
 
         int64_t t0 = esp_timer_get_time();
         if (bsp_lvgl_lock(100)) {
             uint32_t wait_ms = (uint32_t)((esp_timer_get_time() - t0) / 1000);
             s_lock_wait_sum += wait_ms;
             if (wait_ms > s_lock_wait_max) s_lock_wait_max = wait_ms;
-            refresh_ui();
+            refresh_ui();                             /* 屏幕/HUD 切图（快照比对） */
+            refresh_anim(now);                        /* M1 小图块动效（坐标比对） */
+            if (adrawn.blend_px > s_blend_max) s_blend_max = adrawn.blend_px;
             bsp_lvgl_unlock();
         }
         s_loop_cnt++;
 
-        int64_t now = (int64_t)(esp_timer_get_time() / 1000);
         if (now - diag_t0 >= 5000) {
             uint32_t n = s_loop_cnt ? s_loop_cnt : 1;
-            ESP_LOGI(TAG, "diag lock_wait avg=%lu max=%lu ms loops=%lu swaps=%lu",
+            ESP_LOGI(TAG,
+                     "diag lock_wait avg=%lu max=%lu ms loops=%lu swaps=%lu "
+                     "blend/frame max=%lu fire=%d.%d wx=%d/%s",
                      (unsigned long)(s_lock_wait_sum / n),
                      (unsigned long)s_lock_wait_max,
                      (unsigned long)s_loop_cnt,
-                     (unsigned long)s_switch_cnt);
+                     (unsigned long)s_switch_cnt,
+                     (unsigned long)s_blend_max,
+                     (int)g.fire, (int)((g.fire - (int)g.fire) * 10.0f),
+                     g.weather, WEATHER_NAME[g.weather & 3]);
             s_lock_wait_sum = 0;
             s_lock_wait_max = 0;
             s_loop_cnt = 0;
             s_switch_cnt = 0;
+            s_blend_max = 0;
             diag_t0 = now;
         }
     }
@@ -478,6 +675,11 @@ static void game_task(void *arg) {
 void ember_app_start(void) {
     memset(&g, 0, sizeof(g));
     memset(&drawn, 0xFF, sizeof(drawn));   /* 全部 -2，首帧强制全量切图 */
+    memset(&adrawn, 0, sizeof(adrawn));
+    for (int i = 0; i < N_SPARK; i++) { adrawn.sx[i] = -9999; adrawn.sy[i] = -9999; }
+    for (int i = 0; i < N_MOTE;  i++) { adrawn.mx[i] = -9999; adrawn.my[i] = -9999; }
+    for (int i = 0; i < N_RAIN;  i++) { adrawn.rx[i] = -9999; adrawn.ry[i] = -9999; }
+    adrawn.breath = -1;
     nvs_load();
 
     int64_t now = (int64_t)(esp_timer_get_time() / 1000);
@@ -495,11 +697,15 @@ void ember_app_start(void) {
     else g.screen = SC_TONIGHT;
 
     recompute_fire();
+    derive_weather();                 /* M1: night → 夜型 */
+    g.fire = FIRE_START;              /* M1: 连续火势初值，每秒按夜型衰减 */
+    g.anim_last_ms = 0;               /* 首 tick 只记时，不扣减 */
     s_btn_q = xQueueCreate(16, sizeof(btn_ev_t));
 
     if (bsp_lvgl_lock(1000)) {
         build_ui();
         refresh_ui();
+        refresh_anim(now);                /* M1: 首帧就把动效对象摆到位 */
         bsp_lvgl_unlock();
     } else {
         ESP_LOGE(TAG, "LVGL lock timeout at boot");
