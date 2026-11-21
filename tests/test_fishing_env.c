@@ -28,7 +28,7 @@ static int draw(int seed, spot_t spot, int period, int weather, bait_t bait) {
     fishing_init((uint32_t)seed);
     /* 直接喂钓点（绕开解锁）；set_spot 会检查解锁，这里用存档注入累计钓获更简单 */
     {
-        uint8_t buf[512];
+        uint8_t buf[768];   /* v4 存档扩到 660 字节，512 装不下 serialize 会拒写 */
         int len = fishing_save_serialize(buf, (int)sizeof(buf));
         if (len > 16) {
             /* total_catch 偏移 = magic4+schema2+content2+features4+high4 = 16 */
