@@ -1089,7 +1089,7 @@ static void refresh_codex(const fishing_status_t *st) {
         {
             int fd = fishing_codex_first_day(idx);
             int wg = fishing_codex_best_wgt(idx);
-            char day_buf[16], wgt_buf[16];
+            char day_buf[24], wgt_buf[24];   /* "第%d日"最坏 17 字节、"%d.%d千克"最坏 16 字节，24 留足 */
             if (fd > 0) snprintf(day_buf, sizeof(day_buf), "第%d日", fd);
             else        snprintf(day_buf, sizeof(day_buf), "很久以前");
             if (wg > 0) snprintf(wgt_buf, sizeof(wgt_buf), "%d.%d千克", wg / 1000, (wg % 1000) / 100);
