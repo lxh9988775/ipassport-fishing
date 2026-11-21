@@ -30,7 +30,8 @@ extern "C" {
 #endif
 
 /* ===================== 版本 / 容量 / 能力位（升级预留） ===================== */
-#define FISHING_SCHEMA_VER   1      /* 存档结构版本：结构变动才 +1，触发迁移 */
+#define FISHING_SCHEMA_VER   2      /* 存档结构版本：结构变动才 +1，触发迁移。
+                                     * v4: +first_day[CAP] +best_wgt[CAP]，schema 1 存档自动迁移填 0 */
 #define FISHING_CONTENT_VER  1      /* 内容版本：改数值/文案 +1，不触发迁移 */
 #define FISHING_SAVE_MAGIC   0x46534832u  /* 'FSH2' */
 #define FISHING_CODEX_CAP    64     /* 图鉴上限：现用 24，v3 起只追加不搬家 */
@@ -44,6 +45,17 @@ extern "C" {
 
 /* 当前固件实际支持的能力位：IDE 阶段据此决定是否展示对应入口 */
 #define FISHING_SUPPORTED_FEATURES (FEAT_SINGLE | FEAT_CODEX | FEAT_LEVELS | FEAT_RODS)
+
+/* 鱼的时段 / 天气偏好位掩码（v4「天气决定鱼」）。
+ * 时段 bit 与 UI 层 env_period_t 取值一一对应：晨0/午1/昏2/夜3；
+ * 天气 bit 与 env_weather_t 对应：晴0/阴1/雨2。UI 层禁止另造编号。 */
+#define FISH_PERF_MORNING 0x01u
+#define FISH_PERF_NOON    0x02u
+#define FISH_PERF_DUSK    0x04u
+#define FISH_PERF_NIGHT   0x08u
+#define FISH_WPREF_CLEAR  0x01u
+#define FISH_WPREF_CLOUDY 0x02u
+#define FISH_WPREF_RAIN   0x04u
 
 /* 内容体量（遍历一律用 *_COUNT，不要写死数字，方便后续追加） */
 #define FISH_SPECIES_COUNT 24
@@ -134,6 +146,8 @@ typedef struct {
     uint16_t base_score;   /* 基础分（未乘倍率） */
     uint8_t  dart;         /* 乱窜程度 0..100：越高越难跟 */
     uint8_t  power;        /* 挣扎力度 0..100：越高进度掉得越快 */
+    uint8_t  period_pref;  /* 时段偏好位掩码：FISH_PERF_*。命中权重×3，否则×0.6（不锁死） */
+    uint8_t  weather_pref; /* 天气偏好位掩码：FISH_WPREF_*。命中权重×2 */
 } fish_species_t;
 
 typedef struct {
@@ -197,6 +211,12 @@ void fishing_init(uint32_t seed);
 void fishing_set_bait(bait_t b);
 void fishing_set_rod(rod_t r);
 void fishing_set_spot(spot_t s);
+/* 环境（v4 天气决定鱼）：由 UI 层在时段/天气算出后喂进来，只影响抽鱼概率，
+ * 不改解锁门槛、不引入失败惩罚。period 0..3=晨午昏夜，weather 0..2=晴阴雨。
+ * 不调用时默认 晨/晴（等价于 v3 行为），单测可固定环境做分布断言。 */
+void fishing_set_env(int period, int weather);
+/* 当前钓鱼日序号（用于③钓鱼履历记"首次钓到那天"）。不调用默认为 0。 */
+void fishing_set_day(int day);
 
 /* 菜单里"上下键换一项"的策略（逻辑层，可单测）。
  * 返回 true = 真的换掉了；fishing_cycle_spot 在全部已解锁钓点都到不了新位置时
@@ -253,6 +273,8 @@ bool fishing_codex_is_seen(int species);                 /* 是否捕获过 */
 int  fishing_codex_count(int species);                   /* 捕获条数 */
 bool fishing_codex_is_perfect(int species);              /* 是否达成完美钓获 */
 int  fishing_codex_best_len(int species);                /* 最大体长记录 mm */
+int  fishing_codex_first_day(int species);               /* 首次钓到的钓鱼日序号，0=未知(老存档/未捕获) */
+int  fishing_codex_best_wgt(int species);                /* 最大重量记录 g，0=未知 */
 const fish_species_t *fishing_species_info(int species);
 const char *fishing_bait_name(bait_t b);
 const char *fishing_rod_name(rod_t r);

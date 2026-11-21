@@ -237,6 +237,7 @@ static lv_obj_t *g_codex       = NULL;
 static lv_obj_t *g_cdx_img     = NULL;
 static lv_obj_t *g_cdx_name    = NULL;
 static lv_obj_t *g_cdx_meta    = NULL;   /* 已收录：最大纪录 + 钓获数；未收录：稀有度 + 栖息地 */
+static lv_obj_t *g_cdx_hist    = NULL;   /* v4 ③履历：首次第 N 日 + 最大重量（已收录才显示） */
 static lv_obj_t *g_cdx_size    = NULL;   /* 体长范围 + 偏好饵料（收录与否都显示，是"怎么钓"的提示） */
 static lv_obj_t *g_cdx_desc    = NULL;
 static lv_obj_t *g_cdx_lore    = NULL;   /* 性格钩子：这鱼什么脾气（新增，纯文案） */
@@ -407,14 +408,17 @@ static void build_ui(void) {
     lv_obj_set_style_pad_all(g_scene, 0, 0);
     lv_obj_clear_flag(g_scene, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 环境标签：左上角「时段 · 天气」。
+    /* 环境标签：左上角「时段 · 天气 / 当日鱼讯」两行。
      * 底下一层半透明黑底 —— 天空是亮蓝的，白字直接压上去看不清。
-     * 位置 (8,6) 是场景面板内坐标（面板从屏幕 y=22 起），所以在屏幕上约 y=28；
-     * 那个高度圆角只切掉 x=0 一列，x=8 安全。 */
-    g_lbl_env = make_label(g_scene, "", 8, 6, lv_color_white());
+     * y=30 起（在右上角钓点胶囊 y=6~26 之下），宽 214 不与胶囊重叠；
+     * 两行到 y≈74，左侧空旷无其它控件，不遮中部主角鱼（水面 y≈118+）。 */
+    g_lbl_env = make_label(g_scene, "", 8, 30, lv_color_white());
+    lv_obj_set_width(g_lbl_env, 214);           /* 留右缘余量，鱼讯一行放得下 */
+    lv_label_set_long_mode(g_lbl_env, LV_LABEL_LONG_WRAP);
+    lv_obj_set_style_text_line_space(g_lbl_env, 2, 0);
     lv_obj_set_style_bg_color(g_lbl_env, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(g_lbl_env, 120, 0);
-    lv_obj_set_style_pad_all(g_lbl_env, 2, 0);
+    lv_obj_set_style_bg_opa(g_lbl_env, 110, 0);
+    lv_obj_set_style_pad_all(g_lbl_env, 3, 0);
 
     /* 钓点名：挂在场景面板右上角的小胶囊里。
      * 放在 g_scene 内部 → 切到菜单/图鉴时随场景一起隐藏，show_only() 不用改。
@@ -600,38 +604,42 @@ static void build_ui(void) {
     lv_obj_clear_flag(g_codex, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_codex, LV_OBJ_FLAG_HIDDEN);
 
+    /* v4 图鉴详情页重排：新增一行「钓鱼履历」，同时压缩行距，保证末行不溢出。
+     * 面板高 = 320-22-24 = 274；末行 prog @242 + 行高 20 = 262 < 274，留 12px 安全边距。
+     * desc/lore 行距从 4 压到 2：最坏 2 行各占 20+2+20=42px，正好前后相接不叠字。 */
     g_cdx_img  = lv_img_create(g_codex);
-    lv_obj_set_pos(g_cdx_img, 92, 14);
-    g_cdx_name = make_label(g_codex, "", 8, 54, lv_color_white());
+    lv_obj_set_pos(g_cdx_img, 92, 6);
+    g_cdx_name = make_label(g_codex, "", 8, 44, lv_color_white());
     /* 稀有度/完美标记上移到名称行，meta 只留体长+钓数：
      * 原来「传说 · 最大 888.8 厘米 · 已钓 8888 条 · 完美✓」要 345px，屏只有 240px。
      * DOT 模式兜底 —— 万一以后文案又变长，末尾显示省略号，绝不出屏、绝不折行。 */
-    g_cdx_meta = make_label(g_codex, "", 8, 78, lv_color_make(255, 208, 90));  /* 金色：突出"最大纪录" */
+    g_cdx_meta = make_label(g_codex, "", 8, 66, lv_color_make(255, 208, 90));  /* 金色：突出"最大纪录" */
     lv_obj_set_width(g_cdx_meta, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_meta, LV_LABEL_LONG_DOT);
+    /* ③钓鱼履历（v4）：已收录才显示"首次第 N 日 · 最大 X.X 千克"；金色沿用最大纪录行。 */
+    g_cdx_hist = make_label(g_codex, "", 8, 88, lv_color_make(255, 208, 90));
+    lv_obj_set_width(g_cdx_hist, SCR_W - 16);
+    lv_label_set_long_mode(g_cdx_hist, LV_LABEL_LONG_DOT);
     /* 体型范围 + 偏好饵料：这是"这条鱼能长多大、爱吃什么"的攻略信息，
      * 收录与否都显示 —— 没钓到之前它正好告诉玩家该去哪、用什么饵。 */
-    g_cdx_size = make_label(g_codex, "", 8, 102, lv_color_make(150, 215, 255));
+    g_cdx_size = make_label(g_codex, "", 8, 110, lv_color_make(150, 215, 255));
     lv_obj_set_width(g_cdx_size, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_size, LV_LABEL_LONG_DOT);
-    g_cdx_desc = make_label(g_codex, "", 8, 126, lv_color_white());
+    g_cdx_desc = make_label(g_codex, "", 8, 132, lv_color_white());
     lv_obj_set_width(g_cdx_desc, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_desc, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(g_cdx_desc, 4, 0);
+    lv_obj_set_style_text_line_space(g_cdx_desc, 2, 0);
     /* 性格钩子（lore）：这鱼什么脾气、有没有什么故事。
-     * desc 是客观说明（长什么样），lore 是性格与钩子，两者分开写，玩家
-     * 看完 desc 判断"能不能钓"，看完 lore 决定"想不想钓"。
-     * 位置压在 desc 之下、里程碑之上；最坏 2 行（lore 最长 22 字 × 16px = 352px
-     * ÷ 224px 行宽 = 2 行），行高 20 + 行距 4 = 44px，126+44+6=176 起排不压 desc。 */
+     * 最坏 2 行 20+2+20=42px，132+42=174 起排不压 176 的 lore。 */
     g_cdx_lore = make_label(g_codex, "", 8, 176, lv_color_make(255, 236, 205));
     lv_obj_set_width(g_cdx_lore, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_lore, LV_LABEL_LONG_WRAP);
-    lv_obj_set_style_text_line_space(g_cdx_lore, 4, 0);
+    lv_obj_set_style_text_line_space(g_cdx_lore, 2, 0);
     /* 里程碑：纯提示，不奖励任何数值。只说"下一个里程碑叫什么、还差几种"。 */
-    g_cdx_mile = make_label(g_codex, "", 8, 224, lv_color_make(150, 230, 175));
+    g_cdx_mile = make_label(g_codex, "", 8, 220, lv_color_make(150, 230, 175));
     lv_obj_set_width(g_cdx_mile, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_mile, LV_LABEL_LONG_DOT);
-    g_cdx_prog = make_label(g_codex, "", 8, 248, lv_color_make(190, 210, 240));
+    g_cdx_prog = make_label(g_codex, "", 8, 242, lv_color_make(190, 210, 240));
 }
 
 /* 面板互斥显示。
@@ -739,6 +747,30 @@ typedef enum {
 static int env_hour(uint32_t now) { return (int)((now / ENV_HOUR_MS) % 24u); }
 static int env_day(uint32_t now)  { return (int)(now / ENV_DAY_MS); }
 
+/* v4 每日鱼讯：给玩家一个"今天下竿"的由头，不逼完成、不惩罚、不加菜单、不碰存档。
+ * 按钓鱼日序号做整数散列选一句 —— 同一天恒定，跨天轮换，无随机状态、不会每帧跳。 */
+static const char *const FISH_NEWS[] = {
+    "塘里白条成群，今天好开口",
+    "水下有大家伙翻花，线放长些",
+    "风往东吹，鱼靠西岸",
+    "夜猫子们要出来了",
+    "水清鱼也精，别急着提竿",
+    "细雨落水面，鱼口正旺",
+    "日头毒，鱼都躲深水了",
+    "岸边虫多，上层鱼在等着",
+    "闷了一夜，天亮准有动静",
+    "水色微浑，正是钓底的好时候",
+};
+#define FISH_NEWS_COUNT ((int)(sizeof(FISH_NEWS) / sizeof(FISH_NEWS[0])))
+
+static const char *fish_news_of(int day) {
+    uint32_t h = (uint32_t)day * 2246822519u;
+    h ^= h >> 13;
+    h *= 3266489917u;
+    h ^= h >> 16;
+    return FISH_NEWS[(unsigned)h % FISH_NEWS_COUNT];
+}
+
 static env_period_t env_period_of(int hour) {
     if (hour >= 5 && hour < 10) return ENV_MORNING;
     if (hour >= 10 && hour < 17) return ENV_NOON;
@@ -809,6 +841,10 @@ static void refresh_env(void) {
     const uint32_t now = (uint32_t)now_ms();
     const env_period_t  p = env_period_of(env_hour(now));
     const env_weather_t w = env_weather_of(env_day(now));
+    /* v4：把时段/天气/钓鱼日喂给逻辑层。时段天气影响抽鱼概率，钓鱼日用于
+     * ③钓鱼履历记首捕日。每帧都调是安全的——logic 只存三个整数，不碰任何 LVGL 对象。 */
+    fishing_set_env((int)p, (int)w);
+    fishing_set_day(env_day(now));
     const int key = (int)p * ENV_WEATHER_COUNT + (int)w;
 
     if (key != s_env_key) {
@@ -823,8 +859,12 @@ static void refresh_env(void) {
             else              lv_obj_add_flag(g_rain[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
-    char buf[24];
-    snprintf(buf, sizeof(buf), "%s · %s", env_period_name(p), env_weather_name(w));
+    /* 两行：第 1 行时段·天气，第 2 行当日鱼讯。鱼讯按 env_day 选句，同一钓鱼日恒定。
+     * 文本整体交给 set_text_cached 门闸：同一天内 buf 完全一致 → 一个 LVGL 调用都不做；
+     * 时段切换（每小时）或跨天时 buf 才变 → 各重绘一次，符合预期，不逐帧重绘。 */
+    char buf[80];
+    snprintf(buf, sizeof(buf), "%s · %s\n%s", env_period_name(p), env_weather_name(w),
+             fish_news_of(env_day(now)));
     set_text_cached(g_lbl_env, buf);
 }
 
@@ -1044,8 +1084,22 @@ static void refresh_codex(const fishing_status_t *st) {
                  fishing_codex_best_len(idx) / 10, fishing_codex_best_len(idx) % 10,
                  fishing_codex_count(idx));
         set_text_cached(g_cdx_meta, buf);
+        /* ③履历：首次钓鱼日 + 最大重量。0 值（老存档迁移/未设置）显示措辞，
+         * 绝不让"第 0 天""0.0 千克"这种破绽出现在屏上。 */
+        {
+            int fd = fishing_codex_first_day(idx);
+            int wg = fishing_codex_best_wgt(idx);
+            char day_buf[16], wgt_buf[16];
+            if (fd > 0) snprintf(day_buf, sizeof(day_buf), "第%d日", fd);
+            else        snprintf(day_buf, sizeof(day_buf), "很久以前");
+            if (wg > 0) snprintf(wgt_buf, sizeof(wgt_buf), "%d.%d千克", wg / 1000, (wg % 1000) / 100);
+            else        snprintf(wgt_buf, sizeof(wgt_buf), "未记录");
+            snprintf(buf, sizeof(buf), "首次 %s · 最大 %s", day_buf, wgt_buf);
+            set_text_cached(g_cdx_hist, buf);
+        }
         set_text_cached(g_cdx_desc, f->desc);
     } else {
+        set_text_cached(g_cdx_hist, "");   /* 未收录：履历行留空，不剧透 */
         snprintf(buf, sizeof(buf), "%d. ???", idx + 1);
         set_text_cached(g_cdx_name, buf);
         snprintf(buf, sizeof(buf), "%s · 栖息于%s", fishing_rarity_name((rarity_t)f->rarity),

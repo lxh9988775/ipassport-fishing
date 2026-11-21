@@ -153,15 +153,17 @@ def apply_env(img: Image.Image, period: str, weather: str) -> Image.Image:
 
 
 def env_label(img: Image.Image, d, fnt, period: str, weather: str):
-    """左上角「时段 · 天气」：面板内 (8,6) → 屏幕 (8,28)，底下半透明黑底。"""
-    text = "%s · %s" % (period, weather)
-    tw = fnt.w(text)
-    x, y = 8, HUD_H + 6
+    """v4 环境标签两行：面板内 (8,30) → 屏幕 (8,52)，第三行是当日鱼讯。
+    在右上钓点胶囊 (y=28~47) 之下，宽 214，不与之重叠。"""
+    line1 = "%s · %s" % (period, weather)
+    news = "水下有大家伙翻花，线放长些"   # 预览用的当天鱼讯样例
+    x, y = 8, HUD_H + 30
     ov = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(ov).rounded_rectangle([x, y, x + tw + 4, y + 24], radius=2, fill=(0, 0, 0, 120))
+    ImageDraw.Draw(ov).rounded_rectangle([x, y, x + 218, y + 44], radius=2, fill=(0, 0, 0, 110))
     img.paste(Image.alpha_composite(img.convert("RGBA"), ov).convert("RGB"), (0, 0))
     d = ImageDraw.Draw(img)
-    d.text((x + 2, y + 2), text, font=fnt.f, fill=(255, 255, 255))
+    d.text((x + 3, y + 1), line1, font=fnt.f, fill=(255, 255, 255))
+    d.text((x + 3, y + 23), news, font=fnt.f, fill=(255, 236, 205))
 
 
 # ---------------------------------------------------------------------------
@@ -280,16 +282,18 @@ def shot_codex(fnt):
     img = base(None, (6, 18, 36))
     d = ImageDraw.Draw(img)
     hud(img, d, fnt, batt=86, score=128)
-    sprite(img, "fish_jiyu", 92, HUD_H + 14)
-    d.text((8, HUD_H + 54), "3. 鲫鱼 · 常见 ✓", font=fnt.f, fill=(255, 255, 255))
-    d.text((8, HUD_H + 78), "最大 24.5 厘米 · 已钓 6 条", font=fnt.f, fill=(255, 208, 90))   # 金色：最大纪录
-    d.text((8, HUD_H + 102), "体型 12-25 厘米 · 爱蚯蚓", font=fnt.f, fill=(150, 215, 255))  # 体长范围 + 偏好饵
-    draw_multiline(d, fnt, (8, HUD_H + 126), "圆扁身带银灰光泽，池塘里最好客的鱼", 224, (255, 255, 255))
+    sprite(img, "fish_jiyu", 92, HUD_H + 6)
+    d.text((8, HUD_H + 44), "3. 鲫鱼 · 常见 ✓", font=fnt.f, fill=(255, 255, 255))
+    d.text((8, HUD_H + 66), "最大 24.5 厘米 · 已钓 6 条", font=fnt.f, fill=(255, 208, 90))   # 金色：最大纪录
+    # v4 ③履历行（新）：首次第 N 日 + 最大重量
+    d.text((8, HUD_H + 88), "首次 第3日 · 最大 1.2千克", font=fnt.f, fill=(255, 208, 90))
+    d.text((8, HUD_H + 110), "体型 12-25 厘米 · 爱蚯蚓", font=fnt.f, fill=(150, 215, 255))  # 体长范围 + 偏好饵
+    draw_multiline(d, fnt, (8, HUD_H + 132), "圆扁身带银灰光泽，池塘里最好客的鱼", 224, (255, 255, 255))
     # 性格钩子（新）
     draw_multiline(d, fnt, (8, HUD_H + 176), "底栖稳重，蚯蚓一落便慢慢靠近", 224, (255, 236, 205))
     # 里程碑（新）
-    d.text((8, HUD_H + 224), "集齐 8 种 · 渐入佳境", font=fnt.f, fill=(150, 230, 175))
-    d.text((8, HUD_H + 248), "收录 5/24（21%）  钓获 12", font=fnt.f, fill=(190, 210, 240))
+    d.text((8, HUD_H + 220), "集齐 8 种 · 渐入佳境", font=fnt.f, fill=(150, 230, 175))
+    d.text((8, HUD_H + 242), "收录 5/24（21%）  钓获 12", font=fnt.f, fill=(190, 210, 240))
     hint_pill(img, d, fnt, "上下翻·OK详情·长按返回")
     return img
 

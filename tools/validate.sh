@@ -77,6 +77,11 @@ run_static_checks() {
         tests/test_fishing_spots.c main/fishing_logic.c \
         -o "${test_dir}/test_fishing_spots"
     "${test_dir}/test_fishing_spots"
+    # v4 天气决定鱼：时段/天气偏好只改概率、不锁死（每组合 400 次采样）
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_fishing_env.c main/fishing_logic.c \
+        -o "${test_dir}/test_fishing_env"
+    "${test_dir}/test_fishing_env"
     # 钓鱼逻辑层全套（确定性/咬钩/计分/图鉴/平衡）
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/fishing_logic_test.c main/fishing_logic.c \

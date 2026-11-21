@@ -52,32 +52,32 @@ CAST_ANIM_MS = 600
 POND, RIVER, SEA = 0, 1, 2
 COMMON, UNCOMMON, RARE, LEGEND = 0, 1, 2, 3
 
-# (name, desc, spot, rarity, bait_mask, len_min, len_max, wgt_min, wgt_max, base, dart, power)
+# (name, desc, spot, rarity, bait_mask, len_min, len_max, wgt_min, wgt_max, base, dart, power, period_pref, weather_pref)
 SPECIES = [
-    ("白条",   "", POND,  COMMON,   0x01,  100, 200,    20,   80,  10,  30, 15),
-    ("鲫鱼",   "", POND,  COMMON,   0x03,  120, 250,   100,  500,  15,  35, 20),
-    ("罗非鱼", "", POND,  COMMON,   0x03,  150, 300,   200,  800,  18,  40, 25),
-    ("鲢鱼",   "", POND,  UNCOMMON, 0x02,  300, 600,  1000, 3000,  25,  55, 45),
-    ("鳊鱼",   "", POND,  UNCOMMON, 0x02,  250, 400,   500, 1500,  28,  60, 40),
-    ("草鱼",   "", POND,  UNCOMMON, 0x02,  400, 800,  2000, 6000,  35,  65, 60),
-    ("鲤鱼",   "", POND,  RARE,     0x03,  350, 700,  1000, 5000,  45,  70, 70),
-    ("青鱼",   "", POND,  RARE,     0x03,  500,1000,  3000,10000,  55,  60, 85),
-    ("马口鱼", "", RIVER, COMMON,   0x05,  100, 180,    30,  100,  16,  55, 25),
-    ("黄颡鱼", "", RIVER, COMMON,   0x01,  120, 200,    50,  150,  20,  40, 30),
-    ("翘嘴鱼", "", RIVER, UNCOMMON, 0x04,  300, 600,   500, 2500,  38,  75, 55),
-    ("鲈鱼",   "", RIVER, UNCOMMON, 0x04,  250, 500,   400, 2000,  42,  70, 60),
-    ("鳜鱼",   "", RIVER, RARE,     0x04,  250, 450,   500, 2000,  52,  65, 65),
-    ("鲶鱼",   "", RIVER, RARE,     0x01,  350, 700,  1000, 4000,  50,  45, 80),
-    ("军鱼",   "", RIVER, RARE,     0x06,  300, 600,  1000, 3000,  58,  60, 75),
-    ("鳡鱼",   "", RIVER, LEGEND,   0x04,  600,1200, 5000,20000,  80,  85, 95),
-    ("小黄鱼", "", SEA,   COMMON,   0x01,  150, 250,   100,  300,  24,  35, 30),
-    ("带鱼",   "", SEA,   COMMON,   0x06,  500,1000,   300, 1000,  30,  50, 45),
-    ("鲅鱼",   "", SEA,   UNCOMMON, 0x04,  400, 800,   800, 3000,  45,  75, 65),
-    ("比目鱼", "", SEA,   UNCOMMON, 0x01,  250, 500,   500, 2000,  40,  30, 50),
-    ("石斑鱼", "", SEA,   RARE,     0x04,  300, 600,  1000, 4000,  62,  70, 80),
-    ("金枪鱼", "", SEA,   LEGEND,   0x04,  800,2000,10000,60000, 100,  80, 100),
-    ("旗鱼",   "", SEA,   LEGEND,   0x04, 1000,2500,20000,80000, 120,  95, 100),
-    ("小鲨鱼", "", SEA,   LEGEND,   0x04,  600,1500,  5000,30000, 130,  90, 100),
+    ("白条",   "", POND,  COMMON,   0x01,  100, 200,    20,   80,  10,  30, 15, 1, 1),
+    ("鲫鱼",   "", POND,  COMMON,   0x03,  120, 250,   100,  500,  15,  35, 20, 1, 3),
+    ("罗非鱼", "", POND,  COMMON,   0x03,  150, 300,   200,  800,  18,  40, 25, 3, 3),
+    ("鲢鱼",   "", POND,  UNCOMMON, 0x02,  300, 600,  1000, 3000,  25,  55, 45, 2, 1),
+    ("鳊鱼",   "", POND,  UNCOMMON, 0x02,  250, 400,   500, 1500,  28,  60, 40, 5, 3),
+    ("草鱼",   "", POND,  UNCOMMON, 0x02,  400, 800,  2000, 6000,  35,  65, 60, 3, 3),
+    ("鲤鱼",   "", POND,  RARE,     0x03,  350, 700,  1000, 5000,  45,  70, 70, 5, 3),
+    ("青鱼",   "", POND,  RARE,     0x03,  500,1000,  3000,10000,  55,  60, 85, 12, 2),
+    ("马口鱼", "", RIVER, COMMON,   0x05,  100, 180,    30,  100,  16,  55, 25, 3, 1),
+    ("黄颡鱼", "", RIVER, COMMON,   0x01,  120, 200,    50,  150,  20,  40, 30, 8, 6),
+    ("翘嘴鱼", "", RIVER, UNCOMMON, 0x04,  300, 600,   500, 2500,  38,  75, 55, 3, 3),
+    ("鲈鱼",   "", RIVER, UNCOMMON, 0x04,  250, 500,   400, 2000,  42,  70, 60, 3, 3),
+    ("鳜鱼",   "", RIVER, RARE,     0x04,  250, 450,   500, 2000,  52,  65, 65, 4, 4),
+    ("鲶鱼",   "", RIVER, RARE,     0x01,  350, 700,  1000, 4000,  50,  45, 80, 8, 6),
+    ("军鱼",   "", RIVER, RARE,     0x06,  300, 600,  1000, 3000,  58,  60, 75, 6, 3),
+    ("鳡鱼",   "", RIVER, LEGEND,   0x04,  600,1200, 5000,20000,  80,  85, 95, 12, 3),
+    ("小黄鱼", "", SEA,   COMMON,   0x01,  150, 250,   100,  300,  24,  35, 30, 3, 3),
+    ("带鱼",   "", SEA,   COMMON,   0x06,  500,1000,   300, 1000,  30,  50, 45, 8, 2),
+    ("鲅鱼",   "", SEA,   UNCOMMON, 0x04,  400, 800,   800, 3000,  45,  75, 65, 5, 3),
+    ("比目鱼", "", SEA,   UNCOMMON, 0x01,  250, 500,   500, 2000,  40,  30, 50, 12, 6),
+    ("石斑鱼", "", SEA,   RARE,     0x04,  300, 600,  1000, 4000,  62,  70, 80, 12, 6),
+    ("金枪鱼", "", SEA,   LEGEND,   0x04,  800,2000,10000,60000, 100,  80, 100, 5, 1),
+    ("旗鱼",   "", SEA,   LEGEND,   0x04, 1000,2500,20000,80000, 120,  95, 100, 5, 1),
+    ("小鲨鱼", "", SEA,   LEGEND,   0x04,  600,1500,  5000,30000, 130,  90, 100, 12, 6),
 ]
 
 # (name, bar_h, rise, fall, mult100)
@@ -102,7 +102,7 @@ SPOT_RARITY_W = [
 
 PREFERRED_BAIT_MULT = 3
 IDLE, CASTING, WAITING, BITE, REELING, CATCH, ESCAPE, MENU, CODEX, CODEX_INFO = range(10)
-SCHEMA_VER = 1
+SCHEMA_VER = 2
 CONTENT_VER = 1
 MAGIC = 0x46534832
 CODEX_CAP = 64
@@ -121,6 +121,8 @@ class Fishing:
         self.bait = 0
         self.rod = 0
         self.spot = POND
+        self.env_period = 0   # v4：晨0/午1/昏2/夜3
+        self.env_weather = 0  # v4：晴0/阴1/雨2
         self.enter = 0
         self.last = 0
         self.wait_target = 0
@@ -149,6 +151,9 @@ class Fishing:
         self.cnt = [0] * CODEX_CAP
         self.flags = [0] * CODEX_CAP
         self.best = [0] * CODEX_CAP
+        self.first_day = [0] * CODEX_CAP   # v4 履历
+        self.best_wgt = [0] * CODEX_CAP
+        self.env_day = 0
         self.total_catch = 0
         self.cursor = 0
 
@@ -181,8 +186,11 @@ class Fishing:
         return f[7] + span_w * rel // 1000
 
     def roll_species(self):
+        # v4：时段×3/×0.6、天气×2、饵料沿用 PREFERRED_BAIT_MULT —— 与 C 层一致
         rw = SPOT_RARITY_W[self.spot]
         bit = 1 << self.bait
+        per_bit = 1 << self.env_period
+        wea_bit = 1 << self.env_weather
         w = []
         total = 0
         for f in SPECIES:
@@ -190,8 +198,16 @@ class Fishing:
                 w.append(0)
                 continue
             v = rw[f[3]]
+            if f[12] & per_bit:
+                v *= 3
+            else:
+                v = v * 6 // 10
+            if f[13] & wea_bit:
+                v *= 2
             if f[4] & bit:
                 v *= PREFERRED_BAIT_MULT
+            if v < 1:
+                v = 1
             w.append(v)
             total += v
         if total <= 0:
@@ -322,6 +338,10 @@ class Fishing:
         sc = max(1, sc)
         first = self.cnt[self.cur] == 0
         record = self.cur_len > self.best[self.cur]
+        if first and self.env_day > 0:
+            self.first_day[self.cur] = self.env_day
+        if self.cur_wgt > self.best_wgt[self.cur]:
+            self.best_wgt[self.cur] = self.cur_wgt
         if self.cnt[self.cur] < 255:
             self.cnt[self.cur] += 1
         if record:
@@ -346,6 +366,16 @@ class Fishing:
     def set_rod(self, r):
         if 0 <= r < 3:
             self.rod = r
+
+    def set_env(self, period, weather):
+        if 0 <= period < 4:
+            self.env_period = period
+        if 0 <= weather < 3:
+            self.env_weather = weather
+
+    def set_day(self, day):
+        if day >= 0:
+            self.env_day = day
 
     def set_spot(self, s):
         if 0 <= s < 3 and self.spot_unlocked(s):
@@ -420,7 +450,7 @@ class Fishing:
 
     # ---- save ----
     def save_size(self):
-        return 20 + CODEX_CAP * 4
+        return 20 + CODEX_CAP * (1 + 1 + 2 + 2 + 4)
 
     def serialize(self):
         b = bytearray()
@@ -434,6 +464,10 @@ class Fishing:
         b += bytes(self.flags)
         for v in self.best:
             b += int(v).to_bytes(2, "little")
+        for v in self.first_day:
+            b += int(v).to_bytes(2, "little")
+        for v in self.best_wgt:
+            b += int(v).to_bytes(4, "little")
         return bytes(b)
 
     def apply(self, buf):
@@ -457,6 +491,12 @@ class Fishing:
         for i in range(CODEX_CAP):
             self.best[i] = int.from_bytes(buf[p:p + 2], "little") if p + 1 < len(buf) else 0
             p += 2
+        for i in range(CODEX_CAP):
+            self.first_day[i] = int.from_bytes(buf[p:p + 2], "little") if p + 1 < len(buf) else 0
+            p += 2
+        for i in range(CODEX_CAP):
+            self.best_wgt[i] = int.from_bytes(buf[p:p + 4], "little") if p + 3 < len(buf) else 0
+            p += 4
         return 1 if schema < SCHEMA_VER else 0
 
 
