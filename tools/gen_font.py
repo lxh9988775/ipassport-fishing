@@ -29,6 +29,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OTF = os.path.join(ROOT, "assets", "fonts", "SourceHanSansCN-Normal.otf")
 OUT_C = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_16.c")
+# v5 双行胶囊用 12px 子集：16px 字高 20px，两行压在 38px 胶囊里会叠字
+OUT_C12 = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_12.c")
 SYMBOLS_TXT = os.path.join(ROOT, "tools", "font_symbols.txt")
 SRC_C = os.path.join(ROOT, "main", "fishing.c")
 # v2 起鱼名/简介/稀有度都放在纯逻辑层，字库必须一并扫描，否则图鉴页会出方框
@@ -103,33 +105,34 @@ def main():
         f.write(symbols)
     print("字符清单：%d 个 -> %s" % (len(symbols), SYMBOLS_TXT))
 
-    cmd = [
-        NODE, CONV,
-        "--font", OTF,
-        "--symbols", symbols,
-        "--size", str(SIZE),
-        "--bpp", str(BPP),
-        "--format", "lvgl",
-        "--no-compress",
-        "--lv-font-name", FONT_NAME,
-        "--lv-include", "lvgl.h",
-        "--output", OUT_C,
-    ]
-    r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
-    if r.stdout:
-        print(r.stdout.strip())
-    if r.returncode != 0:
-        print("[FAIL] lv_font_conv 退出码 %d\n%s" % (r.returncode, r.stderr))
-        return 1
-
-    sz = os.path.getsize(OUT_C)
-    with open(OUT_C, "r", encoding="utf-8", errors="replace") as f:
-        head = f.read(4000)
-    if FONT_NAME not in head:
-        print("[FAIL] 产物里找不到符号 %s" % FONT_NAME)
-        return 1
-    print("[PASS] 生成 %s  (%.1f KB)" % (OUT_C, sz / 1024.0))
-    print("       符号名：lv_font_%s" % FONT_NAME)
+    outputs = [(SIZE, FONT_NAME, OUT_C), (12, "fishing_cjk_12", OUT_C12)]
+    for size, name, out in outputs:
+        cmd = [
+            NODE, CONV,
+            "--font", OTF,
+            "--symbols", symbols,
+            "--size", str(size),
+            "--bpp", str(BPP),
+            "--format", "lvgl",
+            "--no-compress",
+            "--lv-font-name", name,
+            "--lv-include", "lvgl.h",
+            "--output", out,
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+        if r.stdout:
+            print(r.stdout.strip())
+        if r.returncode != 0:
+            print("[FAIL] lv_font_conv 退出码 %d\n%s" % (r.returncode, r.stderr))
+            return 1
+        sz = os.path.getsize(out)
+        with open(out, "r", encoding="utf-8", errors="replace") as f:
+            head = f.read(4000)
+        if name not in head:
+            print("[FAIL] 产物里找不到符号 %s" % name)
+            return 1
+        print("[PASS] 生成 %s  (%.1f KB)" % (out, sz / 1024.0))
+        print("       符号名：lv_font_%s" % name)
     return 0
 
 

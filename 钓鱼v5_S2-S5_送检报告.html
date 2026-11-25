@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>竿影浮标 v5 · S2–S5 送检报告</title>
+<style>
+  :root{--deep:#0B3D5C;--teal:#1E88A8;--ink:#17313E;--muted:#5C7480;--line:#DCE7ED;
+    --ok:#1FA971;--bad:#D64541;--warn:#E8A33D;--bg:#F2F7FA;--code:#0E2A3A;}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;font-size:15px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 18px 56px}
+  header{background:linear-gradient(135deg,#0B3D5C,#1E88A8 62%,#2BB3C7);color:#fff;padding:26px 0;margin-bottom:22px}
+  header h1{margin:0;font-size:23px}header .sub{opacity:.92;font-size:13.5px;margin-top:4px}
+  h2{font-size:18px;margin:28px 0 10px;padding-left:11px;border-left:5px solid #FF6B5A}
+  h3{font-size:15px;margin:18px 0 8px;color:var(--deep)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 18px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff;border-radius:8px;overflow:hidden}
+  th,td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#EAF4F8;color:var(--deep);font-weight:600;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  code{background:#EAF4F8;color:#0B4A63;padding:1px 5px;border-radius:4px;font-size:12.5px}
+  pre{background:var(--code);color:#D8ECF5;border-radius:8px;padding:12px 14px;overflow:auto;font-size:12.5px;line-height:1.6}
+  .ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}.warn{color:var(--warn);font-weight:700}
+  ul,ol{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  .verdict{background:#E8F7F0;border:1px solid #A9DFC6;border-radius:12px;padding:14px 18px;font-size:16px}
+  .hold{background:#FFF6E5;border:1px solid #F0D39A;border-radius:12px;padding:14px 18px;font-size:15px}
+  img{max-width:100%;border:1px solid var(--line);border-radius:8px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>竿影浮标 v5 · C+2 · S2–S5 送检报告</h1>
+  <div class="sub">基线 fishing-app / v4 · 2026-11-25 · AIpp 总监检核 · 逐阶段放行</div>
+</div></header>
+<div class="wrap">
+
+<div class="verdict"><b>【结论】</b> S2 ✅ 通过 ｜ S3 ✅ 通过（<b>待用户确认对比图</b>，未 push / 未烧录）｜ S4 ✅ 通过 ｜ S5 ✅ 通过。S6 云编译与社区提交在用户确认前<b>不启动</b>。</div>
+
+<h2>【送检】S2 · 存档 schema3 + 图鉴标点</h2>
+<div class="card">
+<table>
+  <tr><th>文件</th><th>改动点</th></tr>
+  <tr><td><code>main/fishing_logic.h</code></td><td>SCHEMA_VER 2→3、CONTENT_VER 1→2；新增 <code>fishing_codex_subspot()</code>；<code>STATE_SPOT_SELECT</code>/<code>STATE_CODEX_LIST</code> 追加在 <code>STATE_COUNT</code> 前</td></tr>
+  <tr><td><code>main/fishing_logic.c</code></td><td>新增 <code>g_codex_subspot[64]</code>；首捕写入 <code>id+1</code>（0=未知）；存档尾部追加 64B；老档迁移填 0；5 个新页面流转 API</td></tr>
+  <tr><td><code>main/fishing.c</code></td><td>NVS 缓冲 512→768；图鉴详情第二行合并最大重量、履历行改为「首次 第N日 · 首捕标点」</td></tr>
+  <tr><td><code>tests/fishing_logic_test.c</code></td><td>新增 schema3 往返 / 二次捕获不覆盖 / schema2 迁移 / 页面流转断言</td></tr>
+  <tr><td><code>tools/verify_logic.py</code>、<code>tools/verify_fish_history.py</code></td><td>参考实现同步 schema3，新增迁移与标点断言</td></tr>
+</table>
+<pre>verify_logic.py       ALL CHECKS PASSED（schema3 724B；首捕标点 4；schema2 迁移 rc=1）
+verify_fish_history.py 结论: PASS（22 项全绿，含 0 值「很久以前 / 标点未知」展示口径）
+存档长度：20 + 64×(1+1+2+2+4+1) = 724 B；v4 = 660 B，老档逐项保留</pre>
+</div>
+
+<h2>【送检】S3 · 五屏界面</h2>
+<div class="card">
+<table>
+  <tr><th>屏</th><th>实现要点</th><th>核对</th></tr>
+  <tr><td>1 选钓场</td><td>5 行卡片，行距 47，34×32 缩略图，选中红条，NEW 标，锁定场给「再钓 N 条」提示</td><td class="ok">通过</td></tr>
+  <tr><td>2 选标点</td><td>预压暗 RGB565 背景（不用运行时半透明层），2 张 74px 大卡 + 独立提示卡</td><td class="ok">通过</td></tr>
+  <tr><td>3 主界面</td><td>左上双行胶囊（钓场 / 标点·主出鱼），鱼讯移到胶囊下方，互不遮挡；12px 子集字库防叠字</td><td class="ok">通过</td></tr>
+  <tr><td>4 图鉴列表</td><td>4 行，34×32 NEAREST 缩略图，「钓场·标点 / 时段·饵料 / 体长」动态生成，底部计数用常量</td><td class="ok">通过</td></tr>
+  <tr><td>5 图鉴详情</td><td>沿用原坐标，履历行并入首捕标点，不新增对象、不下移后续行</td><td class="ok">通过</td></tr>
+</table>
+<h3>对比图（效果图 / 固件实现同坐标渲染）</h3>
+<img src="build/fish_ui/fishing_c2_compare.png" alt="效果图与实现对比">
+<pre>check_ui_layout.py   布局检查通过：无出屏、无圆角遮挡、无同屏重叠（50 个元素，8 个互斥面板）
+check_c_sanity.py    结构自检通过（169 花括号对 / 38 个 static 函数全有引用）
+LVGL 铁律            新面板全部 pad_all=0；文本走 set_text_cached；图片走 set_img_by_key；
+                     隐藏图未对 lv_img 调 set_size；主循环仍事件驱动；未用运行时全屏半透明层</pre>
+</div>
+
+<h2>【送检】S4 · 美术上板 + 字库</h2>
+<div class="card">
+<pre>新增鱼       fish_ziyu / fish_heidiao / fish_haiman + 剪影 + 34x32 缩略图（自有像素画）
+新增背景     bg_estuary / bg_pier（240x320 RGB565）+ bg_estuary_dark（预压暗）
+资产保护     fish_sprites.c / bg_sprites.c 只有追加，无删除；已有 sprite PNG 逐字节还原
+字库         16px + 新增 12px 双子集；check_cjk_coverage.py：502 非 ASCII 字符，0 缺字
+Flash        数组二进制约 1.54 MB（精灵 1.49 MB + 字库约 50 KB），远低于 8 MB；不动分区表</pre>
+</div>
+
+<h2>【送检】S5 · 封面同步</h2>
+<div class="card">
+<pre>assets/cover/fishing-cover-v5-3x4.png      1152x1536，文案「27 种鱼 · 5 大钓场 · 10 处标点」
+assets/publish/fishing-cover-3x4.png        已覆盖为同一文件
+sha256(两处) = 50816da00dd5d33cc6f6bc3b68ca484fffb001f56c4ac71759830c4747173b36</pre>
+</div>
+
+<h2>【逐条】十条铁律 1–10</h2>
+<div class="card">
+<table>
+  <tr><th>#</th><th>铁律</th><th>结论</th><th>证据</th></tr>
+  <tr><td>1</td><td>命名与措辞</td><td class="ok">通过</td><td>仍叫「竿影浮标」；无品牌关联词</td></tr>
+  <tr><td>2</td><td>不抄袭</td><td class="ok">通过</td><td>3 条新鱼为本项目自绘像素图；只沿用已确认效果图的设计语言</td></tr>
+  <tr><td>3</td><td>界面先对比图</td><td class="warn">待用户确认</td><td>对比图已出（见上），但未经用户点头，禁止 push / 烧录</td></tr>
+  <tr><td>4</td><td>中文字库</td><td class="ok">通过</td><td>16px + 12px 双字库已重生成；0 缺字</td></tr>
+  <tr><td>5</td><td>LVGL 铁律</td><td class="ok">通过</td><td>见 S3 证据行；布局检查器通过</td></tr>
+  <tr><td>6</td><td>Flash / 内存</td><td class="ok">通过</td><td>数组约 1.54 MB；NVS 缓冲 768B；不动分区</td></tr>
+  <tr><td>7</td><td>不堆数值</td><td class="ok">通过</td><td>标点只 ×3 概率；无门槛/倒计时/惩罚；解锁只按累计钓获</td></tr>
+  <tr><td>8</td><td>前向兼容</td><td class="ok">通过</td><td>schema3 迁移 724B/660B 两条路径均测；鱼 ID 与钓场枚举值不变</td></tr>
+  <tr><td>9</td><td>git 纪律</td><td class="ok">通过</td><td>当前 fishing-app；未 commit / 未 push；恢复脚本与素材均显式路径</td></tr>
+  <tr><td>10</td><td>送检分离</td><td class="ok">通过</td><td>Build NOT RUN（本机无编译器）；Host tests PASS（Python）；Device tests NOT RUN；Unverified 见下</td></tr>
+</table>
+</div>
+
+<h2>【四项报告】</h2>
+<div class="card">
+<pre>Build:        NOT RUN（本机无 gcc/clang/cc；按硬流程须先用户确认对比图，再 push 触发云 CI）
+Host tests:   PASS（verify_logic / verify_fish_env / verify_fish_history / verify_subspots 四套全绿；C 单测已写入但未编译）
+Device tests: NOT RUN（未烧录）
+Unverified:   C 单测编译与运行、云 CI 固件构建、真机五屏与按键流转、社区过审</pre>
+</div>
+
+<div class="hold"><b>【放行条件】</b> 请先看上面的对比图。确认后我才 push 触发 CI、盯构建、取 full.bin；社区提交仍需你提供新的一次性授权码，并明确授权「只更新玩法 733」。</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>竿影浮标 v5 · S1 逻辑层送检报告</title>
+<style>
+  :root{--deep:#0B3D5C;--teal:#1E88A8;--ink:#17313E;--muted:#5C7480;--line:#DCE7ED;
+    --ok:#1FA971;--bad:#D64541;--warn:#E8A33D;--bg:#F2F7FA;--code:#0E2A3A;}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;line-height:1.7;font-size:15px}
+  .wrap{max-width:960px;margin:0 auto;padding:0 18px 56px}
+  header{background:linear-gradient(135deg,#0B3D5C,#1E88A8 62%,#2BB3C7);color:#fff;padding:26px 0;margin-bottom:22px}
+  header h1{margin:0;font-size:23px}header .sub{opacity:.92;font-size:13.5px;margin-top:4px}
+  h2{font-size:18px;margin:28px 0 10px;padding-left:11px;border-left:5px solid #FF6B5A}
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:15px 18px;margin:12px 0}
+  table{width:100%;border-collapse:collapse;font-size:13.5px;background:#fff;border-radius:8px;overflow:hidden}
+  th,td{padding:7px 9px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+  th{background:#EAF4F8;color:var(--deep);font-weight:600;white-space:nowrap}
+  tr:last-child td{border-bottom:none}
+  code{background:#EAF4F8;color:#0B4A63;padding:1px 5px;border-radius:4px;font-size:12.5px}
+  pre{background:var(--code);color:#D8ECF5;border-radius:8px;padding:12px 14px;overflow:auto;font-size:12.5px;line-height:1.6}
+  .ok{color:var(--ok);font-weight:700}.bad{color:var(--bad);font-weight:700}.warn{color:var(--warn);font-weight:700}
+  .pill{display:inline-block;border-radius:6px;padding:2px 9px;font-size:12px;font-weight:600;background:#E3F2E9;color:#1B7A52;margin-right:5px}
+  ul{margin:8px 0;padding-left:22px}li{margin:5px 0}
+  .verdict{background:#E8F7F0;border:1px solid #A9DFC6;border-radius:12px;padding:14px 18px;font-size:16px}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>竿影浮标 v5 · C+2 · S1 逻辑层送检报告</h1>
+  <div class="sub">基线 fishing-app / v4 · 2026-11-25 · AIpp 总监检核</div>
+</div></header>
+<div class="wrap">
+
+<h2>【送检】S1 · 逻辑层</h2>
+<div class="card">
+  <table>
+    <tr><th>改动文件</th><th>改动点</th></tr>
+    <tr><td><code>main/fishing_logic.h</code></td><td>27 鱼 / 5 场 / 10 标点；<code>SPOT_ESTUARY=3</code>、<code>SPOT_PIER=4</code>；<code>subspot_t</code> 枚举 0–9；<code>STATE_SUBSPOT=13</code>（追加，旧值不变）；<code>fish_species_t.spot_mask</code>；<code>subspot_cfg_t</code>；5 个标点 API</td></tr>
+    <tr><td><code>main/fishing_logic.c</code></td><td>24 鱼逐条加 <code>spot_mask</code>（跨场 9 条）；新增 ID24 鲻鱼 / 25 黑鲷 / 26 海鳗；<code>SPOTS[5]</code> + 权重表第 4/5 行；<code>SUBSPOTS[10]</code>；<code>g_subspot=-1</code>；<code>roll_species()</code> 改用 spot_mask 并叠标点 ×3；兜底同步</td></tr>
+    <tr><td><code>tests/test_fishing_subspots.c</code></td><td>新增 S1 单测：主出鱼差异 / 不锁死 / 跨场鱼 / 无空池 / -1 兼容</td></tr>
+    <tr><td><code>tests/test_fishing_spots.c</code></td><td>存档缓冲 512→768；"全解锁"语义扩到 5 场（36/56 条门槛）</td></tr>
+    <tr><td><code>tests/fishing_logic_test.c</code></td><td>存档缓冲 512→768（v4 遗留隐患）</td></tr>
+    <tr><td><code>tools/verify_logic.py</code></td><td>Python 参考实现同步：27 鱼 / 5 场 / spot_mask / SUBSPOTS / 标点乘子；断言改为 5 场无空池</td></tr>
+    <tr><td><code>tools/validate.sh</code></td><td>挂载新单测 <code>test_fishing_subspots</code></td></tr>
+    <tr><td><code>tools/verify_subspots.py</code></td><td>新增本机分布对拍 + 鱼池对照表工具</td></tr>
+  </table>
+</div>
+
+<h2>【逐条】铁律 1–10</h2>
+<div class="card">
+  <table>
+    <tr><th>#</th><th>铁律</th><th>结论</th><th>证据</th></tr>
+    <tr><td>1</td><td>命名与措辞</td><td class="ok">通过</td><td>未改玩法名；新鱼/标点文案只写钓鱼，无品牌关联词</td></tr>
+    <tr><td>2</td><td>不抄袭</td><td class="ok">通过</td><td>3 新鱼 data 行自撰，无外部素材引用</td></tr>
+    <tr><td>3</td><td>界面先对比图</td><td class="ok">通过（N/A）</td><td>S1 纯逻辑层无界面改动；未 push / 未烧录</td></tr>
+    <tr><td>4</td><td>中文字库</td><td class="warn">S2/S4 待办</td><td>S1 新文案尚未进 UI 层；S2 改图鉴文案、S4 上板时统一重跑字库</td></tr>
+    <tr><td>5</td><td>LVGL 铁律</td><td class="ok">通过（N/A）</td><td>本阶段未改任何 UI 对象</td></tr>
+    <tr><td>6</td><td>Flash / 内存</td><td class="ok">通过</td><td>本阶段仅静态数据表：+3 鱼 ×约 60B + 10 标点 ×约 14B + 2 场权重，增量 &lt;1KB；未动分区表</td></tr>
+    <tr><td>7</td><td>不堆数值</td><td class="ok">通过</td><td>标点只 ×3 概率、不设门槛/倒计时/惩罚；任一鱼任一标点权重 &gt;0（硬断言 PASS）；-1 时与 v4 分布逐项一致</td></tr>
+    <tr><td>8</td><td>前向兼容</td><td class="ok">通过</td><td>24 鱼 ID / 原 3 场枚举值不变；<code>STATE_SUBSPOT</code> 追加在 <code>STATE_COUNT</code> 前；<code>g_subspot=-1</code> 默认兼容；<code>spot_mask</code> 默认 <code>1&lt;&lt;spot</code></td></tr>
+    <tr><td>9</td><td>git 纪律</td><td class="ok">通过</td><td>当前 <code>fishing-app</code>，工作区仅本阶段显式文件；未用 <code>git add -A</code> / <code>add main/</code>；未提交、未 push</td></tr>
+    <tr><td>10</td><td>送检分离</td><td class="ok">通过</td><td>四项报告见下；未把未编译/未烧录说成通过</td></tr>
+  </table>
+</div>
+
+<h2>【硬证据】数值与对拍</h2>
+<div class="card">
+  <ul>
+    <li><b>24 鱼原有数值未动</b>：SPECIES 表数字 token <code>168/168</code> 逐个与 v4 基线一致（只新增 spot_mask 字段，数值行未改）。</li>
+    <li><b>C ↔ Python 表逐项一致</b>：27 条 <code>spot_mask</code>、10 条标点 <code>gold_a</code>、3 条新鱼 7 项数值，全部逐项相等。</li>
+    <li><b>3 新鱼时段/天气命中</b>：鲻鱼 晨午/晴阴、黑鲷 昏/晴阴、海鳗 夜/阴雨，各至少命中一项，不被 ×0.6 压死。</li>
+  </ul>
+</div>
+
+<h2>【鱼池分布对照表】每场 × 每标点（3000 次抽鱼占比，* = 主出鱼）</h2>
+<div class="card">
+<pre>静水塘（8 种）
+  芦苇荡  *白条 40.7%  *鲫鱼 40.5%   罗非鱼 12.5%   鲢鱼 0.4%  鳊鱼 1.9%  草鱼 1.9%  鲤鱼 2.0%  青鱼 0.1%
+  深水湾   白条 25.1%   鲫鱼 25.1%   罗非鱼 26.4%   鲢鱼 0.7%  鳊鱼 4.6%  草鱼 3.7% *鲤鱼 13.3% *青鱼 1.2%
+急流河（8 种）
+  浅滩     马口鱼 45.5%  黄颡鱼 4.5%  *翘嘴鱼 34.0%  鲈鱼 11.0% *鳜鱼 1.5%  鲶鱼 2.1%  军鱼 1.1%  鳡鱼 0.3%
+  回水沱   马口鱼 52.1% *黄颡鱼 14.4%  翘嘴鱼 12.9%  鲈鱼 12.2%  鳜鱼 0.5% *鲶鱼 5.6%  军鱼 1.6%  鳡鱼 0.6%
+深海（8 种）
+  礁石区   小黄鱼 57.8%  带鱼 1.8%  鲅鱼 17.2%  比目鱼 5.1% *石斑鱼 4.8%  金枪鱼 5.7%  旗鱼 6.0% *小鲨鱼 1.5%
+  远洋     小黄鱼 49.9%  带鱼 1.3%  鲅鱼 13.7%  比目鱼 4.4%  石斑鱼 1.3% *金枪鱼 15.3% *旗鱼 13.7%  小鲨鱼 0.5%
+入海口（8 种）
+  泥滩    *鲈鱼 17.3%  小黄鱼 19.3%  带鱼 0.5%  比目鱼 1.4%  石斑鱼 0.3% *鲻鱼 59.3%  黑鲷 0.9%  海鳗 0.9%
+  潮汐道   鲈鱼 10.0%  小黄鱼 38.8%  带鱼 1.2%  比目鱼 2.6%  石斑鱼 0.4%  鲻鱼 36.3% *黑鲷 5.5% *海鳗 5.2%
+夜钓栈桥（4 种）
+  灯影    *黄颡鱼 42.5%  翘嘴鱼 33.4%  鳜鱼 2.9% *鲶鱼 21.2%
+  桥墩     黄颡鱼 21.7%  翘嘴鱼 53.9% *鳜鱼 12.4%  鲶鱼 12.0%
+</pre>
+<p style="font-size:13px;color:var(--muted)">主出鱼"自家/别家"倍数：芦苇荡 1.62×｜深水湾 7.29×｜浅滩 2.76×｜回水沱 2.76×｜礁石区 3.59×｜远洋 2.37×｜泥滩 1.66×｜潮汐道 6.16×｜灯影 1.86×｜桥墩 4.69×。全部 ≥1.5×（硬断言），其中 6/10 ≥2.5×（任务书建议值）；未达 2.5× 的组仍是显著高于，且未牺牲"不锁死"——同一场里别的鱼照样能上钩。</p>
+</div>
+
+<h2>【断言汇总】</h2>
+<div class="card">
+<pre>verify_logic.py       ALL CHECKS PASSED（含 5 场无空池 [8,8,8,8,4]）
+verify_fish_env.py    结论: PASS（0 项失败）—— v4 分布未被破坏
+verify_fish_history.py 结论: PASS（0 项失败）—— 存档未动
+verify_subspots.py    结论: PASS（0 项失败）—— 10 组主出鱼差异 + 不锁死 + 跨场 + 无空池 + -1 兼容
+check_c_sanity.py     结构自检通过（花括号 124 对 / static 函数全有引用）
+数值对拍              24 鱼 168/168 token 一致；C↔Python 表逐项一致
+</pre>
+</div>
+
+<h2>【四项报告】</h2>
+<div class="card">
+<pre>Build:        NOT RUN（本机无 gcc/clang/cc；云 CI 仅跑 --firmware，未 push 故未触发）
+Host tests:   PASS（Python 参考实现 4 套全绿；C 单测已写入但未编译，见 Unverified）
+Device tests: NOT RUN（未烧录）
+Unverified:   C 单测 tests/test_fishing_subspots.c 的编译与运行（待云 CI 或后续宿主环境）；
+              真机行为；五屏界面；字库；资源上板；社区过审</pre>
+</div>
+
+<h2>【跨阶段待办】明确不在 S1 范围</h2>
+<div class="card">
+  <ul>
+    <li><code>main/fishing.c</code> 的 <code>FISH_IMG</code>/<code>SIL_IMG</code> 仍是 24 项、<code>BG_IMG</code> 仍是 3 项——扩容后尾部为 NULL，<b>S4 资源上板</b>时补 3 新鱼 sprite + 2 背景；S1 不 push/不烧录，不会上板触发。</li>
+    <li>图鉴列表/详情的标点文案、底部动态计数（27 种 / 10 处）属 <b>S2</b>；五屏界面属 <b>S3</b>；字库重生成属 <b>S4</b>。</li>
+    <li>存档 schema 2→3、<code>g_codex_subspot[64]</code>、迁移填 0 属 <b>S2</b>；S1 未动存档字节布局。</li>
+  </ul>
+</div>
+
+<div class="verdict">【结论】S1 通过 ✅ —— 逻辑层口径、数值红线、不锁死红线、前向兼容全部满足；本机 4 套参考实现验证全绿。请放行 S2（存档 schema3 与图鉴标点）。</div>
+
+</div>
+</body>
+</html>

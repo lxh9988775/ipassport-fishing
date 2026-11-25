@@ -1,0 +1,7 @@
+Offline play — no network setup needed, just power on. UP / DOWN to move, OK to confirm or act, long-press OK to go back.
+
+1. Long-press OK for the menu, move to "Spot" and press OK. Pick a water with UP / DOWN, then press OK to open the spot picker; switch spots left and right, read the "likely catch" hint, and confirm with OK.
+2. Back at the water, press OK to cast. Wait for the bite, then press OK as soon as "Bite! Press OK" appears.
+3. While reeling, hold OK to raise the catch zone and release to let it fall. Keep the fish inside until the bar fills; never letting it out earns a perfect catch.
+4. The long-press menu swaps rods, bait or water, opens the guide, or mutes sound. In the guide, UP / DOWN pages through fish and OK opens details, which show the day and spot of your first catch.
+5. Waters unlock as your catch count grows, and locked ones show how many are left. Score and guide progress save automatically, so you can pick up where you left off.

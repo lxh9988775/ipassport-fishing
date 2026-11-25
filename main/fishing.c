@@ -39,15 +39,28 @@
  * 故用 lv_font_conv 生成的专用子集字体 assets/fonts/fishing_cjk_16.c。
  * 改文案后同步流程：改文案 -> 跑 tools/gen_font.py -> 跑 tools/check_cjk_coverage.py。 */
 LV_FONT_DECLARE(fishing_cjk_16);
+LV_FONT_DECLARE(fishing_cjk_12);   /* v5 双行胶囊：16px 字高 20px 会叠字 */
 
 static void use_cjk(lv_obj_t *o) {
     lv_obj_set_style_text_font(o, &fishing_cjk_16, LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+static void use_cjk12(lv_obj_t *o) {
+    lv_obj_set_style_text_font(o, &fishing_cjk_12, LV_PART_MAIN | LV_STATE_DEFAULT);
 }
 
 /* ===================== 屏幕布局 ===================== */
 #define SCR_W 240
 #define SCR_H 320
 #define HUD_H 22
+
+/* v5 像素硬边色板（效果图 tools/build_fishing_c2_concept.py 同一套） */
+#define PANEL_C  lv_color_make(16, 32, 54)
+#define PANEL2_C lv_color_make(24, 46, 74)
+#define WHITE_C  lv_color_make(232, 240, 248)
+#define MUTED_C  lv_color_make(140, 164, 190)
+#define GOLD_C   lv_color_make(238, 190, 96)
+#define TEAL_C   lv_color_make(108, 190, 174)
+#define RED_C    lv_color_make(198, 76, 104)
 
 /* 收线轨道像素区域 */
 #define TRK_X 196
@@ -124,7 +137,7 @@ static void nvs_load_save(void) {
 }
 
 static void nvs_save_now(void) {
-    uint8_t buf[512];
+    uint8_t buf[768];   /* v5 schema3 = 20 + 64*11 = 724B，v4 的 512 装不下 */
     int n = fishing_save_serialize(buf, (int)sizeof(buf));
     if (n <= 0) return;
     nvs_handle_t h;
@@ -160,14 +173,40 @@ static const lv_image_dsc_t *const FISH_IMG[FISH_SPECIES_COUNT] = {
     &fish_liyu, &fish_qingyu, &fish_makou, &fish_huangsang, &fish_qiaozui, &fish_luyu,
     &fish_guiyu, &fish_nianyu, &fish_junyu, &fish_ganyu, &fish_xiaohuang, &fish_daiyu,
     &fish_bayu, &fish_bimu, &fish_shiban, &fish_jinqiang, &fish_qiyu, &fish_xiaosha,
+    &fish_ziyu, &fish_heidiao, &fish_haiman,
 };
 static const lv_image_dsc_t *const SIL_IMG[FISH_SPECIES_COUNT] = {
     &sil_baitiao, &sil_jiyu, &sil_luofei, &sil_lianyu, &sil_bianyu, &sil_caoyu,
     &sil_liyu, &sil_qingyu, &sil_makou, &sil_huangsang, &sil_qiaozui, &sil_luyu,
     &sil_guiyu, &sil_nianyu, &sil_junyu, &sil_ganyu, &sil_xiaohuang, &sil_daiyu,
     &sil_bayu, &sil_bimu, &sil_shiban, &sil_jinqiang, &sil_qiyu, &sil_xiaosha,
+    &sil_ziyu, &sil_heidiao, &sil_haiman,
 };
-static const lv_image_dsc_t *const BG_IMG[FISH_SPOT_COUNT] = { &bg_pond, &bg_river, &bg_sea };
+/* 图鉴列表 34x32 缩略图：NEAREST 等比居中，禁止拉伸 */
+static const lv_image_dsc_t *const THUMB_FISH_IMG[FISH_SPECIES_COUNT] = {
+    &thumb_fish_baitiao, &thumb_fish_jiyu, &thumb_fish_luofei, &thumb_fish_lianyu,
+    &thumb_fish_bianyu, &thumb_fish_caoyu, &thumb_fish_liyu, &thumb_fish_qingyu,
+    &thumb_fish_makou, &thumb_fish_huangsang, &thumb_fish_qiaozui, &thumb_fish_luyu,
+    &thumb_fish_guiyu, &thumb_fish_nianyu, &thumb_fish_junyu, &thumb_fish_ganyu,
+    &thumb_fish_xiaohuang, &thumb_fish_daiyu, &thumb_fish_bayu, &thumb_fish_bimu,
+    &thumb_fish_shiban, &thumb_fish_jinqiang, &thumb_fish_qiyu, &thumb_fish_xiaosha,
+    &thumb_fish_ziyu, &thumb_fish_heidiao, &thumb_fish_haiman,
+};
+static const lv_image_dsc_t *const THUMB_SIL_IMG[FISH_SPECIES_COUNT] = {
+    &thumb_sil_baitiao, &thumb_sil_jiyu, &thumb_sil_luofei, &thumb_sil_lianyu,
+    &thumb_sil_bianyu, &thumb_sil_caoyu, &thumb_sil_liyu, &thumb_sil_qingyu,
+    &thumb_sil_makou, &thumb_sil_huangsang, &thumb_sil_qiaozui, &thumb_sil_luyu,
+    &thumb_sil_guiyu, &thumb_sil_nianyu, &thumb_sil_junyu, &thumb_sil_ganyu,
+    &thumb_sil_xiaohuang, &thumb_sil_daiyu, &thumb_sil_bayu, &thumb_sil_bimu,
+    &thumb_sil_shiban, &thumb_sil_jinqiang, &thumb_sil_qiyu, &thumb_sil_xiaosha,
+    &thumb_sil_ziyu, &thumb_sil_heidiao, &thumb_sil_haiman,
+};
+static const lv_image_dsc_t *const BG_IMG[FISH_SPOT_COUNT] = {
+    &bg_pond, &bg_river, &bg_sea, &bg_estuary, &bg_pier,
+};
+static const lv_image_dsc_t *const THUMB_BG_IMG[FISH_SPOT_COUNT] = {
+    &thumb_pond, &thumb_river, &thumb_sea, &thumb_estuary, &thumb_pier,
+};
 /* 钓场里真正会画出来的道具：手上的竿 + 挂在钩上的饵。
  * 这两组图一直在 sprites.h 里，但 v2 的界面从来没引用过 —— 换竿换饵只有
  * 菜单文字变、画面一动不动，玩家会以为没生效。 */
@@ -190,8 +229,9 @@ static lv_obj_t *g_lbl_batt    = NULL;   /* 电量百分比数字（单位由电
 static lv_obj_t *g_batt_body   = NULL;   /* 电池外壳 */
 static lv_obj_t *g_batt_fill   = NULL;   /* 电池内部电量条 */
 static lv_obj_t *g_batt_nub    = NULL;   /* 电池正极凸点 */
-static lv_obj_t *g_lbl_spot    = NULL;   /* 钓点名（挂在场景面板右上角的胶囊里） */
-static lv_obj_t *g_spot_cap    = NULL;   /* 钓点名胶囊底 */
+static lv_obj_t *g_lbl_spot    = NULL;   /* 钓场名（场景左上角双行胶囊第 1 行） */
+static lv_obj_t *g_lbl_subspot = NULL;   /* 标点 + 主出鱼钩子（第 2 行） */
+static lv_obj_t *g_spot_cap    = NULL;   /* 双行胶囊底 */
 static lv_obj_t *g_lbl_hint    = NULL;   /* 底部提示 */
 
 /* 钓鱼场景 */
@@ -237,12 +277,39 @@ static lv_obj_t *g_codex       = NULL;
 static lv_obj_t *g_cdx_img     = NULL;
 static lv_obj_t *g_cdx_name    = NULL;
 static lv_obj_t *g_cdx_meta    = NULL;   /* 已收录：最大纪录 + 钓获数；未收录：稀有度 + 栖息地 */
-static lv_obj_t *g_cdx_hist    = NULL;   /* v4 ③履历：首次第 N 日 + 最大重量（已收录才显示） */
+static lv_obj_t *g_cdx_hist    = NULL;   /* ③履历：首次第 N 日 · 首捕标点（已收录才显示） */
 static lv_obj_t *g_cdx_size    = NULL;   /* 体长范围 + 偏好饵料（收录与否都显示，是"怎么钓"的提示） */
 static lv_obj_t *g_cdx_desc    = NULL;
 static lv_obj_t *g_cdx_lore    = NULL;   /* 性格钩子：这鱼什么脾气（新增，纯文案） */
 static lv_obj_t *g_cdx_mile    = NULL;   /* 收集里程碑：下一个里程碑叫什么、还差几种 */
 static lv_obj_t *g_cdx_prog    = NULL;
+
+/* v5 C+2 新页面：选钓场 / 选标点 / 图鉴列表 */
+static lv_obj_t *g_spot_pick   = NULL;
+static lv_obj_t *g_spot_rows[FISH_SPOT_COUNT];
+static lv_obj_t *g_spot_thumbs[FISH_SPOT_COUNT];
+static lv_obj_t *g_spot_names[FISH_SPOT_COUNT];
+static lv_obj_t *g_spot_subs[FISH_SPOT_COUNT];
+static lv_obj_t *g_spot_hooks[FISH_SPOT_COUNT];
+static lv_obj_t *g_spot_new[FISH_SPOT_COUNT];
+static lv_obj_t *g_spot_selbar = NULL;
+static int g_spot_pick_idx = 0;   /* 选钓场页光标（含未解锁场，只查看不进入） */
+
+static lv_obj_t *g_sub_pick    = NULL;
+static lv_obj_t *g_sub_title   = NULL;
+static lv_obj_t *g_sub_cards[2];
+static lv_obj_t *g_sub_names[2];
+static lv_obj_t *g_sub_fish[2];
+static lv_obj_t *g_sub_hooks[2];
+static lv_obj_t *g_sub_marks[2];
+
+#define CODEX_LIST_ROWS 4
+static lv_obj_t *g_cdx_list    = NULL;
+static lv_obj_t *g_cdx_l_img[CODEX_LIST_ROWS];
+static lv_obj_t *g_cdx_l_name[CODEX_LIST_ROWS];
+static lv_obj_t *g_cdx_l_where[CODEX_LIST_ROWS];
+static lv_obj_t *g_cdx_l_when[CODEX_LIST_ROWS];
+static lv_obj_t *g_cdx_l_size[CODEX_LIST_ROWS];
 
 /* ===================== 按键队列 ===================== */
 typedef struct { bsp_btn_t btn; bsp_btn_ev_t ev; } btn_ev_t;
@@ -260,6 +327,22 @@ static lv_obj_t *make_label(lv_obj_t *parent, const char *txt, int x, int y, lv_
     use_cjk(l);
     lv_obj_set_style_text_color(l, color, 0);
     return l;
+}
+
+/* 像素硬边面板：外 1px 深色 + 内亮边，直角、零内边距。
+ * lv_obj_create() 默认带约 13px padding，不清零所有子元素都会右下偏 —— 这里统一处理。 */
+static lv_obj_t *make_panel(lv_obj_t *parent, int x, int y, int w, int h, lv_color_t fill) {
+    lv_obj_t *p = lv_obj_create(parent);
+    lv_obj_set_size(p, w, h);
+    lv_obj_set_pos(p, x, y);
+    lv_obj_set_style_bg_color(p, fill, 0);
+    lv_obj_set_style_bg_opa(p, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(p, lv_color_make(120, 156, 190), 0);
+    lv_obj_set_style_border_width(p, 1, 0);
+    lv_obj_set_style_radius(p, 0, 0);
+    lv_obj_set_style_pad_all(p, 0, 0);
+    lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
+    return p;
 }
 
 /* ===================== 只在"真的变了"才写给 LVGL =====================
@@ -285,6 +368,24 @@ static bool set_img_by_key(lv_obj_t *img, int *cache, int key, const lv_image_ds
     *cache = key;
     lv_img_set_src(img, dsc);
     return true;
+}
+
+/* 标点主出鱼提示：从 gold_a 里取前两条鱼名，拼「泥滩 · 鲈鱼/鲻鱼」。
+ * 鱼种数、标点鱼掩码都从逻辑层接口取，不在 UI 写死 24/27/10。 */
+static void subspot_hint(int ss, char *buf, int cap) {
+    buf[0] = '\0';
+    const subspot_cfg_t *info = fishing_subspot_info(ss);
+    if (!info || cap <= 0) return;
+    const char *names[2] = { NULL, NULL };
+    int n = 0;
+    for (int i = 0; i < FISH_SPECIES_COUNT && n < 2; ++i) {
+        if ((info->gold_a & (1u << (unsigned)i)) == 0) continue;
+        const fish_species_t *f = fishing_species_info(i);
+        if (f) names[n++] = f->name;
+    }
+    if (n == 0) snprintf(buf, (size_t)cap, "普通水域");
+    else if (n == 1) snprintf(buf, (size_t)cap, "%s", names[0]);
+    else snprintf(buf, (size_t)cap, "%s/%s", names[0], names[1]);
 }
 
 /* ===================== UI 构造 ===================== */
@@ -408,33 +509,36 @@ static void build_ui(void) {
     lv_obj_set_style_pad_all(g_scene, 0, 0);
     lv_obj_clear_flag(g_scene, LV_OBJ_FLAG_SCROLLABLE);
 
-    /* 环境标签：左上角「时段 · 天气 / 当日鱼讯」两行。
-     * 底下一层半透明黑底 —— 天空是亮蓝的，白字直接压上去看不清。
-     * y=30 起（在右上角钓点胶囊 y=6~26 之下），宽 214 不与胶囊重叠；
-     * 两行到 y≈74，左侧空旷无其它控件，不遮中部主角鱼（水面 y≈118+）。 */
-    g_lbl_env = make_label(g_scene, "", 8, 30, lv_color_white());
-    lv_obj_set_width(g_lbl_env, 214);           /* 留右缘余量，鱼讯一行放得下 */
+    /* v5 主界面双行胶囊：绝对 (10,34)~(150,72)，相对场景面板 (10,12)。
+     * 第 1 行钓场，第 2 行「标点 · 主出鱼」，分隔线 y=68（相对 46）。
+     * 环境标签下移到 y=74，避免压住胶囊 —— v4 的鱼讯一条都不能丢。 */
+    g_spot_cap = make_panel(g_scene, 10, 12, 140, 38, lv_color_make(16, 32, 54));
+    g_lbl_spot = make_label(g_spot_cap, "静水塘", 8, 3, lv_color_white());
+    g_lbl_subspot = make_label(g_spot_cap, "芦苇荡 · 白条/鲫鱼", 8, 19,
+                               lv_color_make(108, 190, 174));
+    use_cjk12(g_lbl_spot);
+    use_cjk12(g_lbl_subspot);
+    lv_obj_set_width(g_lbl_subspot, 128);
+    lv_label_set_long_mode(g_lbl_subspot, LV_LABEL_LONG_DOT);
+    {
+        lv_obj_t *sep = lv_obj_create(g_spot_cap);
+        lv_obj_set_size(sep, 124, 1);
+        lv_obj_set_pos(sep, 8, 34);
+        lv_obj_set_style_bg_color(sep, lv_color_make(46, 72, 100), 0);
+        lv_obj_set_style_bg_opa(sep, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(sep, 0, 0);
+        lv_obj_set_style_pad_all(sep, 0, 0);
+        lv_obj_clear_flag(sep, LV_OBJ_FLAG_SCROLLABLE);
+    }
+
+    /* 环境标签：胶囊下方「时段 · 天气 / 当日鱼讯」两行，宽 140 不与右侧道具冲突。 */
+    g_lbl_env = make_label(g_scene, "", 10, 52, lv_color_white());
+    lv_obj_set_width(g_lbl_env, 140);
     lv_label_set_long_mode(g_lbl_env, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_line_space(g_lbl_env, 2, 0);
     lv_obj_set_style_bg_color(g_lbl_env, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(g_lbl_env, 110, 0);
     lv_obj_set_style_pad_all(g_lbl_env, 3, 0);
-
-    /* 钓点名：挂在场景面板右上角的小胶囊里。
-     * 放在 g_scene 内部 → 切到菜单/图鉴时随场景一起隐藏，show_only() 不用改。
-     * 绝对位置 (172,28)~(229,47)，该高度上右侧圆角只吃到 x=237，不会切到文字。 */
-    g_spot_cap = lv_obj_create(g_scene);
-    lv_obj_set_size(g_spot_cap, 58, 20);
-    lv_obj_set_pos(g_spot_cap, 172, 6);
-    lv_obj_set_style_bg_color(g_spot_cap, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(g_spot_cap, 140, 0);
-    lv_obj_set_style_border_width(g_spot_cap, 0, 0);
-    lv_obj_set_style_radius(g_spot_cap, 10, 0);
-    lv_obj_set_style_pad_all(g_spot_cap, 0, 0);
-    lv_obj_clear_flag(g_spot_cap, LV_OBJ_FLAG_SCROLLABLE);
-
-    g_lbl_spot = make_label(g_spot_cap, "静水塘", 0, 0, lv_color_white());
-    lv_obj_center(g_lbl_spot);
 
     /* 鱼线先建：它要压在竿和漂下面。
      * lv_line 的点是"相对自身坐标"的，所以对象固定在 (0,0)、点直接用场景坐标，
@@ -616,7 +720,7 @@ static void build_ui(void) {
     g_cdx_meta = make_label(g_codex, "", 8, 66, lv_color_make(255, 208, 90));  /* 金色：突出"最大纪录" */
     lv_obj_set_width(g_cdx_meta, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_meta, LV_LABEL_LONG_DOT);
-    /* ③钓鱼履历（v4）：已收录才显示"首次第 N 日 · 最大 X.X 千克"；金色沿用最大纪录行。 */
+    /* ③钓鱼履历：已收录才显示"首次第 N 日 · 首捕标点"；金色沿用最大纪录行。 */
     g_cdx_hist = make_label(g_codex, "", 8, 88, lv_color_make(255, 208, 90));
     lv_obj_set_width(g_cdx_hist, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_hist, LV_LABEL_LONG_DOT);
@@ -640,6 +744,130 @@ static void build_ui(void) {
     lv_obj_set_width(g_cdx_mile, SCR_W - 16);
     lv_label_set_long_mode(g_cdx_mile, LV_LABEL_LONG_DOT);
     g_cdx_prog = make_label(g_codex, "", 8, 242, lv_color_make(190, 210, 240));
+
+    /* ================= v5 C+2：选钓场（5 行） ================= */
+    g_spot_pick = make_panel(scr, 0, HUD_H, SCR_W, SCR_H - HUD_H,
+                             lv_color_make(8, 16, 30));
+    lv_obj_set_style_pad_all(g_spot_pick, 0, 0);
+    lv_obj_add_flag(g_spot_pick, LV_OBJ_FLAG_HIDDEN);
+    make_label(g_spot_pick, "选钓场", 14, 10, lv_color_white());
+    make_label(g_spot_pick, "天色为首，去哪下竿", 14, 30, lv_color_make(140, 164, 190));
+    /* 五行逐条展开（不用循环）：布局检查器按源码常量还原坐标，
+     * 数组循环里的 i 求不出值，会漏检选钓场页的出屏/压盖。 */
+    {
+        lv_obj_t *spot_row0 = make_panel(g_spot_pick, 10, 46, 220, 42, PANEL_C);
+        g_spot_rows[0] = spot_row0;
+        g_spot_thumbs[0] = lv_img_create(spot_row0); lv_img_set_src(g_spot_thumbs[0], THUMB_BG_IMG[0]); lv_obj_set_pos(g_spot_thumbs[0], 6, 5);
+        g_spot_names[0] = make_label(spot_row0, "", 48, 4, WHITE_C);
+        g_spot_subs[0]  = make_label(spot_row0, "2 处标点", 48, 20, TEAL_C);
+        g_spot_hooks[0] = make_label(spot_row0, "", 48, 31, MUTED_C);
+        g_spot_new[0]   = make_label(spot_row0, "", 192, 20, GOLD_C);
+        lv_obj_t *spot_row1 = make_panel(g_spot_pick, 10, 93, 220, 42, PANEL_C);
+        g_spot_rows[1] = spot_row1;
+        g_spot_thumbs[1] = lv_img_create(spot_row1); lv_img_set_src(g_spot_thumbs[1], THUMB_BG_IMG[1]); lv_obj_set_pos(g_spot_thumbs[1], 6, 5);
+        g_spot_names[1] = make_label(spot_row1, "", 48, 4, WHITE_C);
+        g_spot_subs[1]  = make_label(spot_row1, "2 处标点", 48, 20, TEAL_C);
+        g_spot_hooks[1] = make_label(spot_row1, "", 48, 31, MUTED_C);
+        g_spot_new[1]   = make_label(spot_row1, "", 192, 20, GOLD_C);
+        lv_obj_t *spot_row2 = make_panel(g_spot_pick, 10, 140, 220, 42, PANEL_C);
+        g_spot_rows[2] = spot_row2;
+        g_spot_thumbs[2] = lv_img_create(spot_row2); lv_img_set_src(g_spot_thumbs[2], THUMB_BG_IMG[2]); lv_obj_set_pos(g_spot_thumbs[2], 6, 5);
+        g_spot_names[2] = make_label(spot_row2, "", 48, 4, WHITE_C);
+        g_spot_subs[2]  = make_label(spot_row2, "2 处标点", 48, 20, TEAL_C);
+        g_spot_hooks[2] = make_label(spot_row2, "", 48, 31, MUTED_C);
+        g_spot_new[2]   = make_label(spot_row2, "", 192, 20, GOLD_C);
+        lv_obj_t *spot_row3 = make_panel(g_spot_pick, 10, 187, 220, 42, PANEL_C);
+        g_spot_rows[3] = spot_row3;
+        g_spot_thumbs[3] = lv_img_create(spot_row3); lv_img_set_src(g_spot_thumbs[3], THUMB_BG_IMG[3]); lv_obj_set_pos(g_spot_thumbs[3], 6, 5);
+        g_spot_names[3] = make_label(spot_row3, "", 48, 4, WHITE_C);
+        g_spot_subs[3]  = make_label(spot_row3, "2 处标点", 48, 20, TEAL_C);
+        g_spot_hooks[3] = make_label(spot_row3, "", 48, 31, MUTED_C);
+        g_spot_new[3]   = make_label(spot_row3, "", 192, 20, GOLD_C);
+        lv_obj_t *spot_row4 = make_panel(g_spot_pick, 10, 234, 220, 42, PANEL_C);
+        g_spot_rows[4] = spot_row4;
+        g_spot_thumbs[4] = lv_img_create(spot_row4); lv_img_set_src(g_spot_thumbs[4], THUMB_BG_IMG[4]); lv_obj_set_pos(g_spot_thumbs[4], 6, 5);
+        g_spot_names[4] = make_label(spot_row4, "", 48, 4, WHITE_C);
+        g_spot_subs[4]  = make_label(spot_row4, "2 处标点", 48, 20, TEAL_C);
+        g_spot_hooks[4] = make_label(spot_row4, "", 48, 31, MUTED_C);
+        g_spot_new[4]   = make_label(spot_row4, "", 192, 20, GOLD_C);
+    }
+    g_spot_selbar = lv_obj_create(g_spot_pick);
+    lv_obj_set_size(g_spot_selbar, 3, 42);
+    lv_obj_set_pos(g_spot_selbar, 10, 46);
+    lv_obj_set_style_bg_color(g_spot_selbar, lv_color_make(198, 76, 104), 0);
+    lv_obj_set_style_bg_opa(g_spot_selbar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(g_spot_selbar, 0, 0);
+    lv_obj_set_style_pad_all(g_spot_selbar, 0, 0);
+    lv_obj_clear_flag(g_spot_selbar, LV_OBJ_FLAG_SCROLLABLE);
+
+    /* ================= v5 C+2：选标点（2 张大卡 + 提示卡） ================= */
+    g_sub_pick = make_panel(scr, 0, HUD_H, SCR_W, SCR_H - HUD_H,
+                            lv_color_make(6, 14, 28));
+    lv_obj_set_style_pad_all(g_sub_pick, 0, 0);
+    lv_obj_add_flag(g_sub_pick, LV_OBJ_FLAG_HIDDEN);
+    {
+        /* 预压暗背景图：RGB565 不透明，绝不用运行时半透明全屏层 */
+        lv_obj_t *dark = lv_img_create(g_sub_pick);
+        lv_img_set_src(dark, &bg_estuary_dark);
+        lv_obj_set_pos(dark, 0, 0);   /* 先建图片沉底，后建文字自然盖在上面 */
+    }
+    g_sub_title = make_label(g_sub_pick, "选标点", 14, 10, lv_color_white());
+    make_label(g_sub_pick, "同一片水，不同位置不一样的鱼", 14, 30,
+               lv_color_make(108, 190, 174));
+    {
+        lv_obj_t *sub_card0 = make_panel(g_sub_pick, 14, 50, 212, 74, PANEL_C);
+        g_sub_cards[0] = sub_card0;
+        g_sub_names[0] = make_label(sub_card0, "", 12, 8, WHITE_C);
+        g_sub_fish[0]  = make_label(sub_card0, "", 12, 30, GOLD_C);
+        g_sub_hooks[0] = make_label(sub_card0, "", 12, 50, MUTED_C);
+        g_sub_marks[0] = make_label(sub_card0, "", 172, 8, RED_C);
+        lv_obj_t *sub_card1 = make_panel(g_sub_pick, 14, 134, 212, 74, PANEL_C);
+        g_sub_cards[1] = sub_card1;
+        g_sub_names[1] = make_label(sub_card1, "", 12, 8, WHITE_C);
+        g_sub_fish[1]  = make_label(sub_card1, "", 12, 30, GOLD_C);
+        g_sub_hooks[1] = make_label(sub_card1, "", 12, 50, MUTED_C);
+        g_sub_marks[1] = make_label(sub_card1, "", 172, 8, RED_C);
+    }
+    {
+        lv_obj_t *note = make_panel(g_sub_pick, 14, 224, 212, 40,
+                                    lv_color_make(16, 32, 54));
+        make_label(note, "标点只是提高概率，不锁死", 8, 4, lv_color_make(108, 190, 174));
+        make_label(note, "换个位置，稀客也会来，只是少", 8, 22, lv_color_make(140, 164, 190));
+    }
+
+    /* ================= v5 C+2：图鉴列表（4 行） ================= */
+    g_cdx_list = make_panel(scr, 0, HUD_H, SCR_W, SCR_H - HUD_H,
+                            lv_color_make(8, 16, 30));
+    lv_obj_set_style_pad_all(g_cdx_list, 0, 0);
+    lv_obj_add_flag(g_cdx_list, LV_OBJ_FLAG_HIDDEN);
+    make_label(g_cdx_list, "图鉴 · 钓获", 14, 10, lv_color_white());
+    make_label(g_cdx_list, "每一条都记着是在哪钓的", 14, 30, lv_color_make(140, 164, 190));
+    {
+        lv_obj_t *cdx_row0 = make_panel(g_cdx_list, 12, 46, 216, 52, PANEL_C);
+        g_cdx_l_img[0] = lv_img_create(cdx_row0); lv_img_set_src(g_cdx_l_img[0], &thumb_fish_baitiao); lv_obj_set_pos(g_cdx_l_img[0], 6, 8);
+        g_cdx_l_name[0]  = make_label(cdx_row0, "", 48, 4, WHITE_C);
+        g_cdx_l_where[0] = make_label(cdx_row0, "", 48, 21, GOLD_C);
+        g_cdx_l_when[0]  = make_label(cdx_row0, "", 48, 37, MUTED_C);
+        g_cdx_l_size[0]  = make_label(cdx_row0, "", 184, 21, TEAL_C);
+        lv_obj_t *cdx_row1 = make_panel(g_cdx_list, 12, 104, 216, 52, PANEL_C);
+        g_cdx_l_img[1] = lv_img_create(cdx_row1); lv_img_set_src(g_cdx_l_img[1], &thumb_fish_baitiao); lv_obj_set_pos(g_cdx_l_img[1], 6, 8);
+        g_cdx_l_name[1]  = make_label(cdx_row1, "", 48, 4, WHITE_C);
+        g_cdx_l_where[1] = make_label(cdx_row1, "", 48, 21, GOLD_C);
+        g_cdx_l_when[1]  = make_label(cdx_row1, "", 48, 37, MUTED_C);
+        g_cdx_l_size[1]  = make_label(cdx_row1, "", 184, 21, TEAL_C);
+        lv_obj_t *cdx_row2 = make_panel(g_cdx_list, 12, 162, 216, 52, PANEL_C);
+        g_cdx_l_img[2] = lv_img_create(cdx_row2); lv_img_set_src(g_cdx_l_img[2], &thumb_fish_baitiao); lv_obj_set_pos(g_cdx_l_img[2], 6, 8);
+        g_cdx_l_name[2]  = make_label(cdx_row2, "", 48, 4, WHITE_C);
+        g_cdx_l_where[2] = make_label(cdx_row2, "", 48, 21, GOLD_C);
+        g_cdx_l_when[2]  = make_label(cdx_row2, "", 48, 37, MUTED_C);
+        g_cdx_l_size[2]  = make_label(cdx_row2, "", 184, 21, TEAL_C);
+        lv_obj_t *cdx_row3 = make_panel(g_cdx_list, 12, 220, 216, 52, PANEL_C);
+        g_cdx_l_img[3] = lv_img_create(cdx_row3); lv_img_set_src(g_cdx_l_img[3], &thumb_fish_baitiao); lv_obj_set_pos(g_cdx_l_img[3], 6, 8);
+        g_cdx_l_name[3]  = make_label(cdx_row3, "", 48, 4, WHITE_C);
+        g_cdx_l_where[3] = make_label(cdx_row3, "", 48, 21, GOLD_C);
+        g_cdx_l_when[3]  = make_label(cdx_row3, "", 48, 37, MUTED_C);
+        g_cdx_l_size[3]  = make_label(cdx_row3, "", 184, 21, TEAL_C);
+    }
 }
 
 /* 面板互斥显示。
@@ -656,16 +884,25 @@ static void show_only(int which) {
     lv_obj_add_flag(g_result, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_menu,   LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(g_codex,  LV_OBJ_FLAG_HIDDEN);
-    if (which == 0) lv_obj_clear_flag(g_scene,  LV_OBJ_FLAG_HIDDEN);
-    if (which == 1) lv_obj_clear_flag(g_reel,   LV_OBJ_FLAG_HIDDEN);
-    if (which == 2) lv_obj_clear_flag(g_result, LV_OBJ_FLAG_HIDDEN);
-    if (which == 3) lv_obj_clear_flag(g_menu,   LV_OBJ_FLAG_HIDDEN);
-    if (which == 4) lv_obj_clear_flag(g_codex,  LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_spot_pick, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_sub_pick,  LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(g_cdx_list,  LV_OBJ_FLAG_HIDDEN);
+    if (which == 0) lv_obj_clear_flag(g_scene,     LV_OBJ_FLAG_HIDDEN);
+    if (which == 1) lv_obj_clear_flag(g_reel,      LV_OBJ_FLAG_HIDDEN);
+    if (which == 2) lv_obj_clear_flag(g_result,    LV_OBJ_FLAG_HIDDEN);
+    if (which == 3) lv_obj_clear_flag(g_menu,      LV_OBJ_FLAG_HIDDEN);
+    if (which == 4) lv_obj_clear_flag(g_codex,     LV_OBJ_FLAG_HIDDEN);
+    if (which == 5) lv_obj_clear_flag(g_spot_pick, LV_OBJ_FLAG_HIDDEN);
+    if (which == 6) lv_obj_clear_flag(g_sub_pick,  LV_OBJ_FLAG_HIDDEN);
+    if (which == 7) lv_obj_clear_flag(g_cdx_list,  LV_OBJ_FLAG_HIDDEN);
 
     const char *hint = NULL;
     switch (which) {
         case 1: hint = "按住 OK 抬竿 · 松开落下"; break;   /* 收线：原 refresh_reel 里每帧重设 */
-        case 4: hint = "上下翻·OK详情·长按返回";  break;   /* 图鉴：原 refresh_codex 里每帧重设 */
+        case 4: hint = "上下翻·OK详情·长按返回";  break;   /* 图鉴详情 */
+        case 5: hint = "上下选钓场 · OK进标点"; break;
+        case 6: hint = "左右选标点 · OK下竿"; break;
+        case 7: hint = "上下翻·OK详情·长按返回"; break;
         default: break;   /* 场景/结算/菜单的提示随状态或选中项变化，仍留在各自 refresh（已带缓存） */
     }
     if (hint) set_text_cached(g_lbl_hint, hint);
@@ -882,9 +1119,17 @@ static void refresh_scene(const fishing_status_t *st) {
     set_img_by_key(g_rod,  &s_rod_img,  (int)st->rod,  ROD_IMG[st->rod]);
     set_img_by_key(g_bait, &s_bait_img, (int)st->bait, BAIT_IMG[st->bait]);
 
-    /* 钓点名只在文案变化时写；宽度变了才需要重新居中（「深海」比三字名窄 16px） */
-    if (set_text_cached(g_lbl_spot, fishing_spot_name(st->spot))) {
-        lv_obj_center(g_lbl_spot);
+    /* 双行胶囊：钓场 + 标点/主出鱼。两者都走文本缓存，标点没变时零 LVGL 调用。 */
+    set_text_cached(g_lbl_spot, fishing_spot_name(st->spot));
+    {
+        char hint[64];
+        char cap[128];
+        subspot_hint(fishing_subspot(), hint, (int)sizeof(hint));
+        if (fishing_subspot() >= 0)
+            snprintf(cap, sizeof(cap), "%s · %s", fishing_subspot_name(fishing_subspot()), hint);
+        else
+            snprintf(cap, sizeof(cap), "%s", hint);
+        set_text_cached(g_lbl_subspot, cap);
     }
 
     char buf[160];
@@ -1079,22 +1324,29 @@ static void refresh_codex(const fishing_status_t *st) {
                  fishing_codex_is_perfect(idx) ? " ✓" : "");
         set_text_cached(g_cdx_name, buf);
         /* 最大纪录放在图鉴第二行最显眼处（原来是"最长 …"，措辞改成"最大"，
-         * 和玩家说的"同类最大鱼的尺寸"直接对上），并带上累计钓获条数。 */
-        snprintf(buf, sizeof(buf), "最大 %d.%d 厘米 · 已钓 %d 条",
-                 fishing_codex_best_len(idx) / 10, fishing_codex_best_len(idx) % 10,
-                 fishing_codex_count(idx));
-        set_text_cached(g_cdx_meta, buf);
-        /* ③履历：首次钓鱼日 + 最大重量。0 值（老存档迁移/未设置）显示措辞，
-         * 绝不让"第 0 天""0.0 千克"这种破绽出现在屏上。 */
+         * 和玩家说的"同类最大鱼的尺寸"直接对上）。累计钓获条数在底部进度行已有，
+         * 这一行腾出的位置给最大重量，v4 的履历信息不因加标点而丢失。 */
+        {
+            int bl = fishing_codex_best_len(idx);
+            int wg = fishing_codex_best_wgt(idx);
+            if (wg > 0) snprintf(buf, sizeof(buf), "最大 %d.%d 厘米 · %d.%d千克",
+                                 bl / 10, bl % 10, wg / 1000, (wg % 1000) / 100);
+            else        snprintf(buf, sizeof(buf), "最大 %d.%d 厘米 · 重量未记录",
+                                 bl / 10, bl % 10);
+            set_text_cached(g_cdx_meta, buf);
+        }
+        /* ③履历：首次钓鱼日 + 首捕标点。0 值（老存档迁移/未设置）显示措辞，
+         * 绝不让"第 0 天"这种破绽出现在屏上。标点只显示玩家自己钓到时的位置，
+         * 未收录行不剧透 —— 那一行只给主栖息地。 */
         {
             int fd = fishing_codex_first_day(idx);
-            int wg = fishing_codex_best_wgt(idx);
-            char day_buf[24], wgt_buf[24];   /* "第%d日"最坏 17 字节、"%d.%d千克"最坏 16 字节，24 留足 */
+            int ss = fishing_codex_subspot(idx);
+            char day_buf[24];   /* "第%d日"最坏 17 字节，24 留足 */
             if (fd > 0) snprintf(day_buf, sizeof(day_buf), "第%d日", fd);
             else        snprintf(day_buf, sizeof(day_buf), "很久以前");
-            if (wg > 0) snprintf(wgt_buf, sizeof(wgt_buf), "%d.%d千克", wg / 1000, (wg % 1000) / 100);
-            else        snprintf(wgt_buf, sizeof(wgt_buf), "未记录");
-            snprintf(buf, sizeof(buf), "首次 %s · 最大 %s", day_buf, wgt_buf);
+            if (ss >= 0) snprintf(buf, sizeof(buf), "首次 %s · %s",
+                                  day_buf, fishing_subspot_name(ss));
+            else         snprintf(buf, sizeof(buf), "首次 %s · 标点未知", day_buf);
             set_text_cached(g_cdx_hist, buf);
         }
         set_text_cached(g_cdx_desc, f->desc);
@@ -1140,6 +1392,137 @@ static void refresh_codex(const fishing_status_t *st) {
     /* 「上下翻·OK详情·长按返回」是面板固定文案，已移到 show_only(4) 里只在切面板时写一次 */
 }
 
+/* ===================== v5 C+2：三个新页面刷新 ===================== */
+static int subspot_count_of(int spot) {
+    int n = 0;
+    for (int i = 0; i < FISH_SUBSPOT_COUNT; ++i) {
+        const subspot_cfg_t *ss = fishing_subspot_info(i);
+        if (ss && ss->spot == (unsigned char)spot) n++;
+    }
+    return n;
+}
+
+static const char *period_short(unsigned mask) {
+    if (mask & FISH_PERF_MORNING) return "晨";
+    if (mask & FISH_PERF_NOON)    return "午";
+    if (mask & FISH_PERF_DUSK)    return "昏";
+    if (mask & FISH_PERF_NIGHT)   return "夜";
+    return "全天";
+}
+
+static void refresh_spot_pick(void) {
+    static const char *const HOOKS[FISH_SPOT_COUNT] = {
+        "晨晴 · 白条成群", "昏雨 · 鳜鱼藏石缝", "夜晴 · 金枪旗鱼",
+        "黄昏 · 鲈鱼洄游", "夜晴 · 灯光诱鱼",
+    };
+    static int drawn_sel = -1;
+    char buf[64];
+    for (int i = 0; i < FISH_SPOT_COUNT; ++i) {
+        snprintf(buf, sizeof(buf), "%d 处标点", subspot_count_of(i));
+        set_text_cached(g_spot_subs[i], buf);
+        set_text_cached(g_spot_names[i], fishing_spot_name((spot_t)i));
+        set_text_cached(g_spot_hooks[i], HOOKS[i]);
+        set_text_cached(g_spot_new[i], (i >= 3 && i < FISH_SPOT_COUNT) ? "NEW" : "");
+    }
+    /* 选中态只在光标真的移动时碰样式（周期性重设样式=整页重绘） */
+    if (drawn_sel != g_spot_pick_idx) {
+        if (g_spot_pick_idx < 0) g_spot_pick_idx = 0;
+        if (g_spot_pick_idx >= FISH_SPOT_COUNT) g_spot_pick_idx = FISH_SPOT_COUNT - 1;
+        for (int i = 0; i < FISH_SPOT_COUNT; ++i)
+            lv_obj_set_style_bg_color(g_spot_rows[i],
+                (i == g_spot_pick_idx) ? lv_color_make(24, 46, 74) : lv_color_make(16, 32, 54), 0);
+        lv_obj_set_pos(g_spot_selbar, 10, 46 + g_spot_pick_idx * 47);
+        drawn_sel = g_spot_pick_idx;
+    }
+}
+
+static void refresh_sub_pick(void) {
+    fishing_status_t st;
+    fishing_get_status(&st);
+    char buf[96];
+    snprintf(buf, sizeof(buf), "%s · 选标点", fishing_spot_name(st.spot));
+    set_text_cached(g_sub_title, buf);
+
+    int ids[2] = { -1, -1 };
+    int n = 0;
+    for (int i = 0; i < FISH_SUBSPOT_COUNT && n < 2; ++i) {
+        const subspot_cfg_t *ss = fishing_subspot_info(i);
+        if (ss && ss->spot == (unsigned char)st.spot) ids[n++] = i;
+    }
+    static int drawn_sel = -999;
+    const int cur = fishing_subspot();
+    for (int i = 0; i < 2; ++i) {
+        if (ids[i] < 0) {
+            set_text_cached(g_sub_names[i], "");
+            set_text_cached(g_sub_fish[i], "");
+            set_text_cached(g_sub_hooks[i], "");
+            set_text_cached(g_sub_marks[i], "");
+            continue;
+        }
+        const subspot_cfg_t *ss = fishing_subspot_info(ids[i]);
+        char fish_hint[64];
+        subspot_hint(ids[i], fish_hint, (int)sizeof(fish_hint));
+        set_text_cached(g_sub_names[i], ss->name);
+        snprintf(buf, sizeof(buf), "出鱼：%s", fish_hint);
+        set_text_cached(g_sub_fish[i], buf);
+        set_text_cached(g_sub_hooks[i], ss->hook);
+        set_text_cached(g_sub_marks[i], (ids[i] == cur) ? "选中" : "");
+    }
+    if (drawn_sel != cur) {
+        for (int i = 0; i < 2; ++i) {
+            if (ids[i] < 0) continue;
+            lv_obj_set_style_border_color(g_sub_cards[i],
+                (ids[i] == cur) ? lv_color_make(198, 76, 104)
+                                : lv_color_make(120, 156, 190), 0);
+        }
+        drawn_sel = cur;
+    }
+}
+
+static void refresh_codex_list(void) {
+    static int img_key[CODEX_LIST_ROWS] = { -9999, -9999, -9999, -9999 };
+    const int top = fishing_codex_cursor();
+    fishing_status_t s2;
+    fishing_get_status(&s2);
+    char buf[128];
+    for (int r = 0; r < CODEX_LIST_ROWS; ++r) {
+        const int idx = (top + r) % FISH_SPECIES_COUNT;
+        const fish_species_t *f = fishing_species_info(idx);
+        if (!f) continue;
+        const bool seen = fishing_codex_is_seen(idx);
+        const int ss = seen ? fishing_codex_subspot(idx) : -1;
+        const int key = seen ? idx : -(idx + 1);
+        if (key != img_key[r]) {
+            img_key[r] = key;
+            lv_img_set_src(g_cdx_l_img[r], seen ? THUMB_FISH_IMG[idx] : THUMB_SIL_IMG[idx]);
+        }
+        snprintf(buf, sizeof(buf), "%d. %s", idx + 1, seen ? f->name : "???");
+        set_text_cached(g_cdx_l_name[r], buf);
+        if (seen && ss >= 0)
+            snprintf(buf, sizeof(buf), "%s·%s",
+                     fishing_spot_name((spot_t)f->spot), fishing_subspot_name(ss));
+        else
+            snprintf(buf, sizeof(buf), "%s", fishing_spot_name((spot_t)f->spot));
+        set_text_cached(g_cdx_l_where[r], buf);
+        {
+            const char *bait = first_bait_name(f->bait_mask);
+            if (bait) snprintf(buf, sizeof(buf), "%s · %s", period_short(f->period_pref), bait);
+            else      snprintf(buf, sizeof(buf), "%s", period_short(f->period_pref));
+        }
+        set_text_cached(g_cdx_l_when[r], buf);
+        if (seen) {
+            const int bl = fishing_codex_best_len(idx);
+            snprintf(buf, sizeof(buf), "%d.%dcm", bl / 10, bl % 10);
+        } else {
+            snprintf(buf, sizeof(buf), "%d-%dcm", f->len_min_mm / 10, f->len_max_mm / 10);
+        }
+        set_text_cached(g_cdx_l_size[r], buf);
+    }
+    /* 底部计数行动态生成：数量一律取常量，效果图里的「27/12」不许抄进源码 */
+    snprintf(buf, sizeof(buf), "已收录 %d 种 · 标点 %d 处", s2.codex_total, FISH_SUBSPOT_COUNT);
+    set_text_cached(g_lbl_hint, buf);
+}
+
 static void refresh_ui(void) {
     fishing_status_t st;
     fishing_get_status(&st);
@@ -1148,6 +1531,9 @@ static void refresh_ui(void) {
         case STATE_MENU:                       show_only(3); refresh_menu(&st);        break;
         case STATE_CODEX:
         case STATE_CODEX_INFO:                 show_only(4); refresh_codex(&st);       break;
+        case STATE_SPOT_SELECT:                show_only(5); refresh_spot_pick();      break;
+        case STATE_SUBSPOT:                    show_only(6); refresh_sub_pick();       break;
+        case STATE_CODEX_LIST:                 show_only(7); refresh_codex_list();     break;
         case STATE_REELING:                    show_only(1); refresh_reel(&st);        break;
         case STATE_CATCH:
         case STATE_ESCAPE:                     show_only(2); refresh_result(&st);      break;
@@ -1254,7 +1640,55 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
         return;
     }
 
-    /* ---- 图鉴 ---- */
+    /* ---- v5 选钓场 ---- */
+    if (st.state == STATE_SPOT_SELECT) {
+        if (ev != BSP_BTN_CLICK) return;
+        if (btn == BSP_BTN_UP)        g_spot_pick_idx = (g_spot_pick_idx - 1 + FISH_SPOT_COUNT) % FISH_SPOT_COUNT;
+        else if (btn == BSP_BTN_DOWN) g_spot_pick_idx = (g_spot_pick_idx + 1) % FISH_SPOT_COUNT;
+        else if (btn == BSP_BTN_OK) {
+            /* 未解锁场只让看，不让进；提示条常驻"再钓 N 条解锁 X"，不是静默无反应 */
+            if (fishing_spot_unlocked((spot_t)g_spot_pick_idx)) {
+                fishing_select_spot(g_spot_pick_idx);
+                fishing_open_subspot_select();
+            }
+        }
+        fishing_audio_play(SFX_CLICK);
+        return;
+    }
+
+    /* ---- v5 选标点 ---- */
+    if (st.state == STATE_SUBSPOT) {
+        if (ev != BSP_BTN_CLICK) return;
+        int ids[2] = { -1, -1 }, n = 0;
+        for (int i = 0; i < FISH_SUBSPOT_COUNT && n < 2; ++i) {
+            const subspot_cfg_t *ss = fishing_subspot_info(i);
+            if (ss && ss->spot == (unsigned char)st.spot) ids[n++] = i;
+        }
+        if (n <= 0) return;
+        const int cur = fishing_subspot();
+        int at = 0;
+        for (int i = 0; i < n; ++i) if (ids[i] == cur) at = i;
+        if (btn == BSP_BTN_UP)        fishing_set_subspot(ids[(at - 1 + n) % n]);
+        else if (btn == BSP_BTN_DOWN) fishing_set_subspot(ids[(at + 1) % n]);
+        else if (btn == BSP_BTN_OK) {
+            fishing_confirm_subspot();
+            g_menu_idx = 3;   /* 回主菜单「钓点」行，下次抛竿生效 */
+        }
+        fishing_audio_play(SFX_CLICK);
+        return;
+    }
+
+    /* ---- v5 图鉴列表 ---- */
+    if (st.state == STATE_CODEX_LIST) {
+        if (ev != BSP_BTN_CLICK) return;
+        if (btn == BSP_BTN_UP)        fishing_codex_list_move(-1);
+        else if (btn == BSP_BTN_DOWN) fishing_codex_list_move(1);
+        else if (btn == BSP_BTN_OK)   fishing_codex_list_open_info();
+        fishing_audio_play(SFX_CLICK);
+        return;
+    }
+
+    /* ---- 图鉴详情（旧入口，保留兼容） ---- */
     if (st.state == STATE_CODEX || st.state == STATE_CODEX_INFO) {
         /* 「长按返回」不在这里做：BSP 的 LONG 事件要按满 1500ms，改由
          * ok_poll_long()/handle_long_press() 用按键电平判定（700ms）。 */
@@ -1275,8 +1709,12 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
             if (g_menu_idx == 0) {
                 fishing_exit_menu();
                 fishing_cast();
+            } else if (g_menu_idx == 3) {
+                /* v5：钓点行不再就地改值，进入选钓场页（再进标点页） */
+                g_spot_pick_idx = (int)st.spot;
+                fishing_open_spot_select();
             } else if (g_menu_idx == 4) {
-                fishing_codex_open();
+                fishing_open_codex_list();
             } else if (g_menu_idx == 5) {
                 /* 声音：只有开/关两态，单击直接切、立刻存 —— 不进"编辑态"，
                  * 也就没有"进编辑再按上下"这一层多余操作。切换后紧跟的那声
@@ -1334,8 +1772,23 @@ static void handle_long_press(void) {
             fishing_audio_play(SFX_CLICK);
             break;
         case STATE_CODEX:
-        case STATE_CODEX_INFO:
             fishing_codex_close();
+            fishing_audio_play(SFX_CLICK);
+            break;
+        case STATE_CODEX_INFO:
+            fishing_codex_back_to_list();   /* 详情 -> 列表，再长按才回菜单 */
+            fishing_audio_play(SFX_CLICK);
+            break;
+        case STATE_CODEX_LIST:
+            fishing_codex_close();
+            fishing_audio_play(SFX_CLICK);
+            break;
+        case STATE_SPOT_SELECT:
+            fishing_cancel_spot_select();
+            fishing_audio_play(SFX_CLICK);
+            break;
+        case STATE_SUBSPOT:
+            fishing_back_to_spot_select();
             fishing_audio_play(SFX_CLICK);
             break;
         default:

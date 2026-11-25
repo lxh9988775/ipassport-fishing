@@ -11,6 +11,7 @@ idf_component_register(
 # 只打包屏上会用到的字，≈90 KB。改文案后跑 `python tools/gen_font.py` 重新生成。
 target_sources(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../assets/fonts/fishing_cjk_16.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/fonts/fishing_cjk_12.c"
 )
 
 # 像素 sprite 资产（由 tools/gen_sprites.py 自动生成，勿手工编辑）。

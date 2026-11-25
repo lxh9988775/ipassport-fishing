@@ -28,12 +28,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_C = os.path.join(ROOT, "main", "fishing.c")
 LOGIC_C = os.path.join(ROOT, "main", "fishing_logic.c")
 FONT_C = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_16.c")
+FONT_C12 = os.path.join(ROOT, "assets", "fonts", "fishing_cjk_12.c")
 BSP_H = os.path.join(ROOT, "components", "bsp", "include", "bsp_display.h")
 
 SCR_W, SCR_H = 240, 320
 
 # 运行期互斥的面板（来源：show_only() 的 which 编号）
-PANELS = {"g_scene": 0, "g_reel": 1, "g_result": 2, "g_menu": 3, "g_codex": 4}
+PANELS = {"g_scene": 0, "g_reel": 1, "g_result": 2, "g_menu": 3, "g_codex": 4,
+          "g_spot_pick": 5, "g_sub_pick": 6, "g_cdx_list": 7}
 # 铺满整屏的层：四角被圆角涂黑是设计的一部分（遮的是背景边缘，不是内容）
 # g_tint 是氛围染色层，同样铺满整屏、同样只判出屏不参与压盖关系。
 FULL_BLEED = set(PANELS) | {"g_bg", "hud", "g_tint"}
@@ -70,6 +72,21 @@ SUBST = {
     r"%s · %s\n%s": "黄昏 · 雨\n水色微浑，正是钓底的好时候",
     # v4 履历行：首次第 N 日（最早=第1日位数最少，取第999日最坏）+ 最大重量（旗鱼 80000g=80.0千克）
     "首次 %s · 最大 %s": "首次 第999日 · 最大 80.0千克",
+    # v5 C+2 新增页面文案
+    "%d 处标点": "10 处标点",
+    "%s · 选标点": "夜钓栈桥 · 选标点",
+    "出鱼：%s": "出鱼：石斑鱼/小鲨鱼",
+    "%s · %s": "夜钓栈桥 · 潮汐道",
+    "%s·%s": "夜钓栈桥·潮汐道",
+    "%d. %s": "27. 小鲨鱼",
+    "%d.%dcm": "250.0cm",
+    "%d-%dcm": "10-250cm",
+    "最大 %d.%d 厘米 · %d.%d千克": "最大 250.0 厘米 · 80.0千克",
+    "最大 %d.%d 厘米 · 重量未记录": "最大 250.0 厘米 · 重量未记录",
+    "首次 %s · 标点未知": "首次 第999日 · 标点未知",
+    "首次 %s · %s": "首次 第999日 · 潮汐道",
+    "已收录 %d 种 · 标点 %d 处": "已收录 27 种 · 标点 10 处",
+    "%s": "夜钓栈桥",
 }
 WIDEST_S = "路亚竿"
 WIDEST_D = "8888"
@@ -107,8 +124,8 @@ def note(msg: str) -> None:
 # ---------------------------------------------------------------------------
 # 字体度量（直接读固件里那份 C 字库）
 # ---------------------------------------------------------------------------
-def load_font():
-    src = open(FONT_C, encoding="utf-8").read()
+def load_font(path=None):
+    src = open(path or FONT_C, encoding="utf-8").read()
     if "glyph_bitmap[]" not in src or "glyph_dsc[]" not in src:
         return None
     seg = src[src.index("glyph_bitmap[]"):src.index("glyph_dsc[]")]
@@ -246,7 +263,7 @@ def parse_source():
             objs[name] = {"parent": None, "x": None, "y": None, "w": None, "h": None,
                           "pad": 0, "wrap": False, "dot": False, "auto": None,
                           "texts": set(), "kind": "obj", "line_space": 0,
-                          "long_text": False}
+                          "long_text": False, "small": False}
         return objs[name]
 
     # 元素创建：make_label(parent, "文案", x, y, color)
@@ -264,6 +281,20 @@ def parse_source():
         o = get(m.group(1))
         o["parent"] = m.group(3)
         o["kind"] = "img" if "img" in m.group(2) else "obj"
+
+    # v5 像素面板：make_panel(parent, x, y, w, h, color)
+    for m in re.finditer(
+            r"(\w+)\s*=\s*make_panel\(\s*(\w+)\s*,\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,]+),", src):
+        o = get(m.group(1))
+        o["parent"] = m.group(2)
+        o["kind"] = "obj"
+        o["x"], o["y"] = num(m.group(3)), num(m.group(4))
+        o["w"], o["h"] = num(m.group(5)), num(m.group(6))
+
+    # v5 双行胶囊用 12px 子集字库，不能用 16px 的行高判定
+    for m in re.finditer(r"use_cjk12\(\s*(\w+)\s*\)", src):
+        if m.group(1) in objs:
+            objs[m.group(1)]["small"] = True
 
     for m in re.finditer(r"lv_obj_set_pos\(\s*(\w+)\s*,\s*([^,]+),\s*([^)]+)\)", src):
         # 动态定位（如按进度算 y）求不出值时保留上一次的静态值，别把元素整条丢掉
@@ -396,6 +427,7 @@ def main() -> int:
     if font is None:
         print("check_ui_layout: 无法解析字体 %s" % FONT_C)
         return 2
+    font12 = load_font(FONT_C12) or font
     elems = parse_source()
     if len(elems) < 8:
         print("check_ui_layout: 只解析到 %d 个 UI 元素，源码结构可能变了" % len(elems))
@@ -419,32 +451,33 @@ def main() -> int:
         x, y = absolute(name)
         pad = o["pad"]
         if o["kind"] == "label":
+            f = font12 if o["small"] else font
             if o["long_text"] or not o["texts"]:
                 # 鱼简介：长度取自 fishing_logic.c 里最长的一条，按实际折行算高度
                 avail = o["w"] or SCR_W
-                lines = wrap_lines(font, LONG_TEXT, avail)
-                w, h = avail + pad * 2, len(lines) * font["line_height"] + \
+                lines = wrap_lines(f, LONG_TEXT, avail)
+                w, h = avail + pad * 2, len(lines) * f["line_height"] + \
                     max(0, len(lines) - 1) * o["line_space"] + pad * 2
                 texts[name] = "<鱼简介 %d 字 / %d 行>" % (len(LONG_TEXT), len(lines))
             else:
-                worst = max((worst_text(font, t) for t in o["texts"]),
-                            key=lambda s: max(text_w(font, ln) for ln in s.split("\n")))
+                worst = max((worst_text(f, t) for t in o["texts"]),
+                            key=lambda s: max(text_w(f, ln) for ln in s.split("\n")))
                 texts[name] = worst.replace("\n", "\\n")
                 avail = o["w"] or SCR_W
-                natural = max(text_w(font, ln) for ln in worst.split("\n"))
+                natural = max(text_w(f, ln) for ln in worst.split("\n"))
                 if o["wrap"]:
                     w = avail + pad * 2
-                    lines = wrap_lines(font, worst, avail)
-                    h = len(lines) * font["line_height"] + \
+                    lines = wrap_lines(f, worst, avail)
+                    h = len(lines) * f["line_height"] + \
                         max(0, len(lines) - 1) * o["line_space"] + pad * 2
                 elif o["dot"]:
                     # LONG_DOT：超宽就在末尾打省略号，绝不会出屏，取两者较小值
                     w = min(natural, avail) + pad * 2
-                    h = font["line_height"] + pad * 2
+                    h = f["line_height"] + pad * 2
                 else:
                     lines = worst.split("\n")
                     w = natural + pad * 2
-                    h = len(lines) * font["line_height"] + \
+                    h = len(lines) * f["line_height"] + \
                         max(0, len(lines) - 1) * o["line_space"] + pad * 2
         else:
             w, h = o["w"] or 0, o["h"] or 0
@@ -526,6 +559,12 @@ def main() -> int:
 
     def one_pair(a, b, tag):
         if frozenset((a, b)) in ALLOW_OVERLAP:
+            return
+        # 选中条刻意压在行卡片左侧；底部提示条刻意压在最后一行卡片下沿
+        pair = {a, b}
+        if "g_spot_selbar" in pair and any(x.startswith("spot_row") for x in pair):
+            return
+        if "g_lbl_hint" in pair and any(x.startswith(("spot_row", "cdx_row")) for x in pair):
             return
         if elems[a]["parent"] == b or elems[b]["parent"] == a:
             return

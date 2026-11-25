@@ -49,7 +49,7 @@ REST_CHANCE_STEP = 11           # common 48% -> legend 15%
 CATCH_SHOW_MS = 2200
 CAST_ANIM_MS = 600
 
-POND, RIVER, SEA = 0, 1, 2
+POND, RIVER, SEA, ESTUARY, PIER = 0, 1, 2, 3, 4
 COMMON, UNCOMMON, RARE, LEGEND = 0, 1, 2, 3
 
 # (name, desc, spot, rarity, bait_mask, len_min, len_max, wgt_min, wgt_max, base, dart, power, period_pref, weather_pref)
@@ -78,6 +78,32 @@ SPECIES = [
     ("金枪鱼", "", SEA,   LEGEND,   0x04,  800,2000,10000,60000, 100,  80, 100, 5, 1),
     ("旗鱼",   "", SEA,   LEGEND,   0x04, 1000,2500,20000,80000, 120,  95, 100, 5, 1),
     ("小鲨鱼", "", SEA,   LEGEND,   0x04,  600,1500,  5000,30000, 130,  90, 100, 12, 6),
+    # v5 新增 3 种（ID 24/25/26，追加在尾部）
+    ("鲻鱼",   "", ESTUARY, COMMON,   0x03,  250, 500,   400, 1800,  32, 45, 40, 3, 3),
+    ("黑鲷",   "", ESTUARY, UNCOMMON, 0x06,  280, 550,   600, 2500,  46, 65, 60, 4, 3),
+    ("海鳗",   "", ESTUARY, RARE,     0x01,  500,1000,  1000, 5000,  58, 50, 85, 8, 6),
+]
+
+# v5 spot_mask：对应 C 的 fish_species_t.spot_mask（bit0塘/bit1河/bit2海/bit3河口/bit4栈桥）
+SPOT_MASK = [
+    0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01,              # 0-7  静水塘
+    0x02, 0x12, 0x12, 0x0A, 0x12, 0x12, 0x02, 0x02,              # 8-15 急流河（鲈鱼跨河口）
+    0x0C, 0x0C, 0x04, 0x0C, 0x0C, 0x04, 0x04, 0x04,              # 16-23 深海（4 种跨河口）
+    0x08, 0x08, 0x08,                                            # 24-26 入海口
+]
+
+# v5 标点：(name, spot, gold_mask(鱼ID位), hook)
+SUBSPOTS = [
+    ("芦苇荡", POND,    (1 << 0) | (1 << 1),             "草窝里翻花，小白条扎堆"),
+    ("深水湾", POND,    (1 << 7) | (1 << 6),             "水色发暗，底下压着大物"),
+    ("浅滩",   RIVER,   (1 << 12) | (1 << 10),           "石缝有伏击，亮片慢一点"),
+    ("回水沱", RIVER,   (1 << 13) | (1 << 9),            "水流一缓，夜里的东西就来了"),
+    ("礁石区", SEA,     (1 << 20) | (1 << 23),           "贴礁下钩，守的是老手"),
+    ("远洋",   SEA,     (1 << 21) | (1 << 22),           "线放长，洋流那头有大家伙"),
+    ("泥滩",   ESTUARY, (1 << 11) | (1 << 24),           "退潮时鲻鱼翻泥"),
+    ("潮汐道", ESTUARY, (1 << 25) | (1 << 26),           "涨潮黑鲷巡游"),
+    ("灯影",   PIER,    (1 << 13) | (1 << 9),            "灯下有影子，别急着提竿"),
+    ("桥墩",   PIER,    (1 << 12) | (1 << 20),           "墩底暗流，鱼贴着墙走"),
 ]
 
 # (name, bar_h, rise, fall, mult100)
@@ -89,21 +115,25 @@ RODS = [
 
 # (name, wait_min, wait_max, bite_window, mult100, unlock_catch)
 SPOTS = [
-    ("静水塘", 1200, 3500, 1300, 100,  0),
-    ("急流河", 1800, 5000, 1150, 150,  8),
-    ("深海",   2500, 7000, 1000, 220, 20),
+    ("静水塘",   1200, 3500, 1300, 100,  0),
+    ("急流河",   1800, 5000, 1150, 150,  8),
+    ("深海",     2500, 7000, 1000, 220, 20),
+    ("入海口",   2100, 6200, 1100, 190, 36),
+    ("夜钓栈桥", 2300, 6800, 1050, 205, 56),
 ]
 
 SPOT_RARITY_W = [
     [60, 28, 10,  2],
     [45, 32, 18,  5],
     [35, 30, 25, 10],
+    [42, 32, 20,  6],
+    [40, 30, 22,  8],
 ]
 
 PREFERRED_BAIT_MULT = 3
 IDLE, CASTING, WAITING, BITE, REELING, CATCH, ESCAPE, MENU, CODEX, CODEX_INFO = range(10)
-SCHEMA_VER = 2
-CONTENT_VER = 1
+SCHEMA_VER = 3
+CONTENT_VER = 2
 MAGIC = 0x46534832
 CODEX_CAP = 64
 
@@ -153,6 +183,8 @@ class Fishing:
         self.best = [0] * CODEX_CAP
         self.first_day = [0] * CODEX_CAP   # v4 履历
         self.best_wgt = [0] * CODEX_CAP
+        self.codex_subspot = [0] * CODEX_CAP  # v5 首捕标点：存 id+1，0=未知
+        self.subspot = -1                  # v5 标点：-1 = 未选（v4 兼容）
         self.env_day = 0
         self.total_catch = 0
         self.cursor = 0
@@ -186,15 +218,17 @@ class Fishing:
         return f[7] + span_w * rel // 1000
 
     def roll_species(self):
-        # v4：时段×3/×0.6、天气×2、饵料沿用 PREFERRED_BAIT_MULT —— 与 C 层一致
+        # v5：时段×3/×0.6、天气×2、饵料、标点主出鱼×3 —— 与 C 层一致
         rw = SPOT_RARITY_W[self.spot]
         bit = 1 << self.bait
         per_bit = 1 << self.env_period
         wea_bit = 1 << self.env_weather
+        spot_bit = 1 << self.spot
+        gold = SUBSPOTS[self.subspot][2] if 0 <= self.subspot < len(SUBSPOTS) else 0
         w = []
         total = 0
-        for f in SPECIES:
-            if f[2] != self.spot:
+        for i, f in enumerate(SPECIES):
+            if not (SPOT_MASK[i] & spot_bit):
                 w.append(0)
                 continue
             v = rw[f[3]]
@@ -206,13 +240,15 @@ class Fishing:
                 v *= 2
             if f[4] & bit:
                 v *= PREFERRED_BAIT_MULT
+            if gold & (1 << i):
+                v *= 3
             if v < 1:
                 v = 1
             w.append(v)
             total += v
         if total <= 0:
-            for i, f in enumerate(SPECIES):
-                if f[2] == self.spot:
+            for i in range(len(SPECIES)):
+                if SPOT_MASK[i] & spot_bit:
                     return i
             return 0
         pick = self._range(total)
@@ -340,6 +376,8 @@ class Fishing:
         record = self.cur_len > self.best[self.cur]
         if first and self.env_day > 0:
             self.first_day[self.cur] = self.env_day
+        if first:
+            self.codex_subspot[self.cur] = self.subspot + 1  # 0=未知
         if self.cur_wgt > self.best_wgt[self.cur]:
             self.best_wgt[self.cur] = self.cur_wgt
         if self.cnt[self.cur] < 255:
@@ -378,11 +416,21 @@ class Fishing:
             self.env_day = day
 
     def set_spot(self, s):
-        if 0 <= s < 3 and self.spot_unlocked(s):
+        if 0 <= s < len(SPOTS) and self.spot_unlocked(s):
             self.spot = s
 
     def spot_unlocked(self, s):
-        return 0 <= s < 3 and self.total_catch >= SPOTS[s][5]
+        return 0 <= s < len(SPOTS) and self.total_catch >= SPOTS[s][5]
+
+    def set_subspot(self, sid):
+        self.subspot = sid if 0 <= sid < len(SUBSPOTS) else -1
+
+    @staticmethod
+    def first_subspot(spot):
+        for i, ss in enumerate(SUBSPOTS):
+            if ss[1] == spot:
+                return i
+        return -1
 
     def cast(self):
         if self.state not in (IDLE, MENU):
@@ -450,7 +498,7 @@ class Fishing:
 
     # ---- save ----
     def save_size(self):
-        return 20 + CODEX_CAP * (1 + 1 + 2 + 2 + 4)
+        return 20 + CODEX_CAP * (1 + 1 + 2 + 2 + 4 + 1)
 
     def serialize(self):
         b = bytearray()
@@ -468,6 +516,8 @@ class Fishing:
             b += int(v).to_bytes(2, "little")
         for v in self.best_wgt:
             b += int(v).to_bytes(4, "little")
+        for v in self.codex_subspot:
+            b += int(v).to_bytes(1, "little")
         return bytes(b)
 
     def apply(self, buf):
@@ -497,6 +547,9 @@ class Fishing:
         for i in range(CODEX_CAP):
             self.best_wgt[i] = int.from_bytes(buf[p:p + 4], "little") if p + 3 < len(buf) else 0
             p += 4
+        for i in range(CODEX_CAP):
+            self.codex_subspot[i] = buf[p] if p < len(buf) else 0
+            p += 1
         return 1 if schema < SCHEMA_VER else 0
 
 
@@ -744,14 +797,30 @@ def main():
     g13.spot = POND
     g13.cur = 5
     g13.cur_len = 400
+    g13.set_subspot(3)          # 回水沱：首捕标点应被记进存档
     g13.commit_catch()
     blob = g13.serialize()
     check("存档长度符合预期", len(blob) == g13.save_size(), f"({len(blob)} bytes)")
+    check("schema3 长度=724B", len(blob) == 724, f"({len(blob)})")
+    check("首捕写入标点(id+1)", g13.codex_subspot[5] == 4, f"({g13.codex_subspot[5]})")
     g14 = Fishing(1)
     rc = g14.apply(blob)
     check("存档往返: 返回成功", rc == 0, f"(rc={rc})")
     check("存档往返: 分数一致", g14.high == g13.high, f"({g14.high})")
     check("存档往返: 图鉴一致", g14.cnt[5] == g13.cnt[5] and g14.best[5] == g13.best[5])
+    check("存档往返: 首捕标点不丢", g14.codex_subspot[5] == 4, f"({g14.codex_subspot[5]})")
+    g14.subspot = 9                 # 换个标点再钓同一条鱼
+    g14.commit_catch()
+    check("首捕标点不被二次捕获覆盖", g14.codex_subspot[5] == 4,
+          f"({g14.codex_subspot[5]})")
+    # schema2 老档（660B）迁移：标点整组填 0，老进度不丢
+    old2 = bytearray(blob[:20 + CODEX_CAP * (1 + 1 + 2 + 2 + 4)])
+    old2[4:6] = (2).to_bytes(2, "little")
+    g15 = Fishing(7)
+    rc2 = g15.apply(bytes(old2))
+    check("schema2 迁移 rc=1", rc2 == 1, f"(rc={rc2})")
+    check("schema2 迁移首捕标点=0", g15.codex_subspot[5] == 0)
+    check("schema2 迁移不丢老进度", g15.cnt[5] == g13.cnt[5] and g15.best[5] == g13.best[5])
 
     # 14) 坏存档防御
     bad = bytearray(blob)
@@ -765,8 +834,10 @@ def main():
     # 15)  solvers： species 表自洽
     bad_row = [f[0] for f in SPECIES if not (f[5] <= f[6] and f[7] <= f[8] and f[9] > 0)]
     check("鱼种数据自洽(尺寸/基础分)", not bad_row, str(bad_row))
-    per_spot = [sum(1 for f in SPECIES if f[2] == s) for s in (POND, RIVER, SEA)]
-    check("每个钓点各 8 种鱼", per_spot == [8, 8, 8], str(per_spot))
+    # v5：按 spot_mask 统计每场可出现的鱼种（跨场鱼在两场都算），新场不能是空池
+    per_spot = [sum(1 for m in SPOT_MASK if m & (1 << s)) for s in range(len(SPOTS))]
+    check("5 钓场每场至少 3 种鱼（无空池）", all(n >= 3 for n in per_spot), str(per_spot))
+    check("前三场仍各 8 种鱼", per_spot[:3] == [8, 8, 8], str(per_spot[:3]))
 
     print()
     if fails == 0:

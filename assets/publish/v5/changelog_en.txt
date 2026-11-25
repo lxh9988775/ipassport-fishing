@@ -1,0 +1,6 @@
+Five waters now, and where you stand finally matters: two spots per water, each with its own regulars.
+
+1. Added the estuary and the night pier — mullet on the mudflats, black bream and eels in the tidal channel, catfish under the lights and mandarin fish around the pilings. That brings the guide to 27 species. Old favourites such as bass and grouper also turn up in the new waters without changing their place in the guide.
+2. Ten spots each carry a short hint about what tends to bite. A spot only raises the odds of its featured fish; nothing is locked away, and there are no timers, gates or penalties. Moving spots just makes rare visitors a little less rare.
+3. The guide is now a list plus detail view. Rows show water and spot, time and bait, and length; the detail page adds the spot of your first catch to your history. Old saves migrate automatically and keep every catch.
+4. The main screen uses a two-line badge for water and spot, with the daily fish news still visible alongside it. The cover now reads 27 species, five waters and ten spots.

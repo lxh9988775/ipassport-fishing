@@ -16,6 +16,7 @@
  */
 
 #include <stdio.h>
+#include <string.h>
 #include <assert.h>
 #include "fishing_logic.h"
 
@@ -155,7 +156,7 @@ int main(void) {
            fishing_codex_best_len(r->species));
 
     /* 7) 存档往返：序列化再灌回去，进度必须一模一样 */
-    uint8_t buf[512];
+    uint8_t buf[768];   /* v4 存档 660B / v5 schema3 724B */
     const int n = fishing_save_serialize(buf, (int)sizeof(buf));
     assert(n > 0 && n == fishing_save_size());
     const int tc_before = snap().total_catch;
@@ -166,6 +167,32 @@ int main(void) {
     assert(fishing_get_high_score() == hs_before);
     assert(fishing_codex_is_seen(r->species));
     printf("[OK] 存档往返: %d 字节, 累计捕获=%d 最高分=%d\n", n, tc_before, hs_before);
+
+    /* 7b) v5 schema3：首捕标点写入 / 往返不丢 / 二次捕获不覆盖 / schema2 迁移 */
+    {
+        fishing_set_subspot(6);   /* 入海口 · 泥滩 */
+        assert(run_round(31415u, SPOT_POND, BAIT_WORM, ROD_HAND) == 1);
+        const int sid = fishing_last_catch()->species;
+        assert(fishing_codex_is_seen(sid));
+        assert(fishing_codex_subspot(sid) == 6);
+        /* 换个标点再钓同一种鱼，首捕地点不能被改 */
+        fishing_set_subspot(9);
+        uint8_t buf2[768];
+        const int n2 = fishing_save_serialize(buf2, (int)sizeof(buf2));
+        assert(n2 == 724);
+        fishing_init(2718);
+        assert(fishing_save_apply(buf2, n2) == 0);
+        assert(fishing_codex_subspot(sid) == 6);
+        /* schema2 老档：截掉 v5 新增的 64 字节，迁移后标点填 0，老进度不丢 */
+        uint8_t old2[768];
+        memcpy(old2, buf2, 660);
+        old2[4] = 2; old2[5] = 0;
+        fishing_init(1618);
+        assert(fishing_save_apply(old2, 660) == 1);
+        assert(fishing_codex_is_seen(sid));
+        assert(fishing_codex_subspot(sid) == -1);
+        printf("[OK] schema3 首捕标点: 写入/往返/迁移全部通过\n");
+    }
 
     /* 8) 关卡解锁：累计捕获够了，深海就该开 */
     assert(tc_before >= 1);
@@ -212,6 +239,31 @@ int main(void) {
     const double lr = (double)lure_rare / lure_n;
     assert(lr > wr);
     printf("[OK] 饵料分布: 稀有鱼占比 WORM=%.2f LURE=%.2f\n", wr, lr);
+
+    /* 11) v5 页面流转：选钓场 -> 选标点 -> 确认回菜单；图鉴列表 -> 详情 -> 列表 */
+    {
+        fishing_init(77);
+        fishing_enter_menu();
+        fishing_open_spot_select();
+        assert(snap().state == STATE_SPOT_SELECT);
+        fishing_select_spot(SPOT_PIER);       /* 累计钓获已够 56 条，早解锁 */
+        assert(snap().spot == SPOT_PIER);
+        fishing_open_subspot_select();
+        assert(snap().state == STATE_SUBSPOT);
+        assert(fishing_subspot() == fishing_first_subspot(SPOT_PIER));
+        fishing_confirm_subspot();
+        assert(snap().state == STATE_MENU);
+        fishing_open_codex_list();
+        assert(snap().state == STATE_CODEX_LIST);
+        fishing_codex_list_move(3);
+        fishing_codex_list_open_info();
+        assert(snap().state == STATE_CODEX_INFO);
+        fishing_codex_back_to_list();
+        assert(snap().state == STATE_CODEX_LIST);
+        fishing_codex_close();
+        assert(snap().state == STATE_MENU);
+        printf("[OK] v5 页面流转: 选场/标点/图鉴列表/详情返回全部通过\n");
+    }
 
     printf("\nALL TESTS PASSED\n");
     return 0;

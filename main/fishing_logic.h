@@ -30,9 +30,10 @@ extern "C" {
 #endif
 
 /* ===================== 版本 / 容量 / 能力位（升级预留） ===================== */
-#define FISHING_SCHEMA_VER   2      /* 存档结构版本：结构变动才 +1，触发迁移。
-                                     * v4: +first_day[CAP] +best_wgt[CAP]，schema 1 存档自动迁移填 0 */
-#define FISHING_CONTENT_VER  1      /* 内容版本：改数值/文案 +1，不触发迁移 */
+#define FISHING_SCHEMA_VER   3      /* 存档结构版本：结构变动才 +1，触发迁移。
+                                     * v4: +first_day[CAP] +best_wgt[CAP]，schema 1 存档自动迁移填 0；
+                                     * v5: +codex_subspot[CAP]，schema 1/2 存档自动迁移填 0 */
+#define FISHING_CONTENT_VER  2      /* 内容版本：改数值/文案 +1，不触发迁移 */
 #define FISHING_SAVE_MAGIC   0x46534832u  /* 'FSH2' */
 #define FISHING_CODEX_CAP    64     /* 图鉴上限：现用 24，v3 起只追加不搬家 */
 
@@ -58,10 +59,11 @@ extern "C" {
 #define FISH_WPREF_RAIN   0x04u
 
 /* 内容体量（遍历一律用 *_COUNT，不要写死数字，方便后续追加） */
-#define FISH_SPECIES_COUNT 24
+#define FISH_SPECIES_COUNT 27
 #define FISH_BAIT_COUNT    3
 #define FISH_ROD_COUNT     3
-#define FISH_SPOT_COUNT    3
+#define FISH_SPOT_COUNT    5
+#define FISH_SUBSPOT_COUNT 10     /* 每场 2 处，按场次连续编号 0..9 */
 #define FISH_RARITY_COUNT  4
 
 /* ===================== 枚举 ===================== */
@@ -80,11 +82,29 @@ typedef enum {
 } rod_t;
 
 typedef enum {
-    SPOT_POND  = 0,  /* 静水塘：Lv1，新手友好 */
-    SPOT_RIVER = 1,  /* 急流河：Lv2 */
-    SPOT_SEA   = 2,  /* 深海：Lv3 */
+    SPOT_POND    = 0,  /* 静水塘：Lv1，新手友好 */
+    SPOT_RIVER   = 1,  /* 急流河：Lv2 */
+    SPOT_SEA     = 2,  /* 深海：Lv3 */
+    SPOT_ESTUARY = 3,  /* 入海口：Lv4，36 条解锁 */
+    SPOT_PIER    = 4,  /* 夜钓栈桥：Lv5，56 条解锁 */
     SPOT_COUNT = FISH_SPOT_COUNT
 } spot_t;
+
+/* 场内标点（v5 C+2）：每场固定 2 处，按场次连续编号，属钓场不跨场。
+ * 标点只提高主出鱼概率，不设门槛、不倒计时、不惩罚。 */
+typedef enum {
+    SUB_REED      = 0,  /* 静水塘 · 芦苇荡 */
+    SUB_DEEP      = 1,  /* 静水塘 · 深水湾 */
+    SUB_SHOAL     = 2,  /* 急流河 · 浅滩 */
+    SUB_BACKWATER = 3,  /* 急流河 · 回水沱 */
+    SUB_REEF      = 4,  /* 深海 · 礁石区 */
+    SUB_OFFSHORE  = 5,  /* 深海 · 远洋 */
+    SUB_MUD       = 6,  /* 入海口 · 泥滩 */
+    SUB_TIDE      = 7,  /* 入海口 · 潮汐道 */
+    SUB_LIGHT     = 8,  /* 夜钓栈桥 · 灯影 */
+    SUB_PIER      = 9,  /* 夜钓栈桥 · 桥墩 */
+    SUBSPOT_COUNT = FISH_SUBSPOT_COUNT
+} subspot_t;
 
 typedef enum {
     RARITY_COMMON = 0,
@@ -111,6 +131,9 @@ typedef enum {
     STATE_MENU,       /* 主菜单 */
     STATE_CODEX,      /* 图鉴浏览 */
     STATE_CODEX_INFO, /* 图鉴详情 */
+    STATE_SUBSPOT,    /* v5：选标点页（追加在 STATE_COUNT 前，现有状态值不变） */
+    STATE_SPOT_SELECT,/* v5：选钓场页 */
+    STATE_CODEX_LIST, /* v5：图鉴列表页 */
     STATE_COUNT
 } game_state_t;
 
@@ -133,7 +156,9 @@ typedef struct {
                              * desc 是客观说明（长什么样、多大），lore 是性格与故事，
                              * 两者分开：玩家看 desc 判断能不能钓，看 lore 决定想不想钓。
                              * 纯文案，不参与任何平衡计算。 */
-    uint8_t  spot;         /* 栖息地 spot_t */
+    uint8_t  spot;         /* 主栖息地 spot_t（图鉴展示用，不随跨场改写） */
+    uint8_t  spot_mask;    /* 可出现钓场位掩码：bit0塘/bit1河/bit2海/bit3河口/bit4栈桥。
+                            * 默认 1u<<spot；跨场鱼按生态追加位（如鲈鱼 河|河口）。 */
     uint8_t  rarity;       /* rarity_t */
     uint8_t  bait_mask;    /* 偏好饵料位掩码：bit0 蚯蚓 bit1 面团 bit2 亮片 */
     uint16_t len_min_mm;   /* 体长下限（毫米，定点存方便显示） */
@@ -167,6 +192,15 @@ typedef struct {
     uint16_t mult100;      /* 分值倍率 *100 */
     uint16_t unlock_catch; /* 解锁所需累计捕获数 */
 } spot_cfg_t;
+
+/* 标点配置（v5 C+2）：gold_a 为鱼 ID 位掩码（低 27 位），命中的主出鱼 ×3。
+ * hook 是一句界面钩子文案，纯展示不参与计算。 */
+typedef struct {
+    const char *name;
+    uint8_t     spot;      /* 所属钓场 spot_t */
+    uint32_t    gold_a;    /* 主出鱼 ID 位掩码：bit i = 鱼 i */
+    const char *hook;      /* 一句钩子（界面显示） */
+} subspot_cfg_t;
 
 /* ===================== 结果 / 快照 ===================== */
 typedef struct {
@@ -211,6 +245,13 @@ void fishing_init(uint32_t seed);
 void fishing_set_bait(bait_t b);
 void fishing_set_rod(rod_t r);
 void fishing_set_spot(spot_t s);
+/* 场内标点（v5 C+2）：-1 = 未选，兼容 v4 老行为（不叠加标点权重）。
+ * 标点只改抽鱼概率，不改解锁、不设门槛；进入新场时用 fishing_first_subspot 自动选中。 */
+void     fishing_set_subspot(int id);
+int      fishing_subspot(void);
+const char *fishing_subspot_name(int id);
+const subspot_cfg_t *fishing_subspot_info(int id);
+int      fishing_first_subspot(spot_t s);
 /* 环境（v4 天气决定鱼）：由 UI 层在时段/天气算出后喂进来，只影响抽鱼概率，
  * 不改解锁门槛、不引入失败惩罚。period 0..3=晨午昏夜，weather 0..2=晴阴雨。
  * 不调用时默认 晨/晴（等价于 v3 行为），单测可固定环境做分布断言。 */
@@ -275,6 +316,9 @@ bool fishing_codex_is_perfect(int species);              /* 是否达成完美�
 int  fishing_codex_best_len(int species);                /* 最大体长记录 mm */
 int  fishing_codex_first_day(int species);               /* 首次钓到的钓鱼日序号，0=未知(老存档/未捕获) */
 int  fishing_codex_best_wgt(int species);                /* 最大重量记录 g，0=未知 */
+/* 首次钓到该鱼时的标点 ID（0..9），-1=未知（老存档 / -1 标点捕获）。
+ * 存档里存的是 id+1，0 留给"未知"，避免和第 0 号标点「芦苇荡」混淆。 */
+int  fishing_codex_subspot(int species);
 const fish_species_t *fishing_species_info(int species);
 const char *fishing_bait_name(bait_t b);
 const char *fishing_rod_name(rod_t r);
@@ -288,9 +332,24 @@ int  fishing_spot_unlock_left(spot_t s);
 /* 第一个还没解锁的钓点（按解锁顺序就是按门槛顺序）；全部解锁返回 -1 */
 int  fishing_next_locked_spot(void);
 
+/* v5 C+2 页面流转（纯状态切换，UI 只递动作；老状态值不变）。
+ * 选钓场页 OK 进入选标点页；未解锁钓场只选中查看，不进标点页。
+ * 选标点页 OK 回主菜单「钓点」行，下次抛竿生效。 */
+void fishing_open_spot_select(void);
+void fishing_select_spot(int spot);
+void fishing_open_subspot_select(void);
+void fishing_back_to_spot_select(void);
+void fishing_confirm_subspot(void);
+void fishing_cancel_spot_select(void);
+/* 图鉴浏览：v5 起菜单先进列表页，OK 进详情；长按逐层返回。 */
+void fishing_open_codex_list(void);
+void fishing_codex_list_move(int delta);
+void fishing_codex_list_open_info(void);
+void fishing_codex_back_to_list(void);
+void fishing_codex_close(void);
+
 /* 图鉴浏览游标（UI 层驱动） */
 void fishing_codex_open(void);
-void fishing_codex_close(void);
 void fishing_codex_move(int delta);
 void fishing_codex_toggle_info(void);
 int  fishing_codex_cursor(void);

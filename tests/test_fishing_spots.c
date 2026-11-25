@@ -41,7 +41,7 @@ static void check(const char *name, bool ok) {
 
 /* 用真实存档格式喂累计钓获：顺带把"门槛读的是存档里的数"这条也钉住 */
 static void set_total(int n) {
-    uint8_t buf[512];
+    uint8_t buf[768];   /* v4 存档 660B / v5 schema3 724B，512 装不下会拒写 */
     int len = fishing_save_serialize(buf, (int)sizeof(buf));
     if (len <= 0) { printf("  [FAIL] 存档序列化失败\n"); g_fail++; return; }
     buf[SAVE_OFF_TOTAL + 0] = (uint8_t)(n & 0xFF);
@@ -125,14 +125,28 @@ static void case_all_unlocked(void) {
     set_total(SEA_NEED);
     fishing_set_spot(SPOT_POND);
     check("钓 20 条：深海解锁", fishing_spot_unlocked(SPOT_SEA));
-    check("没有待解锁钓点了 -> -1", fishing_next_locked_spot() == -1);
+    check("钓 20 条：下一个待解锁是入海口(3)", fishing_next_locked_spot() == SPOT_ESTUARY);
     check("深海还差 0 条", fishing_spot_unlock_left(SPOT_SEA) == 0);
+    check("入海口还差 16 条", fishing_spot_unlock_left(SPOT_ESTUARY) == 16);
 
     check("静水塘 -> 急流河", fishing_cycle_spot(1) == true && spot_now() == SPOT_RIVER);
     check("急流河 -> 深海", fishing_cycle_spot(1) == true && spot_now() == SPOT_SEA);
-    check("深海 -> 静水塘（绕回）", fishing_cycle_spot(1) == true && spot_now() == SPOT_POND);
+    check("锁着的入海口跳不过去", fishing_cycle_spot(1) == true && spot_now() == SPOT_POND);
     check("静水塘 -> 深海（反着绕）", fishing_cycle_spot(-1) == true && spot_now() == SPOT_SEA);
     check("深海 -> 急流河", fishing_cycle_spot(-1) == true && spot_now() == SPOT_RIVER);
+
+    /* v5：三场解锁后还有入海口(36)/栈桥(56)，全解锁后五场循环 */
+    set_total(36);
+    check("钓 36 条：入海口解锁", fishing_spot_unlocked(SPOT_ESTUARY));
+    check("栈桥仍锁着", !fishing_spot_unlocked(SPOT_PIER));
+    check("下一个待解锁是栈桥(4)", fishing_next_locked_spot() == SPOT_PIER);
+    set_total(56);
+    check("钓 56 条：栈桥解锁", fishing_spot_unlocked(SPOT_PIER));
+    check("全部解锁 -> -1", fishing_next_locked_spot() == -1);
+    fishing_set_spot(SPOT_PIER);
+    check("栈桥 -> 静水塘（五场绕回）", fishing_cycle_spot(1) == true && spot_now() == SPOT_POND);
+    fishing_set_spot(SPOT_POND);
+    check("静水塘 -> 栈桥（五场反向绕）", fishing_cycle_spot(-1) == true && spot_now() == SPOT_PIER);
 }
 
 /* ============ 4. 鱼竿 / 饵料：无门槛，双向循环 ============ */

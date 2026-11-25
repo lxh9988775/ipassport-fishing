@@ -66,81 +66,92 @@
 static const fish_species_t SPECIES[FISH_SPECIES_COUNT] = {
     /* --- 静水塘 SPOT_POND --- */
     {"白条",   "银白细长、成群游动的小鱼，出水最勤", "成群游弋，抢食最快也最易惊散",
-     SPOT_POND,  RARITY_COMMON,   0x01,
+     SPOT_POND, (1u << SPOT_POND),
      100, 200,    20,   80,  10, 30, 15, FISH_PERF_MORNING, FISH_WPREF_CLEAR},
     {"鲫鱼",   "圆扁身带银灰光泽，池塘里最好客的鱼", "底栖稳重，蚯蚓一落便慢慢靠近",
-     SPOT_POND,  RARITY_COMMON,   0x03,
+     SPOT_POND, (1u << SPOT_POND),
      120, 250,   100,  500,  15, 35, 20, FISH_PERF_MORNING, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"罗非鱼", "体侧有暗色竖纹，适应力强、全年可钓", "外来住户，皮实耐折腾，水温一低就不开口",
-     SPOT_POND,  RARITY_COMMON,   0x03,
+     SPOT_POND, (1u << SPOT_POND),
      150, 300,   200,  800,  18, 40, 25, FISH_PERF_MORNING | FISH_PERF_NOON, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"鲢鱼",   "头大身白，爱在水面滤食，拉力绵长", "上层滤食，浮漂轻飘难辨，遛鱼要慢",
-     SPOT_POND,  RARITY_UNCOMMON, 0x02,
+     SPOT_POND, (1u << SPOT_POND),
      300, 600,  1000, 3000,  25, 55, 45, FISH_PERF_NOON, FISH_WPREF_CLEAR},
     {"鳊鱼",   "侧扁如刀、银光闪亮，翻身时有爆发力", "侧身如刀，翻身那一下力气最狠",
-     SPOT_POND,  RARITY_UNCOMMON, 0x02,
+     SPOT_POND, (1u << SPOT_POND),
      250, 400,   500, 1500,  28, 60, 40, FISH_PERF_MORNING | FISH_PERF_DUSK, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"草鱼",   "青灰修长、力气极大，吃素却长得很壮", "吃草的倔脾气，撞线像挂住了一样",
-     SPOT_POND,  RARITY_UNCOMMON, 0x02,
+     SPOT_POND, (1u << SPOT_POND),
      400, 800,  2000, 6000,  35, 65, 60, FISH_PERF_MORNING | FISH_PERF_NOON, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"鲤鱼",   "金红鳞厚带短须，聪明谨慎的池中之王", "池中老手，见钩先绕三圈再决定",
-     SPOT_POND,  RARITY_RARE,     0x03,
+     SPOT_POND, (1u << SPOT_POND),
      350, 700,  1000, 5000,  45, 70, 70, FISH_PERF_MORNING | FISH_PERF_DUSK, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"青鱼",   "近黑的青灰巨物，专吃螺蚌，耐力惊人", "深水巨物，专吃螺蚌，能跟人耗很久",
-     SPOT_POND,  RARITY_RARE,     0x03,
+     SPOT_POND, (1u << SPOT_POND),
      500,1000,  3000,10000,  55, 60, 85, FISH_PERF_DUSK | FISH_PERF_NIGHT, FISH_WPREF_CLOUDY},
 
     /* --- 急流河 SPOT_RIVER --- */
     {"马口鱼", "体侧一道红纹，抢食凶猛的小型猎手", "红纹一道，抢食凶猛，追饵比人还快",
-     SPOT_RIVER, RARITY_COMMON,   0x05,
+     SPOT_RIVER, (1u << SPOT_RIVER),
      100, 180,    30,  100,  16, 55, 25, FISH_PERF_MORNING | FISH_PERF_NOON, FISH_WPREF_CLEAR},
     {"黄颡鱼", "黄褐带斑、四根胡须，扎一手是它的本事", "河底伏着不动，扎手比想象中快得多",
-     SPOT_RIVER, RARITY_COMMON,   0x01,
+     SPOT_RIVER, ((1u << SPOT_RIVER) | (1u << SPOT_PIER)),
      120, 200,    50,  150,  20, 40, 30, FISH_PERF_NIGHT, FISH_WPREF_CLOUDY | FISH_WPREF_RAIN},
     {"翘嘴鱼", "嘴部上翘、红唇醒目，追击小鱼极快", "红唇上翘，追着小鱼一路猛冲",
-     SPOT_RIVER, RARITY_UNCOMMON, 0x04,
+     SPOT_RIVER, ((1u << SPOT_RIVER) | (1u << SPOT_PIER)),
      300, 600,   500, 2500,  38, 75, 55, FISH_PERF_MORNING | FISH_PERF_NOON, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"鲈鱼",   "青绿身带竖斑，爆发力强、横冲直撞", "横冲直撞的狠角色，钩住就别想松口",
-     SPOT_RIVER, RARITY_UNCOMMON, 0x04,
+     SPOT_RIVER, ((1u << SPOT_RIVER) | (1u << SPOT_ESTUARY)),
      250, 500,   400, 2000,  42, 70, 60, FISH_PERF_MORNING | FISH_PERF_NOON, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"鳜鱼",   "褐绿斑纹善于伪装，伏击型底栖猛鱼", "石缝里的伏击手，等你一天只为一口",
-     SPOT_RIVER, RARITY_RARE,     0x04,
+     SPOT_RIVER, ((1u << SPOT_RIVER) | (1u << SPOT_PIER)),
      250, 450,   500, 2000,  52, 65, 65, FISH_PERF_DUSK, FISH_WPREF_RAIN},
     {"鲶鱼",   "扁头阔口无鳞，夜里最活跃的大力士", "夜里的粗口大力士，线要留得够长",
-     SPOT_RIVER, RARITY_RARE,     0x01,
+     SPOT_RIVER, ((1u << SPOT_RIVER) | (1u << SPOT_PIER)),
      350, 700,  1000, 4000,  50, 45, 80, FISH_PERF_NIGHT, FISH_WPREF_CLOUDY | FISH_WPREF_RAIN},
     {"军鱼",   "鳞片粗硬泛光，急流里的银色坦克", "急流里的银色坦克，挣起来最不肯停",
-     SPOT_RIVER, RARITY_RARE,     0x06,
+     SPOT_RIVER, (1u << SPOT_RIVER),
      300, 600,  1000, 3000,  58, 60, 75, FISH_PERF_NOON | FISH_PERF_DUSK, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"鳡鱼",   "尖头流线、水中猛兽，出手即绝杀", "水中猛兽，撞上就是一场硬仗",
-     SPOT_RIVER, RARITY_LEGEND,   0x04,
+     SPOT_RIVER, (1u << SPOT_RIVER),
      600,1200, 5000,20000,  80, 85, 95, FISH_PERF_DUSK | FISH_PERF_NIGHT, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
 
     /* --- 深海 SPOT_SEA --- */
     {"小黄鱼", "通体金黄、肉质细嫩，近海最常见", "一身金光，肉嫩得不像海里长大的",
-     SPOT_SEA,   RARITY_COMMON,   0x01,
+     SPOT_SEA, ((1u << SPOT_SEA)   | (1u << SPOT_ESTUARY)),
      150, 250,   100,  300,  24, 35, 30, FISH_PERF_MORNING | FISH_PERF_NOON, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"带鱼",   "银亮如带、无尾鳍，游起来像把长刀", "像一把游动的长刀，切开水面的银光",
-     SPOT_SEA,   RARITY_COMMON,   0x06,
+     SPOT_SEA, ((1u << SPOT_SEA)   | (1u << SPOT_ESTUARY)),
      500,1000,   300, 1000,  30, 50, 45, FISH_PERF_NIGHT, FISH_WPREF_CLOUDY},
     {"鲅鱼",   "流线蓝背、性情凶猛，海上的追击者", "海上的追击者，一旦咬住绝不松口",
-     SPOT_SEA,   RARITY_UNCOMMON, 0x04,
+     SPOT_SEA, (1u << SPOT_SEA),
      400, 800,   800, 3000,  45, 75, 65, FISH_PERF_MORNING | FISH_PERF_DUSK, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
     {"比目鱼", "双眼同侧、贴沙而卧，擅长伪装伏击", "贴沙装成石头，等你路过那一秒",
-     SPOT_SEA,   RARITY_UNCOMMON, 0x01,
+     SPOT_SEA, ((1u << SPOT_SEA)   | (1u << SPOT_ESTUARY)),
      250, 500,   500, 2000,  40, 30, 50, FISH_PERF_DUSK | FISH_PERF_NIGHT, FISH_WPREF_CLOUDY | FISH_WPREF_RAIN},
     {"石斑鱼", "厚颌带斑、守礁而生，力量与狡猾并存", "守礁的厚颌老手，力量和狡猾一起来的",
-     SPOT_SEA,   RARITY_RARE,     0x04,
+     SPOT_SEA, ((1u << SPOT_SEA)   | (1u << SPOT_ESTUARY)),
      300, 600,  1000, 4000,  62, 70, 80, FISH_PERF_DUSK | FISH_PERF_NIGHT, FISH_WPREF_CLOUDY | FISH_WPREF_RAIN},
     {"金枪鱼", "蓝背银腹、终日不停洄游的大洋猎手", "不停洄游的洋流猎手，能追你半程",
-     SPOT_SEA,   RARITY_LEGEND,   0x04,
+     SPOT_SEA, (1u << SPOT_SEA),
      800,2000,10000,60000, 100, 80, 100, FISH_PERF_MORNING | FISH_PERF_DUSK, FISH_WPREF_CLEAR},
     {"旗鱼",   "长吻如枪、背帆高耸，公认最快的鱼", "传说中的深海霸主，八万克巨物，唯海竿远投可遇",
-     SPOT_SEA,   RARITY_LEGEND,   0x04,
+     SPOT_SEA, (1u << SPOT_SEA),
     1000,2500,20000,80000, 120, 95, 100, FISH_PERF_MORNING | FISH_PERF_DUSK, FISH_WPREF_CLEAR},
     {"小鲨鱼", "尖吻灰背、背鳍醒目，海里的顶级掠食者", "尖吻灰背，海里最不能惹的那一类",
-     SPOT_SEA,   RARITY_LEGEND,   0x04,
+     SPOT_SEA, (1u << SPOT_SEA),
      600,1500,  5000,30000, 130, 90, 100, FISH_PERF_DUSK | FISH_PERF_NIGHT, FISH_WPREF_CLOUDY | FISH_WPREF_RAIN},
+
+    /* --- 入海口 SPOT_ESTUARY（v5 新增 3 种，ID 24/25/26 追加在尾部不插队） --- */
+    {"鲻鱼",   "银灰身带纵纹，退潮时在泥滩翻食的常客", "泥里翻食的常客，退潮那阵最活跃",
+     SPOT_ESTUARY, (1u << SPOT_ESTUARY),
+     250, 500,   400, 1800,  32, 45, 40, FISH_PERF_MORNING | FISH_PERF_NOON, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
+    {"黑鲷",   "青黑身带亮斑，谨慎多疑的近海鱼", "河口的老滑头，饵不对口它只看不咬",
+     SPOT_ESTUARY, (1u << SPOT_ESTUARY),
+     280, 550,   600, 2500,  46, 65, 60, FISH_PERF_DUSK, FISH_WPREF_CLEAR | FISH_WPREF_CLOUDY},
+    {"海鳗",   "细长如蛇、牙利力沉，藏在潮沟深处的暗影", "潮沟里的暗影，咬住就往石缝里钻",
+     SPOT_ESTUARY, (1u << SPOT_ESTUARY),
+     500,1000,  1000, 5000,  58, 50, 85, FISH_PERF_NIGHT, FISH_WPREF_CLOUDY | FISH_WPREF_RAIN},
 };
 
 /*
@@ -162,9 +173,11 @@ static const rod_cfg_t RODS[FISH_ROD_COUNT] = {
 /* bite_window_ms 是提竿窗口。深海原为 800ms，反应慢一点就错过，
  * 对着小屏单手玩太苛刻，统一放宽一档（最短仍有 1.0s）。 */
 static const spot_cfg_t SPOTS[FISH_SPOT_COUNT] = {
-    {"静水塘", 1200, 3500, 1300, 100,   0},
-    {"急流河", 1800, 5000, 1150, 150,   8},
-    {"深海",   2500, 7000, 1000, 220,  20},
+    {"静水塘",   1200, 3500, 1300, 100,   0},
+    {"急流河",   1800, 5000, 1150, 150,   8},
+    {"深海",     2500, 7000, 1000, 220,  20},
+    {"入海口",   2100, 6200, 1100, 190,  36},
+    {"夜钓栈桥", 2300, 6800, 1050, 205,  56},
 };
 
 static const char *const RARITY_NAMES[FISH_RARITY_COUNT] = {
@@ -173,9 +186,27 @@ static const char *const RARITY_NAMES[FISH_RARITY_COUNT] = {
 
 /* 各钓点的稀有度权重（越大越容易出） */
 static const uint16_t SPOT_RARITY_W[FISH_SPOT_COUNT][FISH_RARITY_COUNT] = {
-    /* POND  */ {60, 28, 10,  2},
-    /* RIVER */ {45, 32, 18,  5},
-    /* SEA   */ {35, 30, 25, 10},
+    /* POND    */ {60, 28, 10,  2},
+    /* RIVER   */ {45, 32, 18,  5},
+    /* SEA     */ {35, 30, 25, 10},
+    /* ESTUARY */ {42, 32, 20,  6},
+    /* PIER    */ {40, 30, 22,  8},
+};
+
+/* 十处标点（v5 C+2）：每场 2 处，按场次连续编号。
+ * gold_a 是鱼 ID 位掩码，命中主出鱼 ×3；其余鱼权重不变 —— 只提概率，不锁死。
+ * hook 纯展示，不参与计算。 */
+static const subspot_cfg_t SUBSPOTS[FISH_SUBSPOT_COUNT] = {
+    {"芦苇荡", SPOT_POND,    (1u << 0) | (1u << 1),             "草窝里翻花，小白条扎堆"},
+    {"深水湾", SPOT_POND,    (1u << 7) | (1u << 6),             "水色发暗，底下压着大物"},
+    {"浅滩",   SPOT_RIVER,   (1u << 12) | (1u << 10),           "石缝有伏击，亮片慢一点"},
+    {"回水沱", SPOT_RIVER,   (1u << 13) | (1u << 9),            "水流一缓，夜里的东西就来了"},
+    {"礁石区", SPOT_SEA,     (1u << 20) | (1u << 23),           "贴礁下钩，守的是老手"},
+    {"远洋",   SPOT_SEA,     (1u << 21) | (1u << 22),           "线放长，洋流那头有大家伙"},
+    {"泥滩",   SPOT_ESTUARY, (1u << 11) | (1u << 24),           "退潮时鲻鱼翻泥"},
+    {"潮汐道", SPOT_ESTUARY, (1u << 25) | (1u << 26),           "涨潮黑鲷巡游"},
+    {"灯影",   SPOT_PIER,    (1u << 13) | (1u << 9),            "灯下有影子，别急着提竿"},
+    {"桥墩",   SPOT_PIER,    (1u << 12) | (1u << 20),           "墩底暗流，鱼贴着墙走"},
 };
 
 #define PREFERRED_BAIT_MULT 3   /* 用到偏好饵料时的权重倍数 */
@@ -204,6 +235,9 @@ static int          g_high_score = 0;
 static bait_t       g_bait = BAIT_WORM;
 static rod_t        g_rod  = ROD_HAND;
 static spot_t       g_spot = SPOT_POND;
+/* v5 标点：-1 = 未选，抽鱼时不叠加标点乘子（完全等价于 v4 行为）。
+ * 这样所有未调用新 API 的老测试与老存档都能照常跑。 */
+static int          g_subspot = -1;
 
 static int  g_state_enter_ms = 0;
 static int  g_last_tick_ms   = 0;
@@ -247,6 +281,9 @@ static uint16_t g_codex_best[FISHING_CODEX_CAP];    /* 最大体长 mm */
  * 24 鱼 × (2+4)=144 字节，CODEX_CAP=64 预留也才 384 字节，Flash/NVS 都很宽裕。 */
 static uint16_t g_codex_first_day[FISHING_CODEX_CAP];
 static uint32_t g_codex_best_wgt[FISHING_CODEX_CAP];
+/* v5：首次捕获时的标点 ID + 1（0=未知）。老存档迁移填 0；
+ * 图鉴优先用"实际捕获标点"显示，主栖息地只给未收录行做提示。 */
+static uint8_t  g_codex_subspot[FISHING_CODEX_CAP];
 static int      g_total_catch = 0;
 static int      g_codex_cursor = 0;
 static fishing_mode_t g_mode = MODE_SINGLE;
@@ -276,20 +313,30 @@ static int weight_from_len(const fish_species_t *f, int len_mm) {
     return (int)f->wgt_min_g + span_w * rel / 1000;
 }
 
-/* 按 钓点稀有度权重 × 时段偏好 × 天气偏好 × 饵料偏好 抽鱼种（v4）。
- * 时段命中 ×3、不中 ×0.6；天气命中 ×2；饵料命中沿用原 PREFERRED_BAIT_MULT。
- * 全部是"改概率"不是"改解锁"：任一鱼在任一组合下权重都 >0（0.6 保底），
+/* 标点主出鱼判定：gold_a 的第 fish_id 位为 1 即命中（×3）。
+ * 只是概率加成，不排除任何鱼 —— 未命中的鱼沿用原权重，照样能上钩。 */
+static bool subspot_has_fish(const subspot_cfg_t *ss, int fish_id) {
+    if (!ss || fish_id < 0 || fish_id >= FISH_SPECIES_COUNT) return false;
+    return (ss->gold_a & (1u << (unsigned)fish_id)) != 0;
+}
+
+/* 按 钓点稀有度权重 × 时段偏好 × 天气偏好 × 饵料偏好 × 标点主出鱼 抽鱼种（v5）。
+ * 时段命中 ×3、不中 ×0.6；天气命中 ×2；饵料命中沿用原 PREFERRED_BAIT_MULT；
+ * 标点主出鱼再 ×3。全部是"改概率"不是"改解锁"：任一鱼在任一组合下权重都 >0，
  * 所以仍可能被抽到，只是稀/常见 —— 不锁死、不惩罚。用 long 累加防溢出。 */
 static int roll_species(void) {
     const uint16_t *rw = SPOT_RARITY_W[g_spot];
     uint8_t bait_bit = (uint8_t)(1u << g_bait);
     uint32_t per_bit = 1u << (unsigned)g_env_period;   /* 0..3 -> bit0..3 */
     uint32_t wea_bit = 1u << (unsigned)g_env_weather;  /* 0..2 -> bit0..2 */
+    uint32_t spot_bit = 1u << (unsigned)g_spot;        /* 跨场鱼靠 spot_mask 命中 */
+    const subspot_cfg_t *ss = (g_subspot >= 0 && g_subspot < FISH_SUBSPOT_COUNT)
+                            ? &SUBSPOTS[g_subspot] : NULL;
     long total = 0;
     int w[FISH_SPECIES_COUNT];
     for (int i = 0; i < FISH_SPECIES_COUNT; ++i) {
         const fish_species_t *f = &SPECIES[i];
-        if (f->spot != (uint8_t)g_spot) { w[i] = 0; continue; }
+        if ((f->spot_mask & spot_bit) == 0) { w[i] = 0; continue; }
         long v = rw[f->rarity];
         /* 时段：命中 ×3，否则 ×0.6（先乘 6 再除 10，保持整数） */
         if (f->period_pref & (uint8_t)per_bit) v *= 3;
@@ -298,13 +345,15 @@ static int roll_species(void) {
         if (f->weather_pref & (uint8_t)wea_bit) v *= 2;
         /* 饵料偏好乘子不变，叠加在最后 */
         if (f->bait_mask & bait_bit) v *= PREFERRED_BAIT_MULT;
+        /* 标点主出鱼再 ×3 —— 只加概率，未命中的鱼权重不动，仍可能上钩 */
+        if (subspot_has_fish(ss, i)) v *= 3;
         if (v < 1) v = 1;                        /* 保底不锁死 */
         w[i] = (int)v;
         total += v;
     }
-    if (total <= 0) {  /* 兜底：抽不到就给本钓点第一条 */
+    if (total <= 0) {  /* 兜底：抽不到就给本钓点第一条（用 spot_mask，别给跨场外的鱼） */
         for (int i = 0; i < FISH_SPECIES_COUNT; ++i)
-            if (SPECIES[i].spot == (uint8_t)g_spot) return i;
+            if (SPECIES[i].spot_mask & spot_bit) return i;
         return 0;
     }
     long pick = (long)rng_range((int)total);
@@ -335,6 +384,27 @@ void fishing_init(uint32_t seed) {
 void fishing_set_bait(bait_t b) { if (b >= 0 && b < BAIT_COUNT) g_bait = b; }
 void fishing_set_rod(rod_t r)   { if (r >= 0 && r < ROD_COUNT)  g_rod  = r; }
 void fishing_set_spot(spot_t s) { if (s >= 0 && s < SPOT_COUNT && fishing_spot_unlocked(s)) g_spot = s; }
+
+/* 标点状态（v5）：只存 id，不改钓场、不改解锁。传 -1 或越界一律视为"未选"，
+ * 抽鱼时不叠乘子 —— 这就是老测试不调用新 API 时的 v4 等价行为。 */
+void fishing_set_subspot(int id) {
+    g_subspot = (id >= 0 && id < FISH_SUBSPOT_COUNT) ? id : -1;
+}
+int fishing_subspot(void) { return g_subspot; }
+const char *fishing_subspot_name(int id) {
+    return (id >= 0 && id < FISH_SUBSPOT_COUNT) ? SUBSPOTS[id].name : "";
+}
+const subspot_cfg_t *fishing_subspot_info(int id) {
+    return (id >= 0 && id < FISH_SUBSPOT_COUNT) ? &SUBSPOTS[id] : NULL;
+}
+/* 进入新钓场时由 UI 调用：取该场第一条标点自动选中，避免带着上一场的标点抽鱼。
+ * 钓场无标点（理论上不会发生）时返回 -1。 */
+int fishing_first_subspot(spot_t s) {
+    for (int i = 0; i < FISH_SUBSPOT_COUNT; ++i)
+        if (SUBSPOTS[i].spot == (uint8_t)s) return i;
+    return -1;
+}
+
 void fishing_set_env(int period, int weather) {
     if (period  >= 0 && period  < 4) g_env_period  = period;
     if (weather >= 0 && weather < 3) g_env_weather = weather;
@@ -645,6 +715,10 @@ static void commit_catch(void) {
     /* 更新图鉴 */
     if (first && g_env_day > 0 && g_env_day < 65536)
         g_codex_first_day[g_cur_species] = (uint16_t)g_env_day;   /* 首捕日只写一次 */
+    /* 首捕标点只写一次；g_subspot=-1（v4 行为 / 老档兼容）时存 0=未知。
+     * 必须放在递增 cnt 之前用 first 判定，否则第二次钓到会把首捕地点覆盖。 */
+    if (first)
+        g_codex_subspot[g_cur_species] = (uint8_t)(g_subspot + 1);
     if (g_cur_wgt_g > (int)g_codex_best_wgt[g_cur_species])
         g_codex_best_wgt[g_cur_species] = (uint32_t)g_cur_wgt_g;  /* 最大重量独立于体长纪录 */
     if (g_codex_cnt[g_cur_species] < 255) g_codex_cnt[g_cur_species]++;
@@ -800,6 +874,10 @@ int fishing_codex_best_wgt(int species) {
     if (species < 0 || species >= FISH_SPECIES_COUNT) return 0;
     return (int)g_codex_best_wgt[species];
 }
+int fishing_codex_subspot(int species) {
+    if (species < 0 || species >= FISH_SPECIES_COUNT) return -1;
+    return (int)g_codex_subspot[species] - 1;   /* 存档 0=未知 -> -1；1..10 -> 0..9 */
+}
 const char *fishing_bait_name(bait_t b) {
     static const char *const N[FISH_BAIT_COUNT] = {"蚯蚓", "面团", "亮片"};
     return (b >= 0 && b < BAIT_COUNT) ? N[b] : "";
@@ -829,6 +907,59 @@ int fishing_next_locked_spot(void) {
     return -1;
 }
 
+/* ===================== v5 C+2 页面流转 ===================== */
+void fishing_open_spot_select(void) {
+    if (g_state == STATE_MENU || g_state == STATE_IDLE ||
+        g_state == STATE_SUBSPOT || g_state == STATE_CODEX_LIST ||
+        g_state == STATE_CODEX_INFO) {
+        g_state = STATE_SPOT_SELECT;
+    }
+}
+void fishing_select_spot(int spot) {
+    if (spot >= 0 && spot < SPOT_COUNT && fishing_spot_unlocked((spot_t)spot)) {
+        g_spot = (spot_t)spot;
+        /* 换场时不能带着上一场的标点抽鱼；不属于本场就自动选第一处 */
+        const subspot_cfg_t *ss = fishing_subspot_info(g_subspot);
+        if (!ss || ss->spot != (uint8_t)g_spot)
+            g_subspot = fishing_first_subspot(g_spot);
+    }
+}
+void fishing_open_subspot_select(void) {
+    if (g_state != STATE_SPOT_SELECT) return;
+    const subspot_cfg_t *ss = fishing_subspot_info(g_subspot);
+    if (!ss || ss->spot != (uint8_t)g_spot)
+        g_subspot = fishing_first_subspot(g_spot);
+    g_state = STATE_SUBSPOT;
+}
+void fishing_back_to_spot_select(void) {
+    if (g_state == STATE_SUBSPOT) g_state = STATE_SPOT_SELECT;
+}
+void fishing_confirm_subspot(void) {
+    if (g_state == STATE_SUBSPOT) g_state = STATE_MENU;
+}
+void fishing_cancel_spot_select(void) {
+    if (g_state == STATE_SPOT_SELECT || g_state == STATE_SUBSPOT) g_state = STATE_MENU;
+}
+
+void fishing_open_codex_list(void) {
+    if (g_state == STATE_MENU || g_state == STATE_IDLE ||
+        g_state == STATE_CODEX_INFO || g_state == STATE_CODEX ||
+        g_state == STATE_SPOT_SELECT) {
+        g_state = STATE_CODEX_LIST;
+        if (g_codex_cursor < 0 || g_codex_cursor >= FISH_SPECIES_COUNT) g_codex_cursor = 0;
+    }
+}
+void fishing_codex_list_move(int delta) {
+    if (g_state != STATE_CODEX_LIST) return;
+    g_codex_cursor = (g_codex_cursor + delta + FISH_SPECIES_COUNT) % FISH_SPECIES_COUNT;
+}
+void fishing_codex_list_open_info(void) {
+    if (g_state == STATE_CODEX_LIST) g_state = STATE_CODEX_INFO;
+}
+void fishing_codex_back_to_list(void) {
+    if (g_state == STATE_CODEX_INFO) g_state = STATE_CODEX_LIST;
+}
+
 void fishing_codex_open(void) {
     if (g_state == STATE_MENU || g_state == STATE_IDLE || g_state == STATE_CODEX_INFO) {
         g_state = STATE_CODEX;
@@ -836,7 +967,8 @@ void fishing_codex_open(void) {
     }
 }
 void fishing_codex_close(void) {
-    if (g_state == STATE_CODEX || g_state == STATE_CODEX_INFO) g_state = STATE_MENU;
+    if (g_state == STATE_CODEX || g_state == STATE_CODEX_INFO ||
+        g_state == STATE_CODEX_LIST) g_state = STATE_MENU;
 }
 void fishing_codex_move(int delta) {
     g_codex_cursor = (g_codex_cursor + delta + FISH_SPECIES_COUNT) % FISH_SPECIES_COUNT;
@@ -856,12 +988,13 @@ const catch_result_t *fishing_last_catch(void) { return &g_last_catch; }
  *   u32 magic | u16 schema | u16 content | u32 features |
  *   i32 high  | u32 total  | u8 cnt[CAP] | u8 flag[CAP] | u16 best[CAP]
  *   | u16 first_day[CAP] | u32 best_wgt[CAP]     <-- v4 新增（schema 2）
- * 旧版本（schema 1）没有最后两组，迁移时按 0 补齐即可，不丢老玩家进度。
+ *   | u8  codex_subspot[CAP]                    <-- v5 新增（schema 3）
+ * 旧版本（schema 1/2）缺哪组，迁移时按 0 补齐即可，不丢老玩家进度。
  */
 #define SAVE_HDR (4 + 2 + 2 + 4 + 4 + 4)
 
 int fishing_save_size(void) {
-    return SAVE_HDR + FISHING_CODEX_CAP * (1 + 1 + 2 + 2 + 4);
+    return SAVE_HDR + FISHING_CODEX_CAP * (1 + 1 + 2 + 2 + 4 + 1);
 }
 
 int fishing_save_serialize(uint8_t *buf, int cap) {
@@ -911,6 +1044,8 @@ int fishing_save_serialize(uint8_t *buf, int cap) {
         buf[p++] = (uint8_t)((v >> 16) & 0xFF);
         buf[p++] = (uint8_t)((v >> 24) & 0xFF);
     }
+    /* v5 首捕标点：存 id+1，0=未知；按 CAP 全量写，未用项为 0 */
+    for (int i = 0; i < FISHING_CODEX_CAP; ++i) buf[p++] = g_codex_subspot[i];
     return p;
 }
 
@@ -957,6 +1092,10 @@ int fishing_save_apply(const uint8_t *buf, int len) {
         }
         g_codex_best_wgt[i] = v;
     }
+    /* v5 首捕标点：schema 2 老存档没有这一组，缺数据填 0（显示"很久以前"）。
+     * ID 顺序未变、按 CAP 读，所以老档迁移不需要知道当时只有 24 种鱼。 */
+    for (int i = 0; i < FISHING_CODEX_CAP; ++i)
+        g_codex_subspot[i] = (p < len) ? buf[p++] : 0;
     /* 迁移返回 1 = 老版本已升级；新字段缺数据按 0 处理，不丢老玩家任何进度 */
     return (schema < FISHING_SCHEMA_VER) ? 1 : 0;
 }

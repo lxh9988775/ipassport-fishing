@@ -43,6 +43,11 @@ FISH_SHEETS = {
         ("xiaohuang", "小黄鱼"), ("daiyu",   "带鱼"),   ("bayu",   "鲅鱼"),   ("shiban",  "石斑鱼"),
         ("bimu",      "比目鱼"), ("jinqiang","金枪鱼"), ("qiyu",   "旗鱼"),   ("xiaosha", "小鲨鱼"),
     ],
+    # v5 C+2：河口 3 条新鱼，ID 24/25/26 追加在 SPECIES[] 尾部。
+    # 拼图只占前 3 格，其余 5 格留空（key_out 后 alpha=0，会被跳过）。
+    "estuary": [
+        ("ziyu", "鲻鱼"), ("heidiao", "黑鲷"), ("haiman", "海鳗"),
+    ],
 }
 
 # 道具/饵/竿/图标：一张 4×4 拼图，行优先
@@ -82,7 +87,21 @@ BACKGROUNDS = [
     ("bg_pond",  "静水塘", "bg_pond.png"),
     ("bg_river", "急流河", "bg_river.png"),
     ("bg_sea",   "深海",   "bg_sea.png"),
+    ("bg_estuary", "入海口", "bg_estuary.png"),
+    ("bg_pier",    "夜钓栈桥", "bg_pier.png"),
+    # 标点选择页专用：预压暗，不用运行时全屏半透明层（C3 单核会发烫）
+    ("bg_estuary_dark", "入海口压暗", "bg_estuary_dark.png"),
 ]
+
+# 选钓场页的 34x32 缩略图（RGB565 不透明）
+THUMBS = [
+    ("thumb_pond", "thumb_pond.png"),
+    ("thumb_river", "thumb_river.png"),
+    ("thumb_sea", "thumb_sea.png"),
+    ("thumb_estuary", "thumb_estuary.png"),
+    ("thumb_pier", "thumb_pier.png"),
+]
+THUMB_W, THUMB_H = 34, 32
 
 # ----------------------------------------------------------------------------
 # 图像处理
@@ -275,7 +294,12 @@ def emit_header(path, externs):
 # ----------------------------------------------------------------------------
 
 def sheet_name_for(key):
-    return {"pond": "pond_sheet.png", "river": "river_sheet.png", "sea": "sea_sheet.png"}[key]
+    return {
+        "pond": "pond_sheet.png",
+        "river": "river_sheet.png",
+        "sea": "sea_sheet.png",
+        "estuary": "estuary_sheet.png",
+    }[key]
 
 
 def main():
@@ -324,6 +348,27 @@ def main():
             sil_pngs.append((key, zh, habitat, ps))
             fish_c.append(("sil_%s" % key, "LV_COLOR_FORMAT_ARGB8888", FISH_W, FISH_H, argb8888_bytes(sil)))
             fish_hdr.append("sil_%s" % key)
+            # 图鉴列表的未收录剪影缩略图（34x32，NEAREST）
+            ss = min(THUMB_W / sil.width, THUMB_H / sil.height)
+            ssil = sil.resize((max(1, int(sil.width * ss)), max(1, int(sil.height * ss))), Image.NEAREST)
+            scv = Image.new("RGBA", (THUMB_W, THUMB_H), (0, 0, 0, 0))
+            scv.alpha_composite(ssil, ((THUMB_W - ssil.width) // 2, (THUMB_H - ssil.height) // 2))
+            fish_c.append(("thumb_sil_%s" % key, "LV_COLOR_FORMAT_ARGB8888",
+                           THUMB_W, THUMB_H, argb8888_bytes(scv)))
+            fish_hdr.append("thumb_sil_%s" % key)
+
+    # 图鉴列表用 34x32 小图标：NEAREST 等比缩放居中，不拉伸（v5 C+2）
+    for key, zh, habitat, p in fish_pngs:
+        src = Image.open(p).convert("RGBA")
+        sc = min(THUMB_W / src.width, THUMB_H / src.height)
+        small = src.resize((max(1, int(src.width * sc)), max(1, int(src.height * sc))), Image.NEAREST)
+        cv = Image.new("RGBA", (THUMB_W, THUMB_H), (0, 0, 0, 0))
+        cv.alpha_composite(small, ((THUMB_W - small.width) // 2, (THUMB_H - small.height) // 2))
+        pth = os.path.join(pngdir, "thumb_fish_%s.png" % key)
+        cv.save(pth)
+        fish_c.append(("thumb_fish_%s" % key, "LV_COLOR_FORMAT_ARGB8888",
+                       THUMB_W, THUMB_H, argb8888_bytes(cv)))
+        fish_hdr.append("thumb_fish_%s" % key)
 
     # ---- 道具/饵/竿/图标 ----
     # 注意：水印用"原地抹掉"而不是裁掉底部，否则 4x4 格子高度变短、整列错位。
@@ -361,6 +406,15 @@ def main():
         img.save(p)
         bg_pngs.append((key, zh, p))
         bg_c.append((key, "LV_COLOR_FORMAT_RGB565", BG_W, BG_H, rgb565_bytes(img)))
+        bg_hdr.append(key)
+
+    # 选钓场页缩略图：把已裁好的 34x32 PNG 直接烘焙成 RGB565
+    for key, fn in THUMBS:
+        img = Image.open(os.path.join(raw, fn)).convert("RGB")
+        img = img.resize((THUMB_W, THUMB_H), Image.NEAREST)
+        p = os.path.join(pngdir, "%s.png" % key)
+        img.save(p)
+        bg_c.append((key, "LV_COLOR_FORMAT_RGB565", THUMB_W, THUMB_H, rgb565_bytes(img)))
         bg_hdr.append(key)
 
     # ---- 写 C ----

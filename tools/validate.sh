@@ -82,6 +82,11 @@ run_static_checks() {
         tests/test_fishing_env.c main/fishing_logic.c \
         -o "${test_dir}/test_fishing_env"
     "${test_dir}/test_fishing_env"
+    # v5 场内标点：两标点主出鱼差异 / 不锁死 / 跨场鱼 / 无空池 / -1 兼容
+    "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
+        tests/test_fishing_subspots.c main/fishing_logic.c \
+        -o "${test_dir}/test_fishing_subspots"
+    "${test_dir}/test_fishing_subspots"
     # 钓鱼逻辑层全套（确定性/咬钩/计分/图鉴/平衡）
     "${CC:-cc}" -std=c11 -Wall -Wextra -Werror -Imain \
         tests/fishing_logic_test.c main/fishing_logic.c \
