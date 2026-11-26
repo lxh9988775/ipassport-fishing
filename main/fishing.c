@@ -913,7 +913,7 @@ static void show_only(int which) {
 
     const char *hint = NULL;
     switch (which) {
-        case 1: hint = "上下变速 OK抬竿 松开落下"; break;   /* 收线：原 refresh_reel 里每帧重设 */
+        case 1: hint = "↓快竿追冲刺 ↑慢竿"; break;   /* 收线：明确冲刺要切快竿 */
         case 4: hint = "上下翻·OK详情·长按返回";  break;   /* 图鉴详情 */
         case 5: hint = "上下选钓场 · OK进标点"; break;
         case 6: hint = "左右选标点 · OK下竿"; break;

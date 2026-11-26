@@ -14,9 +14,10 @@
 #define REEL_TRACK        1000   /* 轨道总长 */
 #define REEL_PROGRESS_MAX 1000
 #define REEL_PROGRESS_0   420    /* 起始进度：社区反馈太快后上调（原 340），多留容错 */
-#define REEL_GAIN         220    /* 鱼在区内时每秒涨的进度（原 210） */
+#define REEL_GAIN         260    /* 鱼在区内时每秒涨的进度：原 220 与青鱼掉速 219 几乎相等，
+                                 * 罩住鱼也不涨、真机看就是「绿条不动/一路掉」。上调让罩住即涨。 */
 #define REEL_DECAY_BASE   100    /* 区外时每秒掉的基础进度（原 120） */
-#define REEL_DECAY_POWER  140    /* 掉速 = BASE + power * POWER / 100（原 180：掉太猛一失误就归零） */
+#define REEL_DECAY_POWER  130    /* 掉速 = BASE + power * POWER / 100（原 140：青鱼 power85 掉 219≈涨速，脱靶就归零） */
 #define REEL_THINK_MIN    620    /* 换目标的最短间隔 ms：原来 380ms 一换，小鱼看着像原地乱窜+残影 */
 #define REEL_THINK_VAR    560
 #define REEL_TIMEOUT_MS   20000  /* 拉锯上限，避免无限僵持 */
