@@ -50,7 +50,7 @@
 #define REEL_DIFF_BASE          20
 #define REEL_DIFF_PER_RARITY    20
 #define REEL_DIFF_DART          25      /* /100 * dart */
-#define REEL_BAR_ACCEL          10000   /* 捕捉区加减速（单位/秒^2，快档） */
+#define REEL_BAR_ACCEL          14000   /* 快档加速度：反向刹车更快，快竿少过冲；慢档乘 SLOW_ACCEL */
 
 /* 四拍节奏：巡游 → 预警 → 冲刺 → 歇息。
  * 预警期鱼停住并变色，玩家有时间把竿挪过去；冲刺才是快的一段，且时长有限。
@@ -71,10 +71,12 @@
 #define REST_CHANCE_STEP        11
 #define REST_MS_BASE            150
 
-/* 玩家竿速双档：慢档牺牲追击速度换精度，快档反之。
- * 档位只改竿的移动速度/加速度，不改进度增益 —— 慢档不是"更容易"，是"更好控"。 */
+/* 玩家竿速双档：慢档牺牲追击速度，换「稳线」进度加成；快档负责追冲刺。
+ * 慢档加速度保持 7000（=14000*50%），控鱼手感不变；快档从 10000 提到 14000，
+ * 反向刹车更快，按下去不再一味过冲 —— 真机反馈"快竿都不好钓"就是这个过冲。 */
 #define REEL_GEAR_SLOW_PCT      60
-#define REEL_GEAR_SLOW_ACCEL    70
+#define REEL_GEAR_SLOW_ACCEL    50
+#define REEL_GEAR_SLOW_GAIN     130     /* 慢档罩住鱼时进度 +30%：慢竿的明确收益 */
 
 #define CATCH_SHOW_MS     2200   /* 结算展示时长 */
 #define CAST_ANIM_MS      600    /* 抛竿动画时长 */
@@ -186,14 +188,14 @@ static const fish_species_t SPECIES[FISH_SPECIES_COUNT] = {
  * 比首版整体放大一档（+20）：区太薄时"看得见鱼却罩不住"，玩家会把
  * "手不够快"误读成"这游戏钓不上来"。放大后仍保留三根竿的取舍关系。 */
 static const rod_cfg_t RODS[FISH_ROD_COUNT] = {
-    /* 绿区整体加长约 12%（原 165/135/195/210）：真机反馈鱼标难罩住、钓不上。
-     * 加长后仍保持 海>手>路亚 的取舍、路亚区最小（追分靠精度）。 */
-    {"手竿",   "轻便均衡，新手最好上手",    185, 680, 600, 100},
-    {"路亚竿", "区小难控，但起落最快分最高", 150, 840, 740, 150},
-    {"海竿",   "区大容错高，竿沉但最稳",    220, 480, 420, 115},
-    /* 巨物竿：绿区 235（最大）+ 竿速 780/720（够追冲刺封顶 620）。
+    /* 绿区再加长约 8%（原 185/150/220/235）：真机仍觉得罩不住鱼。
+     * 保持 巨物>海>手>路亚 的取舍，路亚区最小（追分靠精度）。 */
+    {"手竿",   "轻便均衡，新手最好上手",    200, 680, 600, 100},
+    {"路亚竿", "区小难控，但起落最快分最高", 165, 840, 740, 150},
+    {"海竿",   "区大容错高，竿沉但最稳",    235, 480, 420, 115},
+    /* 巨物竿：绿区 250（最大）+ 竿速 780/720（够追冲刺封顶 620）。
      * 专治鳡鱼这类冲刺猛的传说鱼；代价是得分系数 120 最低——追分高手仍用路亚竿。 */
-    {"巨物竿", "绿区最大，专治冲刺猛的大鱼", 235, 780, 720, 120},
+    {"巨物竿", "绿区最大，专治冲刺猛的大鱼", 250, 780, 720, 120},
 };
 
 /* bite_window_ms 是提竿窗口。深海原为 800ms，反应慢一点就错过，
@@ -708,7 +710,7 @@ static int reel_update(int dt_ms) {
     int rise_spd = (int)r->rise_spd;
     int fall_spd = (int)r->fall_spd;
     int accel    = REEL_BAR_ACCEL;
-    if (g_gear == 0) {              /* 慢档：竿移动慢、惯性小，方便把鱼稳在缩小的区里 */
+    if (g_gear == 0) {              /* 慢档：竿移动慢、惯性小，罩住鱼时进度 +30%（稳线） */
         rise_spd = rise_spd * REEL_GEAR_SLOW_PCT / 100;
         fall_spd = fall_spd * REEL_GEAR_SLOW_PCT / 100;
         accel    = accel * REEL_GEAR_SLOW_ACCEL / 100;
@@ -726,7 +728,8 @@ static int reel_update(int dt_ms) {
     /* --- 接触判定 --- */
     bool inside = (g_fish_pos >= g_bar_pos) && (g_fish_pos <= g_bar_pos + g_bar_h);
     if (inside) {
-        g_progress += REEL_GAIN * dt_ms / 1000;
+        int gain = REEL_GAIN * (g_gear == 0 ? REEL_GEAR_SLOW_GAIN : 100) / 100;
+        g_progress += gain * dt_ms / 1000;
         g_contacted = true;
     } else {
         int decay = REEL_DECAY_BASE + (int)f->power * REEL_DECAY_POWER / 100;

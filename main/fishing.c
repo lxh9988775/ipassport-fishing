@@ -913,7 +913,7 @@ static void show_only(int which) {
 
     const char *hint = NULL;
     switch (which) {
-        case 1: hint = "↓快竿追冲刺 ↑慢竿"; break;   /* 收线：明确冲刺要切快竿 */
+        case 1: hint = "慢竿涨更快 · 快竿追冲刺"; break;  /* 收线：慢竿有稳线加成，快竿用于追冲刺 */
         case 4: hint = "上下翻·OK详情·长按返回";  break;   /* 图鉴详情 */
         case 5: hint = "上下选钓场 · OK进标点"; break;
         case 6: hint = "左右选标点 · OK下竿"; break;
@@ -1226,8 +1226,8 @@ static void refresh_reel(const fishing_status_t *st) {
 
     const fish_species_t *f = fishing_species_info(st->cur_species);
     static const char *const PHASE_LINE[2][4] = {
-        {"慢竿 巡游", "慢竿 蓄力", "慢竿 冲刺", "慢竿 歇息"},
-        {"快竿 巡游", "快竿 蓄力", "快竿 冲刺", "快竿 歇息"},
+        {"慢竿稳线 巡游", "慢竿稳线 蓄力", "慢竿稳线 冲刺", "慢竿稳线 歇息"},
+        {"快竿追击 巡游", "快竿追击 蓄力", "快竿追击 冲刺", "快竿追击 歇息"},
     };
     int phase = st->reel_phase;
     if (phase < 0 || phase > 3) phase = 0;

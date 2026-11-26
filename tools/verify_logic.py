@@ -45,9 +45,10 @@ REEL_BURST_MS_STEP = 130
 REEL_DIFF_BASE = 20
 REEL_DIFF_PER_RARITY = 20
 REEL_DIFF_DART = 25      # /100 * dart
-REEL_BAR_ACCEL = 10000   # 快档加速度；慢档乘 REEL_GEAR_SLOW_ACCEL
+REEL_BAR_ACCEL = 14000   # 快档加速度：反向刹车更快，快竿不再一按就过冲；慢档乘 REEL_GEAR_SLOW_ACCEL
 REEL_GEAR_SLOW_PCT = 60
-REEL_GEAR_SLOW_ACCEL = 70
+REEL_GEAR_SLOW_ACCEL = 50  # 慢档加速度保持 7000，控鱼手感不变
+REEL_GEAR_SLOW_GAIN = 130  # 慢档罩住鱼时进度涨速 +30%：慢竿的收益是"稳线涨得快"
 REST_CHANCE_BASE = 55
 REST_CHANCE_STEP = 11
 REST_MS_BASE = 150
@@ -113,12 +114,12 @@ SUBSPOTS = [
 
 # (name, bar_h, rise, fall, mult100)
 RODS = [
-    # 绿区整体加长约12%（原165/135/195/210）：真机反馈难罩住鱼；保持 海>手>路亚。
-    ("手竿",   185, 680, 600, 100),
-    ("路亚竿", 150, 840, 740, 150),
-    ("海竿",   220, 480, 420, 115),
+    # 绿区再加长约 8%（原185/150/220/235）：真机仍觉得罩不住鱼。
+    ("手竿",   200, 680, 600, 100),
+    ("路亚竿", 165, 840, 740, 150),
+    ("海竿",   235, 480, 420, 115),
     # 巨物竿：绿区最大、专治冲刺猛的大鱼；得分系数最低，追分仍用路亚竿。
-    ("巨物竿", 235, 780, 720, 120),
+    ("巨物竿", 250, 780, 720, 120),
 ]
 
 # (name, wait_min, wait_max, bite_window, mult100, unlock_catch)
@@ -364,7 +365,8 @@ class Fishing:
 
         inside = self.bar_pos <= self.fish_pos <= self.bar_pos + self.bar_h
         if inside:
-            self.progress += REEL_GAIN * dt // 1000
+            gain = REEL_GAIN * (REEL_GEAR_SLOW_GAIN if self.gear == 0 else 100) // 100
+            self.progress += gain * dt // 1000
             self.contacted = True
         else:
             decay = REEL_DECAY_BASE + f[11] * REEL_DECAY_POWER // 100
@@ -676,11 +678,12 @@ def main():
     check("19 条: 深海仍锁定", not g6.spot_unlocked(SEA))
 
     # 7) 理想操作 / 迟钝操作 的稀有度胜率梯度
-    def win_rate(idx, rod, policy, trials=40):
+    def win_rate(idx, rod, policy, trials=40, gear=0):
         wins = 0
         for seed in range(trials):
             g = Fishing(seed * 31 + idx + 3)
             g.rod = rod
+            g.gear = gear
             g.cur = idx
             g.cur_len = SPECIES[idx][5] + (SPECIES[idx][6] - SPECIES[idx][5]) // 2
             g.reel_enter()
@@ -690,14 +693,14 @@ def main():
                 wins += 1
         return wins / trials
 
-    def laggy_policy_factory(lag_ticks=10):
+    def laggy_policy_factory(lag_ticks=25):
         """迟钝玩家：用若干 tick 之前的鱼位置做判断（模拟人的反应延迟）。
 
-        10 tick = 200ms。原先取 6 tick(120ms) 对"迟钝"过于乐观：单键 + 小屏
-        + 要连续跟竿，200ms 才是手慢玩家的真实量级。调高之后，难度梯度落在
-        "有反应延迟的玩家"身上，而不是落在 0 延迟的机器策略上 —— 0 延迟都
-        钓不上说明物理上追不上，那是 bug 而不是难度（由"最难鱼竿下仍可上
-        全部鱼种"这条单独守着）。"""
+        25 tick = 500ms。绿区加长 + 慢竿涨速加成之后，200ms 延迟的机器玩家
+        在所有稀有度上都已饱和（全 100%），失去区分力；真机是单键 + 小屏
+        + 要连续跟竿，500ms 更接近休闲玩家的实际反应。梯度落在"有反应延迟
+        的玩家"身上，而不是 0 延迟机器策略上 —— 0 延迟都钓不上是物理追不上，
+        属于 bug（由"最难鱼竿下仍可上全部鱼种"单独守着）。"""
         hist = []
 
         def p(f):
@@ -730,13 +733,21 @@ def main():
     # 旧目标「迟钝玩家传说鱼≤35%」直接导致真机上普通玩家胜率归零、被审核打回，
     # 属于劝退式难度，已废弃。新目标：新手稳钓常见鱼、也能搏到传说鱼，
     # 但常见鱼仍要比传说鱼更容易（保留梯度），不追求把新手挡在门外。
-    # 梯度用「预判型」玩家衡量，不用迟钝型：休闲难度下迟钝玩家在常见鱼上
-    # 已 100% 饱和，传说鱼稍放宽也立刻跟到 100%，两者差值恒为 0，这条断言
-    # 会否决任何合理的下调（假阳性）。预判型有真实区分力（常见≈98%/传说≈84%）。
-    check("难度梯度: 预判操作下传说仍比常见难", r_legend_pred <= r_common_pred - 0.03,
-          f"(传说预判={r_legend_pred:.0%} 常见预判={r_common_pred:.0%})")
+    # 预判型 0 延迟在休闲难度下常见/传说都会饱和，没有区分力；梯度改用
+    # 500ms 延迟的玩家衡量：常见≈100%、传说≈84%，既保留难度差也不劝退。
+    check("难度梯度: 迟钝操作下传说仍比常见难", r_legend_laggy <= r_common_laggy - 0.03,
+          f"(传说迟钝={r_legend_laggy:.0%} 常见迟钝={r_common_laggy:.0%})")
     check("迟钝操作下传说鱼可搏到(非劝退)", r_legend_laggy >= 0.6, f"({r_legend_laggy:.0%})")
     check("迟钝操作能稳钓常见鱼", r_common_laggy >= 0.8, f"({r_common_laggy:.0%})")
+
+    # 慢竿必须真的有用：同样 500ms 延迟，默认慢竿在传说鱼上的胜率要明显高于快竿。
+    # 慢竿的价值来自「罩住鱼时进度 +30%」，快竿只提供追击速度，不提供进度加成。
+    legend_ids = [i for i, f in enumerate(SPECIES) if f[3] == LEGEND]
+    legend_slow = sum(win_rate(i, 0, laggy_policy_factory(), trials=30, gear=0) for i in legend_ids) / len(legend_ids)
+    legend_fast = sum(win_rate(i, 0, laggy_policy_factory(), trials=30, gear=1) for i in legend_ids) / len(legend_ids)
+    print(f"      --- 传说鱼（500ms 延迟）：慢竿={legend_slow:.0%} 快竿={legend_fast:.0%} ---")
+    check("慢竿稳线收益可见(传说胜率高于快竿)", legend_slow >= legend_fast + 0.1,
+          f"(慢={legend_slow:.0%} 快={legend_fast:.0%})")
 
     # 8) 每種鱼在最难 - 理想操作下都应可上
     worst = 1.0
