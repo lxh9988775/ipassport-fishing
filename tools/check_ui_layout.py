@@ -104,6 +104,12 @@ EXPR_FALLBACK = [
 # 刻意的重叠（选中高亮条压在文字下、轨道里放捕捉区与鱼标）
 ALLOW_OVERLAP = {
     frozenset(("g_menu_selbar", "g_menu_rows")),
+    frozenset(("g_menu_selbar", "menu_row0")),
+    frozenset(("g_menu_selbar", "menu_row1")),
+    frozenset(("g_menu_selbar", "menu_row2")),
+    frozenset(("g_menu_selbar", "menu_row3")),
+    frozenset(("g_menu_selbar", "menu_row4")),
+    frozenset(("g_menu_selbar", "menu_row5")),
     frozenset(("g_track", "g_zone")),
     frozenset(("g_track", "g_fishmark")),
     frozenset(("g_zone", "g_fishmark")),      # 鱼在捕捉区内是玩法本身

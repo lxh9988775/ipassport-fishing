@@ -13,12 +13,12 @@
 /* ===================== 收线小游戏平衡参数（定点 0..1000） ===================== */
 #define REEL_TRACK        1000   /* 轨道总长 */
 #define REEL_PROGRESS_MAX 1000
-#define REEL_PROGRESS_0   340    /* 起始进度（原 300：多留一截容错，别一失误就归零） */
-#define REEL_GAIN         210    /* 鱼在区内时每秒涨的进度 */
-#define REEL_DECAY_BASE   120    /* 区外时每秒掉的基础进度 */
-#define REEL_DECAY_POWER  180    /* 掉速 = BASE + power * POWER / 100 */
-#define REEL_THINK_MIN    300    /* 换目标的最短间隔 ms（原 260：换太勤看着像乱窜） */
-#define REEL_THINK_VAR    380
+#define REEL_PROGRESS_0   420    /* 起始进度：社区反馈太快后上调（原 340），多留容错 */
+#define REEL_GAIN         220    /* 鱼在区内时每秒涨的进度（原 210） */
+#define REEL_DECAY_BASE   100    /* 区外时每秒掉的基础进度（原 120） */
+#define REEL_DECAY_POWER  140    /* 掉速 = BASE + power * POWER / 100（原 180：掉太猛一失误就归零） */
+#define REEL_THINK_MIN    620    /* 换目标的最短间隔 ms：原来 380ms 一换，小鱼看着像原地乱窜+残影 */
+#define REEL_THINK_VAR    560
 #define REEL_TIMEOUT_MS   20000  /* 拉锯上限，避免无限僵持 */
 #define REEL_PERFECT_MULT 150    /* 完美钓获 1.5x */
 
@@ -41,19 +41,39 @@
  *    也是"手快/手慢"能拉开差距的原因。
  * 3) 鱼到达目标点会歇一小会儿，稀有度越高越不肯歇 —— 给玩家的喘息节奏。
  */
-#define REEL_FISH_SPD_BASE      310     /* 原 320；配合 PER_DIFF 下调，峰值鱼速 620→510/s */
-#define REEL_FISH_SPD_PER_DIFF  2       /* 原 3 */
+/* 鱼速：基准整体下调，难度靠「节奏变化」而不是一路狂奔。
+ * 白条这类小鱼 rating≈23 → 基准 196/s，巡游 147/s；以前是 286/s 全程高速，
+ * 在 20ms 一帧的小屏上每帧跳 5~6px，看起来就是拖影/残影。 */
+#define REEL_FISH_SPD_BASE      180
+#define REEL_FISH_SPD_PER_DIFF  2
 #define REEL_DIFF_BASE          20
 #define REEL_DIFF_PER_RARITY    20
 #define REEL_DIFF_DART          25      /* /100 * dart */
-#define REEL_BAR_ACCEL          10000   /* 捕捉区加减速（单位/秒^2） */
-#define REEL_DART_CHANCE_BASE   12      /* 冲刺概率 % + rarity*10 */
-#define REEL_BURST_MULT_BASE    135     /* 原 155 */
-#define REEL_BURST_MULT_STEP    12      /* 原 22 —— 传说鱼原本冲到 1370/s，捕捉区最快 680/s，纯追不上 */
-#define REEL_BURST_MS_BASE      170     /* 冲刺时长 ms + rarity*STEP */
-#define REEL_BURST_MS_STEP      70      /* 原 90 */
-#define REST_CHANCE_BASE        48      /* 歇息概率 % - rarity*STEP */
+#define REEL_BAR_ACCEL          10000   /* 捕捉区加减速（单位/秒^2，快档） */
+
+/* 四拍节奏：巡游 → 预警 → 冲刺 → 歇息。
+ * 预警期鱼停住并变色，玩家有时间把竿挪过去；冲刺才是快的一段，且时长有限。
+ * 这样"变速"是能读懂、能预判的节奏，不是把速度旋钮拧到底。 */
+#define REEL_PHASE_CRUISE       75      /* 巡游速度 % */
+#define REEL_PHASE_BURST        200     /* 冲刺速度 %：只有冲刺这一段快，且有预警 */
+/* 冲刺绝对速度上限：物理上必须低于最快竿速，否则玩家追不上、进度必掉光。
+ * 鳡鱼 rating 顶格 100 → 基准 380/s，×200% = 760/s，超过手竿快档 680/s，
+ * 冲刺那 0.6s 鱼跑得比竿快，是"基本钓不上"的根因。压到 620/s 留反应余量。
+ * 小鱼（rating≈23）冲刺仅 450/s，不触顶，完全不受影响。 */
+#define REEL_BURST_SPD_CAP      620
+#define REEL_WARN_MS            320     /* 预警时长（冲刺前先亮色） */
+#define REEL_DART_CHANCE_BASE   5       /* 小鱼很少冲；概率 % + rarity*15 */
+#define REEL_DART_CHANCE_STEP   15
+#define REEL_BURST_MS_BASE      240     /* 冲刺时长 ms + rarity*130 */
+#define REEL_BURST_MS_STEP      130
+#define REST_CHANCE_BASE        55      /* 歇息概率 % - rarity*11 */
 #define REST_CHANCE_STEP        11
+#define REST_MS_BASE            150
+
+/* 玩家竿速双档：慢档牺牲追击速度换精度，快档反之。
+ * 档位只改竿的移动速度/加速度，不改进度增益 —— 慢档不是"更容易"，是"更好控"。 */
+#define REEL_GEAR_SLOW_PCT      60
+#define REEL_GEAR_SLOW_ACCEL    70
 
 #define CATCH_SHOW_MS     2200   /* 结算展示时长 */
 #define CAST_ANIM_MS      600    /* 抛竿动画时长 */
@@ -165,9 +185,13 @@ static const fish_species_t SPECIES[FISH_SPECIES_COUNT] = {
  * 比首版整体放大一档（+20）：区太薄时"看得见鱼却罩不住"，玩家会把
  * "手不够快"误读成"这游戏钓不上来"。放大后仍保留三根竿的取舍关系。 */
 static const rod_cfg_t RODS[FISH_ROD_COUNT] = {
-    {"手竿",   "轻便均衡，新手最好上手",    280, 680, 600, 100},
-    {"路亚竿", "区小难控，但起落最快分最高", 235, 840, 740, 150},
-    {"海竿",   "区大容错高，竿沉但最稳",    320, 480, 420, 115},
+    {"手竿",   "轻便均衡，新手最好上手",    165, 680, 600, 100},
+    {"路亚竿", "区小难控，但起落最快分最高", 135, 840, 740, 150},
+    {"海竿",   "区大容错高，竿沉但最稳",    195, 480, 420, 115},
+    /* 巨物竿：绿区 210（最大）+ 竿速 780/720（够追冲刺封顶 620）。
+     * 专治鳡鱼这类冲刺猛的传说鱼（预判胜率 79%→93%），对小鱼几乎无提升，
+     * 代价是得分系数 120 最低——追分高手仍用路亚竿，分工明确。 */
+    {"巨物竿", "绿区最大，专治冲刺猛的大鱼", 210, 780, 720, 120},
 };
 
 /* bite_window_ms 是提竿窗口。深海原为 800ms，反应慢一点就错过，
@@ -257,9 +281,9 @@ static int  g_rel_cnt    = 0;       /* 连续读到"松开"的帧数（去抖计
 static bool g_contacted  = false;   /* 是否全程贴住（完美判定） */
 static bool g_ever_out   = false;
 static int  g_think_ms   = 0;       /* 下次换目标的时刻（绝对毫秒） */
-static int  g_rest_until = 0;       /* 鱼歇息到何时（给玩家的喘息） */
-static int  g_burst_until= 0;       /* 冲刺到何时 */
-static int  g_burst_mult = 100;     /* 冲刺倍率(%) */
+static int  g_phase      = 0;       /* 0=巡游 1=预警 2=冲刺 3=歇息 */
+static int  g_phase_until= 0;       /* 当前节奏拍结束时刻 */
+static int  g_gear       = 0;       /* 0=慢档（精细） 1=快档（追击） */
 
 /* v4 天气决定鱼：UI 层算出的时段/天气（0..3 / 0..2），只影响抽鱼权重。
  * 默认 晨/晴，等价于 v3 行为 —— 没调 fishing_set_env 的老测试不受影响。 */
@@ -504,6 +528,11 @@ void fishing_reel_hold(bool down) {
     g_rel_cnt = down ? 0 : REEL_RELEASE_FRAMES;
 }
 
+/* 收线竿速档位：0=慢（精细控鱼）1=快（追击冲刺鱼）。
+ * 跨局保留玩家选择；只影响竿的移动速度/惯性，不改进度增益。 */
+void fishing_set_reel_gear(int gear) { g_gear = (gear == 1) ? 1 : 0; }
+int  fishing_get_reel_gear(void) { return g_gear; }
+
 /* ===================== 长按 OK（电平驱动，全状态共用） =====================
  *
  * 阈值：明显长于一次正常点按（几百毫秒以内，而且长按计时会随按下沿重新开始），
@@ -587,9 +616,8 @@ static void reel_enter_impl(void) {
     g_rel_cnt  = 0;                   /* ★ 不复位会把上一局的去抖计数带进来 */
     g_ever_out = false;
     g_contacted = true;
-    g_burst_until = 0;
-    g_burst_mult  = 100;
-    g_rest_until  = 0;
+    g_phase       = 0;              /* 每局从巡游起步，玩家先看清鱼怎么动 */
+    g_phase_until = g_last_tick_ms + 500;
     g_think_ms = g_last_tick_ms + REEL_THINK_MIN + rng_range(REEL_THINK_VAR);
     (void)f;
 }
@@ -603,59 +631,68 @@ static int reel_update(int dt_ms) {
     const rod_cfg_t *r = &RODS[g_rod];
     const int rar = (int)f->rarity;
 
-    /* --- 1) 目标点更新：到达即换点，鱼几乎不停歇 --- */
-    if (g_fish_pos == g_fish_target) {
+    /* --- 1) 四拍节奏：巡游(0) → 预警(1) → 冲刺(2) → 歇息(3) ---
+     * 原来只有"冲刺倍率"，鱼全程高速、还频繁改目标 → 真机看着像拖影。
+     * 现在冲刺前先停一下变色预警，玩家能预判；冲刺完回到巡游。 */
+    if (g_last_tick_ms >= g_phase_until) {
+        if (g_phase == 1) {
+            g_phase = 2;                        /* 预警结束 → 冲刺 */
+            g_phase_until = g_last_tick_ms + REEL_BURST_MS_BASE + rar * REEL_BURST_MS_STEP;
+            g_fish_target = 30 + rng_range(941);
+        } else if (g_phase == 2 || g_phase == 3) {
+            g_phase = 0;                        /* 冲刺/歇息结束 → 巡游 */
+            g_phase_until = g_last_tick_ms + 500 + rng_range(500);
+        } else {
+            int dart = REEL_DART_CHANCE_BASE + rar * REEL_DART_CHANCE_STEP;
+            int rest = REST_CHANCE_BASE - rar * REST_CHANCE_STEP;
+            int roll = rng_range(100);
+            if (roll < dart) {
+                g_phase = 1;                    /* 先预警，再冲 */
+                g_phase_until = g_last_tick_ms + REEL_WARN_MS;
+            } else if (roll < dart + rest) {
+                g_phase = 3;                    /* 歇一口气 */
+                g_phase_until = g_last_tick_ms + REST_MS_BASE + rng_range(220);
+            } else {
+                g_phase_until = g_last_tick_ms + 500 + rng_range(500);
+            }
+        }
+    }
+
+    /* --- 2) 目标点：换得慢一点，鱼是"游过去的"不是"跳过去的" --- */
+    if (g_fish_pos == g_fish_target && g_phase != 1 && g_phase != 3) {
         g_fish_target = 30 + rng_range(941);
     }
-    if (g_last_tick_ms >= g_think_ms) {
-        if (rng_range(100) < 10) {
-            g_fish_target = g_fish_pos;
-        } else {
-            g_fish_target = 30 + rng_range(941);
-        }
-        /* 突进：偶尔冲刺一小段，逼玩家提前跟竿 */
-        if (rng_range(100) < REEL_DART_CHANCE_BASE + rar * 10) {
-            g_burst_mult  = REEL_BURST_MULT_BASE + rar * REEL_BURST_MULT_STEP;
-            g_burst_until = g_last_tick_ms + REEL_BURST_MS_BASE + rar * REEL_BURST_MS_STEP;
-        }
-        int think_min = REEL_THINK_MIN - rar * 40;
-        if (think_min < 140) think_min = 140;
+    if (g_last_tick_ms >= g_think_ms && g_phase == 0) {
+        g_fish_target = 30 + rng_range(941);
+        int think_min = REEL_THINK_MIN - rar * 60;
+        if (think_min < 360) think_min = 360;
         g_think_ms = g_last_tick_ms + think_min + rng_range(REEL_THINK_VAR);
     }
 
-    /* --- 2) 游速：由"挣扎强度"决定，上限压在鱼竿能力附近，保证追得上 --- */
+    /* --- 3) 速度：巡游慢、预警停、冲刺快、歇息停 ---
+     * 小鱼冲刺概率低，所以白条整体是慢慢晃，不是满屏乱窜。 */
     int rating = REEL_DIFF_BASE + rar * REEL_DIFF_PER_RARITY + (int)f->dart * REEL_DIFF_DART / 100;
     if (rating > 100) rating = 100;
-    int fspd = REEL_FISH_SPD_BASE + rating * REEL_FISH_SPD_PER_DIFF;
-    if (g_last_tick_ms < g_burst_until) {
-        fspd = fspd * g_burst_mult / 100;
+    int base_spd = REEL_FISH_SPD_BASE + rating * REEL_FISH_SPD_PER_DIFF;
+    int fspd = base_spd * REEL_PHASE_CRUISE / 100;
+    if (g_phase == 1 || g_phase == 3) fspd = 0;
+    else if (g_phase == 2) {
+        fspd = base_spd * REEL_PHASE_BURST / 100;
+        if (fspd > REEL_BURST_SPD_CAP) fspd = REEL_BURST_SPD_CAP;   /* 冲刺不得超过最快竿速 */
     }
 
-    /* --- 3) 移动（休息时不挪窝） --- */
-    if (g_last_tick_ms < g_rest_until) {
-        /* 歇脚中 */
-    } else {
-        if (g_fish_pos == g_fish_target) {
-            int rest_chance = REST_CHANCE_BASE - rar * REST_CHANCE_STEP;
-            if (rng_range(100) < rest_chance) {
-                g_rest_until = g_last_tick_ms + 120 + rng_range(200);
-            } else {
-                g_fish_target = 30 + rng_range(941);
-            }
+    int diff = g_fish_target - g_fish_pos;
+    if (diff != 0 && fspd > 0) {
+        int step = fspd * dt_ms / 1000;
+        if (step < 1) step = 1;
+        if (diff > 0) {
+            g_fish_pos += (diff > step ? step : diff);
+            g_fish_dir = 1;
+        } else {
+            g_fish_pos -= ((-diff) > step ? step : (-diff));
+            g_fish_dir = -1;
         }
-        int diff = g_fish_target - g_fish_pos;
-        if (diff != 0) {
-            int step = fspd * dt_ms / 1000;
-            if (step < 1) step = 1;
-            if (diff > 0) {
-                g_fish_pos += (diff > step ? step : diff);
-                g_fish_dir = 1;
-            } else {
-                g_fish_pos -= ((-diff) > step ? step : (-diff));
-                g_fish_dir = -1;
-            }
-            g_fish_pos = clampi(g_fish_pos, 0, REEL_TRACK);
-        }
+        g_fish_pos = clampi(g_fish_pos, 0, REEL_TRACK);
     }
 
     /* --- 4) 捕捉区移动：带惯性，会过冲，所以必须预判 ---
@@ -666,8 +703,16 @@ static int reel_update(int dt_ms) {
      * 松手反而往上飘，跟屏幕提示「按住 OK 抬竿 · 松开落下」和设计稿里的
      * 「按住 OK = 捕捉区上升」全相反 —— 玩起来就是「按了没反应、上不上下不下」。
      * tests/test_fishing_reel_hold.c 里钉死了屏幕方向，改坏会立刻红。 */
-    int tgt_v = g_holding ? -(int)r->rise_spd : (int)r->fall_spd;
-    int dv = REEL_BAR_ACCEL * dt_ms / 1000;
+    int rise_spd = (int)r->rise_spd;
+    int fall_spd = (int)r->fall_spd;
+    int accel    = REEL_BAR_ACCEL;
+    if (g_gear == 0) {              /* 慢档：竿移动慢、惯性小，方便把鱼稳在缩小的区里 */
+        rise_spd = rise_spd * REEL_GEAR_SLOW_PCT / 100;
+        fall_spd = fall_spd * REEL_GEAR_SLOW_PCT / 100;
+        accel    = accel * REEL_GEAR_SLOW_ACCEL / 100;
+    }
+    int tgt_v = g_holding ? -rise_spd : fall_spd;
+    int dv = accel * dt_ms / 1000;
     if (dv < 1) dv = 1;
     if (g_bar_vel < tgt_v) g_bar_vel += (tgt_v - g_bar_vel > dv ? dv : tgt_v - g_bar_vel);
     else                   g_bar_vel -= (g_bar_vel - tgt_v > dv ? dv : g_bar_vel - tgt_v);
@@ -834,6 +879,8 @@ void fishing_get_status(fishing_status_t *out) {
     out->reel_bar_h    = g_bar_h;
     out->reel_progress = g_progress;
     out->reel_holding  = g_holding;
+    out->reel_phase    = g_phase;
+    out->reel_gear     = g_gear;
     out->cur_species   = g_cur_species;
     out->cur_len_mm    = g_cur_len_mm;
     out->cur_wgt_g     = g_cur_wgt_g;

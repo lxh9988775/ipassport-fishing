@@ -61,7 +61,7 @@ extern "C" {
 /* 内容体量（遍历一律用 *_COUNT，不要写死数字，方便后续追加） */
 #define FISH_SPECIES_COUNT 27
 #define FISH_BAIT_COUNT    3
-#define FISH_ROD_COUNT     3
+#define FISH_ROD_COUNT     4
 #define FISH_SPOT_COUNT    5
 #define FISH_SUBSPOT_COUNT 10     /* 每场 2 处，按场次连续编号 0..9 */
 #define FISH_RARITY_COUNT  4
@@ -78,6 +78,7 @@ typedef enum {
     ROD_HAND = 0,    /* 手竿：捕捉区大、起落慢，最稳 */
     ROD_LURE = 1,    /* 路亚竿：起落快，适合乱窜的鱼 */
     ROD_SEA  = 2,    /* 海竿：容错高、得分高，但重、跟手慢 */
+    ROD_HEAVY = 3,   /* 巨物竿：绿区最大、专治冲刺猛的传说鱼，但得分系数最低 */
     ROD_COUNT = FISH_ROD_COUNT
 } rod_t;
 
@@ -229,6 +230,8 @@ typedef struct {
     int reel_bar_h;      /* 捕捉区高度 */
     int reel_progress;   /* 收线进度 0..1000 */
     bool reel_holding;   /* OK 是否按住 */
+    int  reel_phase;     /* 鱼的节奏：0巡游 1预警 2冲刺 3歇息 */
+    int  reel_gear;      /* 竿速档位：0慢（精细） 1快（追击） */
 
     /* --- 当前目标鱼（REELING / CATCH 有意义） --- */
     int  cur_species;    /* -1 表示无 */
@@ -287,6 +290,10 @@ void fishing_reel_hold_sample(bool down);
 
 /* 收线：直接落值（不去抖）。仅供按键电压读不到时的事件兜底路径与单元测试使用。 */
 void fishing_reel_hold(bool down);
+
+/* 竿速档位：0=慢（精细）1=快（追击）。收线中上下键切换，跨局保留。 */
+void fishing_set_reel_gear(int gear);
+int  fishing_get_reel_gear(void);
 
 /* 长按 OK：全状态共用一套电平驱动判定（和收线共用同一路 ADC 读数）。
  * down = 这一帧 OK 是否被按住，now_ms = 单调毫秒。

@@ -20,32 +20,37 @@ MASK = 0xFFFFFFFF
 # ---------- 平衡参数（与 C 层一致，改这里必须同步改 main/fishing_logic.c） ----------
 REEL_TRACK = 1000
 REEL_PROGRESS_MAX = 1000
-REEL_PROGRESS_0 = 340           # 起手留的容错余量
-REEL_GAIN = 210
-REEL_DECAY_BASE = 120
-REEL_DECAY_POWER = 180
-REEL_FISH_SPD_BASE = 310        # 峰值鱼速 620 -> 510/s
+REEL_PROGRESS_0 = 420           # 起手容错上调（社区真机反馈太快玩不了）
+REEL_GAIN = 220
+REEL_DECAY_BASE = 100
+REEL_DECAY_POWER = 140
+REEL_FISH_SPD_BASE = 180        # 基准下调：白条巡游约 170/s，不再满屏拖影
 REEL_FISH_SPD_PER_DIFF = 2
-REEL_THINK_MIN = 300            # 换目标别太勤，不然看着像乱窜
-REEL_THINK_VAR = 380
+REEL_THINK_MIN = 620            # 换目标放慢：鱼是游过去的，不是跳过去的
+REEL_THINK_VAR = 560
 REEL_TIMEOUT_MS = 20000
 REEL_PERFECT_MULT = 150
-# 鱼的"突发冲刺"：稀有度越高，冲刺越频繁、越猛 —— 难度梯度主要来源
-REEL_DART_CHANCE_BASE = 12      # % + rarity*10
-REEL_BURST_MULT_BASE = 135      # % + rarity*REEL_BURST_MULT_STEP
-REEL_BURST_MULT_STEP = 12
-REEL_BURST_MS_BASE = 170        # ms + rarity*REEL_BURST_MS_STEP
-REEL_BURST_MS_STEP = 70
-# 每条魚派生一个「挣扎强度」d(0..100)，游速 = BASE + d*PER_DIFF。
-# 关键：上限刻意压在鱼竿最高speed附近，保证再猛的鱼也"追得上"，
-# 难度来自容错余量而不是"追不上"，这样难度曲线天然平滑、不会出现断崖。
+# 四拍节奏：巡游 → 预警(停住变色) → 冲刺 → 歇息。
+# 变速来自节奏，不是把速度旋钮拧到底；预警给玩家预判时间。
+REEL_PHASE_CRUISE = 75          # 巡游速度 %
+REEL_PHASE_BURST = 200          # 冲刺速度 %：只有这一段快，且有预警
+# 冲刺绝对速度上限：物理上必须低于最快竿速（手竿快档 680/s），否则追不上。
+# 鳡鱼顶格 380/s×200%=760/s 超过竿速，是"基本钓不上"的根因，压到 620/s。
+REEL_BURST_SPD_CAP = 620
+REEL_WARN_MS = 320              # 预警时长
+REEL_DART_CHANCE_BASE = 5       # 小鱼很少冲；% + rarity*15
+REEL_DART_CHANCE_STEP = 15
+REEL_BURST_MS_BASE = 240        # ms + rarity*130
+REEL_BURST_MS_STEP = 130
 REEL_DIFF_BASE = 20
 REEL_DIFF_PER_RARITY = 20
 REEL_DIFF_DART = 25      # /100 * dart
-REEL_BAR_ACCEL = 10000   # 捕捉区加减速（单位/秒^2）：有惯性才需要预判，才有操作手感
-# 休息概率：稀有度越高越不肯歇，这是难度梯度的主要来源
-REST_CHANCE_BASE = 48
-REST_CHANCE_STEP = 11           # common 48% -> legend 15%
+REEL_BAR_ACCEL = 10000   # 快档加速度；慢档乘 REEL_GEAR_SLOW_ACCEL
+REEL_GEAR_SLOW_PCT = 60
+REEL_GEAR_SLOW_ACCEL = 70
+REST_CHANCE_BASE = 55
+REST_CHANCE_STEP = 11
+REST_MS_BASE = 150
 CATCH_SHOW_MS = 2200
 CAST_ANIM_MS = 600
 
@@ -108,9 +113,11 @@ SUBSPOTS = [
 
 # (name, bar_h, rise, fall, mult100)
 RODS = [
-    ("手竿",   280, 680, 600, 100),
-    ("路亚竿", 235, 840, 740, 150),
-    ("海竿",   320, 480, 420, 115),
+    ("手竿",   165, 680, 600, 100),
+    ("路亚竿", 135, 840, 740, 150),
+    ("海竿",   195, 480, 420, 115),
+    # 巨物竿：绿区最大、专治冲刺猛的大鱼；得分系数最低，追分仍用路亚竿。
+    ("巨物竿", 210, 780, 720, 120),
 ]
 
 # (name, wait_min, wait_max, bite_window, mult100, unlock_catch)
@@ -168,9 +175,9 @@ class Fishing:
         self.contacted = True
         self.ever_out = False
         self.think_ms = 0
-        self.burst_until = 0
-        self.burst_mult = 100
-        self.rest_until = 0
+        self.phase = 0          # 0巡游 1预警 2冲刺 3歇息
+        self.phase_until = 0
+        self.gear = 0           # 0慢档 1快档（跨局保留）
         # current target
         self.cur = -1
         self.cur_len = 0
@@ -275,62 +282,73 @@ class Fishing:
         self.holding = False
         self.ever_out = False
         self.contacted = True
-        self.burst_until = 0
-        self.burst_mult = 100
-        self.rest_until = 0
+        self.phase = 0
+        self.phase_until = self.last + 500
         self.think_ms = self.last + REEL_THINK_MIN + self._range(REEL_THINK_VAR)
 
     def reel_update(self, dt):
         f = SPECIES[self.cur]
         r = RODS[self.rod]
         rar = f[3]
-        # 到达目标立即换点 —— 鱼几乎不停歇，这是难度的主要来源（参考星露谷）
-        if self.fish_pos == self.fish_target:
-            self.fish_target = 30 + self._range(941)
-        if self.last >= self.think_ms:
-            if self._range(100) < 10:
-                self.fish_target = self.fish_pos
-            else:
+        # 四拍节奏：巡游(0) → 预警(1) → 冲刺(2) → 歇息(3)
+        if self.last >= self.phase_until:
+            if self.phase == 1:
+                self.phase = 2
+                self.phase_until = self.last + REEL_BURST_MS_BASE + rar * REEL_BURST_MS_STEP
                 self.fish_target = 30 + self._range(941)
-            # 突进：冲刺一小段，逼玩家快速跟竿
-            if self._range(100) < REEL_DART_CHANCE_BASE + rar * 10:
-                mult = REEL_BURST_MULT_BASE + rar * REEL_BURST_MULT_STEP
-                self.burst_mult = mult
-                self.burst_until = self.last + REEL_BURST_MS_BASE + rar * REEL_BURST_MS_STEP
-            self.think_ms = self.last + max(140, REEL_THINK_MIN - rar * 40) + self._range(REEL_THINK_VAR)
+            elif self.phase in (2, 3):
+                self.phase = 0
+                self.phase_until = self.last + 500 + self._range(500)
+            else:
+                dart = REEL_DART_CHANCE_BASE + rar * REEL_DART_CHANCE_STEP
+                rest = REST_CHANCE_BASE - rar * REST_CHANCE_STEP
+                roll = self._range(100)
+                if roll < dart:
+                    self.phase = 1
+                    self.phase_until = self.last + REEL_WARN_MS
+                elif roll < dart + rest:
+                    self.phase = 3
+                    self.phase_until = self.last + REST_MS_BASE + self._range(220)
+                else:
+                    self.phase_until = self.last + 500 + self._range(500)
+        if self.fish_pos == self.fish_target and self.phase not in (1, 3):
+            self.fish_target = 30 + self._range(941)
+        if self.last >= self.think_ms and self.phase == 0:
+            self.fish_target = 30 + self._range(941)
+            self.think_ms = self.last + max(360, REEL_THINK_MIN - rar * 60) + self._range(REEL_THINK_VAR)
         diff_rating = REEL_DIFF_BASE + rar * REEL_DIFF_PER_RARITY + f[10] * REEL_DIFF_DART // 100
         if diff_rating > 100:
             diff_rating = 100
-        fspd = REEL_FISH_SPD_BASE + diff_rating * REEL_FISH_SPD_PER_DIFF
-        if self.last < self.burst_until:
-            fspd = fspd * self.burst_mult // 100
+        base_spd = REEL_FISH_SPD_BASE + diff_rating * REEL_FISH_SPD_PER_DIFF
+        fspd = base_spd * REEL_PHASE_CRUISE // 100
+        if self.phase in (1, 3):
+            fspd = 0
+        elif self.phase == 2:
+            fspd = base_spd * REEL_PHASE_BURST // 100
+            if fspd > REEL_BURST_SPD_CAP:
+                fspd = REEL_BURST_SPD_CAP   # 冲刺不得超过最快竿速
 
-        # 休息：给玩家的喘息窗口。稀有度越高越不肯停 —— 难度梯度的主要来源
-        if self.last < self.rest_until:
-            pass
-        else:
-            if self.fish_pos == self.fish_target:
-                rest_chance = REST_CHANCE_BASE - rar * REST_CHANCE_STEP
-                if self._range(100) < rest_chance:
-                    self.rest_until = self.last + 120 + self._range(200)
-                else:
-                    self.fish_target = 30 + self._range(941)
-            diff = self.fish_target - self.fish_pos
-            if diff != 0:
-                step = max(1, fspd * dt // 1000)
-                if diff > 0:
-                    self.fish_pos += min(diff, step)
-                else:
-                    self.fish_pos -= min(-diff, step)
-                self.fish_pos = clampi(self.fish_pos, 0, REEL_TRACK)
+        diff = self.fish_target - self.fish_pos
+        if diff != 0 and fspd > 0:
+            step = max(1, fspd * dt // 1000)
+            if diff > 0:
+                self.fish_pos += min(diff, step)
+            else:
+                self.fish_pos -= min(-diff, step)
+            self.fish_pos = clampi(self.fish_pos, 0, REEL_TRACK)
 
         # 捕捉区带惯性：加速/减速都要时间，所以会过冲 —— 这是操作手感的来源。
         # 坐标约定与 fishing_logic.c 一致：bar_pos 越大越靠屏幕下方，
         # 所以「按住 = 抬竿 = 往上方走」必须是 bar_pos 减小（取负号）。
         # 这里曾与 C 层一起写反过，tune_balance.py 的胜率矩阵也跟着反着算，
         # 已同步；改动方向前后都请重跑一次调参台。
-        tgt_v = -r[2] if self.holding else r[3]
-        dv = REEL_BAR_ACCEL * dt // 1000
+        rise, fall, accel = r[2], r[3], REEL_BAR_ACCEL
+        if self.gear == 0:
+            rise = rise * REEL_GEAR_SLOW_PCT // 100
+            fall = fall * REEL_GEAR_SLOW_PCT // 100
+            accel = accel * REEL_GEAR_SLOW_ACCEL // 100
+        tgt_v = -rise if self.holding else fall
+        dv = accel * dt // 1000
         if dv < 1:
             dv = 1
         if self.bar_vel < tgt_v:
@@ -707,10 +725,16 @@ def main():
     # 机器在常见和传说上都是 100%，差值恒为 0，这条会天天误报。
     # 至于"0 延迟也钓不上"，那属于物理上追不上，是 bug 不是难度 ——
     # 由下面第 8 组"最难鱼竿下仍可上全部鱼种"单独守着。
-    check("难度梯度: 迟钝操作下传说明显比常见难", r_legend_laggy <= r_common_laggy - 0.15,
-          f"(传说迟钝={r_legend_laggy:.0%} 常见迟钝={r_common_laggy:.0%})")
-    # 设计取舍：常见鱼要让玩家稳上手（范围是一片鱼），技巧考核放在稀有/传说身上
-    check("迟钝操作不能稳赢传说鱼", r_legend_laggy <= 0.35, f"({r_legend_laggy:.0%})")
+    # 设计定位（社区真机反馈后修订）：这是休闲玩法，不是硬核考核。
+    # 旧目标「迟钝玩家传说鱼≤35%」直接导致真机上普通玩家胜率归零、被审核打回，
+    # 属于劝退式难度，已废弃。新目标：新手稳钓常见鱼、也能搏到传说鱼，
+    # 但常见鱼仍要比传说鱼更容易（保留梯度），不追求把新手挡在门外。
+    # 梯度用「预判型」玩家衡量，不用迟钝型：休闲难度下迟钝玩家在常见鱼上
+    # 已 100% 饱和，传说鱼稍放宽也立刻跟到 100%，两者差值恒为 0，这条断言
+    # 会否决任何合理的下调（假阳性）。预判型有真实区分力（常见≈98%/传说≈84%）。
+    check("难度梯度: 预判操作下传说仍比常见难", r_legend_pred <= r_common_pred - 0.03,
+          f"(传说预判={r_legend_pred:.0%} 常见预判={r_common_pred:.0%})")
+    check("迟钝操作下传说鱼可搏到(非劝退)", r_legend_laggy >= 0.6, f"({r_legend_laggy:.0%})")
     check("迟钝操作能稳钓常见鱼", r_common_laggy >= 0.8, f"({r_common_laggy:.0%})")
 
     # 8) 每種鱼在最难 - 理想操作下都应可上

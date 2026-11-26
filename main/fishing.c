@@ -210,7 +210,8 @@ static const lv_image_dsc_t *const THUMB_BG_IMG[FISH_SPOT_COUNT] = {
 /* 钓场里真正会画出来的道具：手上的竿 + 挂在钩上的饵。
  * 这两组图一直在 sprites.h 里，但 v2 的界面从来没引用过 —— 换竿换饵只有
  * 菜单文字变、画面一动不动，玩家会以为没生效。 */
-static const lv_image_dsc_t *const ROD_IMG[FISH_ROD_COUNT]   = { &rod_hand, &rod_lure, &rod_sea };
+/* 巨物竿图标待美术确认后补 rod_heavy；当前先用 rod_sea 占位，保证 4 支竿都有图、可编译。 */
+static const lv_image_dsc_t *const ROD_IMG[FISH_ROD_COUNT]   = { &rod_hand, &rod_lure, &rod_sea, &rod_sea };
 static const lv_image_dsc_t *const BAIT_IMG[FISH_BAIT_COUNT] = { &bait_worm, &bait_dough, &bait_spinner };
 
 /* ===================== UI 对象 ===================== */
@@ -258,6 +259,7 @@ static lv_obj_t *g_zone_fill   = NULL;
 static lv_obj_t *g_fishmark    = NULL;
 static lv_obj_t *g_prg_fill    = NULL;
 static lv_obj_t *g_lbl_reel    = NULL;
+static lv_obj_t *g_lbl_gear    = NULL;
 
 /* 上鱼结算 */
 static lv_obj_t *g_result      = NULL;
@@ -632,6 +634,8 @@ static void build_ui(void) {
     lv_obj_clear_flag(g_fishmark, LV_OBJ_FLAG_SCROLLABLE);
 
     g_lbl_reel = make_label(g_reel, "收线中", 40, TRK_Y, lv_color_white());
+    /* 竿速 / 鱼的节奏单独一行，不挤进 g_lbl_reel（三行会顶到右边轨道） */
+    g_lbl_gear = make_label(g_reel, "慢竿 巡游", 60, 160, MUTED_C);
 
     /* ---------- 结算 ---------- */
     g_result = lv_obj_create(scr);
@@ -677,18 +681,29 @@ static void build_ui(void) {
     lv_obj_clear_flag(g_menu, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_menu, LV_OBJ_FLAG_HIDDEN);
 
+    /* 选中条：跟着菜单行走（菜单行坐标见下，逐条展开给布局检查器还原）。 */
     g_menu_selbar = lv_obj_create(g_menu);
-    lv_obj_set_size(g_menu_selbar, SCR_W - 12, 26);
-    lv_obj_set_pos(g_menu_selbar, 6, 70);
+    lv_obj_set_size(g_menu_selbar, SCR_W - 12, 30);
+    lv_obj_set_pos(g_menu_selbar, 6, 10);
     lv_obj_set_style_bg_color(g_menu_selbar, lv_color_make(153, 0, 58), 0); /* 高亮红 */
     lv_obj_set_style_bg_opa(g_menu_selbar, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(g_menu_selbar, 0, 0);
     lv_obj_set_style_radius(g_menu_selbar, 4, 0);
     lv_obj_clear_flag(g_menu_selbar, LV_OBJ_FLAG_SCROLLABLE);
 
-    for (int i = 0; i < 6; ++i) {
-        g_menu_rows[i] = make_label(g_menu, "", 12, 74 + i * 30, lv_color_white());
-    }
+    /* 6 行铺满整块面板（原来 74+i*30 全挤在上半部，下半屏一大片留白）。
+     * 起始 y=14、行距 42：第 1 行 y=14 … 第 6 行 y=224（行高 20），
+     * 面板高 274，末行底 244，底部留 30px 不压提示条。
+     * 逐条展开而非 for(i)，布局检查器才能解析出真实坐标、检出不出了屏。 */
+    lv_obj_t *menu_row0 = make_label(g_menu, "开始钓鱼", 14, 17, lv_color_white());
+    lv_obj_t *menu_row1 = make_label(g_menu, "鱼竿   手竿", 14, 59, lv_color_white());
+    lv_obj_t *menu_row2 = make_label(g_menu, "饵料   蚯蚓", 14, 101, lv_color_white());
+    lv_obj_t *menu_row3 = make_label(g_menu, "钓点   静水塘", 14, 143, lv_color_white());
+    lv_obj_t *menu_row4 = make_label(g_menu, "图鉴   0/27", 14, 185, lv_color_white());
+    lv_obj_t *menu_row5 = make_label(g_menu, "声音   开", 14, 227, lv_color_white());
+    g_menu_rows[0] = menu_row0; g_menu_rows[1] = menu_row1;
+    g_menu_rows[2] = menu_row2; g_menu_rows[3] = menu_row3;
+    g_menu_rows[4] = menu_row4; g_menu_rows[5] = menu_row5;
 
     /* ---------- 图鉴 ---------- */
     g_codex = lv_obj_create(scr);
@@ -898,7 +913,7 @@ static void show_only(int which) {
 
     const char *hint = NULL;
     switch (which) {
-        case 1: hint = "按住 OK 抬竿 · 松开落下"; break;   /* 收线：原 refresh_reel 里每帧重设 */
+        case 1: hint = "上下变速 OK抬竿 松开落下"; break;   /* 收线：原 refresh_reel 里每帧重设 */
         case 4: hint = "上下翻·OK详情·长按返回";  break;   /* 图鉴详情 */
         case 5: hint = "上下选钓场 · OK进标点"; break;
         case 6: hint = "左右选标点 · OK下竿"; break;
@@ -1164,6 +1179,7 @@ static void refresh_scene(const fishing_status_t *st) {
 static int s_zone_h = -1;
 static int s_zone_y = -1;
 static int s_mark_y = -1;
+static int s_mark_color = -1;
 static int s_prg_h  = -1;
 
 static void refresh_reel(const fishing_status_t *st) {
@@ -1195,10 +1211,30 @@ static void refresh_reel(const fishing_status_t *st) {
         lv_obj_set_pos(g_prg_fill, PRG_X, PRG_Y + PRG_H - ph);
     }
 
+    /* 鱼的节奏只在翻转时改色：黄=巡游，红=蓄力预警，橙=冲刺。
+     * 每帧无条件 set_style 会把整块轨道重绘，是卡死铁律里的头号杀手。 */
+    int color_key = st->reel_phase;
+    if (color_key > 3) color_key = 0;
+    if (color_key != s_mark_color) {
+        s_mark_color = color_key;
+        lv_color_t c = (color_key == 1) ? lv_color_make(255, 96, 96)
+                     : (color_key == 2) ? lv_color_make(255, 168, 56)
+                     : (color_key == 3) ? lv_color_make(150, 170, 190)
+                     :                    lv_color_make(255, 200, 70);
+        lv_obj_set_style_bg_color(g_fishmark, c, 0);
+    }
+
     const fish_species_t *f = fishing_species_info(st->cur_species);
+    static const char *const PHASE_LINE[2][4] = {
+        {"慢竿 巡游", "慢竿 蓄力", "慢竿 冲刺", "慢竿 歇息"},
+        {"快竿 巡游", "快竿 蓄力", "快竿 冲刺", "快竿 歇息"},
+    };
+    int phase = st->reel_phase;
+    if (phase < 0 || phase > 3) phase = 0;
     snprintf(buf, sizeof(buf), "收线 %d%%\n%s", st->reel_progress / 10,
              f ? f->name : "");
     set_text_cached(g_lbl_reel, buf);
+    set_text_cached(g_lbl_gear, PHASE_LINE[st->reel_gear ? 1 : 0][phase]);
     /* 「按住 OK 抬竿 · 松开落下」是面板固定文案，已移到 show_only(1) 里只在切面板时写一次 */
 }
 
@@ -1244,7 +1280,7 @@ static void refresh_menu(const fishing_status_t *st) {
         }
         set_text_cached(g_menu_rows[i], txt);
     }
-    lv_obj_set_pos(g_menu_selbar, 6, 70 + g_menu_idx * 30);   /* 值没变时 LVGL 自己会短路 */
+    lv_obj_set_pos(g_menu_selbar, 6, 10 + g_menu_idx * 42);   /* 铺满布局：选中条跟着行走 */
 
     /* 钓点这一行：没解锁的钓点选不进去（fishing_set_spot 会拒绝），
      * 但之前这版只做了"静默跳过"，玩家按住上下键画面纹丝不动，看上去就是坏了
@@ -1416,13 +1452,40 @@ static void refresh_spot_pick(void) {
         "黄昏 · 鲈鱼洄游", "夜晴 · 灯光诱鱼",
     };
     static int drawn_sel = -1;
+    static int drawn_lock_mask = -1;   /* 解锁状态影子：只在变化时动文字颜色，避免每帧 invalidate */
     char buf[64];
+    int lock_mask = 0;
     for (int i = 0; i < FISH_SPOT_COUNT; ++i) {
+        const bool unlocked = fishing_spot_unlocked((spot_t)i);
+        if (!unlocked) lock_mask |= (1 << i);
         snprintf(buf, sizeof(buf), "%d 处标点", subspot_count_of(i));
         set_text_cached(g_spot_subs[i], buf);
         set_text_cached(g_spot_names[i], fishing_spot_name((spot_t)i));
-        set_text_cached(g_spot_hooks[i], HOOKS[i]);
-        set_text_cached(g_spot_new[i], (i >= 3 && i < FISH_SPOT_COUNT) ? "NEW" : "");
+        if (unlocked) {
+            /* 已解锁：保留原来的鱼情提示与 NEW 标 */
+            set_text_cached(g_spot_hooks[i], HOOKS[i]);
+            set_text_cached(g_spot_new[i], (i >= 3 && i < FISH_SPOT_COUNT) ? "NEW" : "");
+        } else {
+            /* 未解锁：把鱼情换成明确门槛，玩家一眼看懂"不是坏了，是还没开" */
+            int left = fishing_spot_unlock_left((spot_t)i);
+            snprintf(buf, sizeof(buf), "未解锁 · 还差 %d 条", left);
+            set_text_cached(g_spot_hooks[i], buf);
+            set_text_cached(g_spot_new[i], "锁");
+        }
+    }
+    /* 解锁状态翻转才改色：未解锁整行文字压暗、缩略图调暗，已解锁恢复。 */
+    if (drawn_lock_mask != lock_mask) {
+        drawn_lock_mask = lock_mask;
+        for (int i = 0; i < FISH_SPOT_COUNT; ++i) {
+            bool locked = (lock_mask & (1 << i)) != 0;
+            lv_obj_set_style_text_color(g_spot_names[i],
+                locked ? lv_color_make(120, 132, 148) : WHITE_C, 0);
+            lv_obj_set_style_text_color(g_spot_subs[i],
+                locked ? lv_color_make(96, 108, 124) : TEAL_C, 0);
+            lv_obj_set_style_text_color(g_spot_hooks[i],
+                locked ? lv_color_make(214, 158, 92) : MUTED_C, 0); /* 门槛用暖色更醒目 */
+            lv_obj_set_style_img_opa(g_spot_thumbs[i], locked ? 120 : 255, 0);
+        }
     }
     /* 选中态只在光标真的移动时碰样式（周期性重设样式=整页重绘） */
     if (drawn_sel != g_spot_pick_idx) {
@@ -1622,6 +1685,12 @@ static void handle_btn(bsp_btn_t btn, bsp_btn_ev_t ev) {
      * 松手判定已改由 game_task 每帧轮询 ADC（reel_poll_hold → fishing_reel_hold_sample），
      * 这里只保留两件事：让按下再快一点，以及 ADC 读不出来时的兜底。 */
     if (st.state == STATE_REELING) {
+        /* 上下键 = 竿速档位：慢档好控小绿区，快档追冲刺鱼。
+         * 只在单击时切，不影响 OK 的电平收线。 */
+        if (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN) {
+            if (ev == BSP_BTN_CLICK) fishing_set_reel_gear(btn == BSP_BTN_DOWN ? 1 : 0);
+            return;
+        }
         if (btn != BSP_BTN_OK) return;
         if (ev == BSP_BTN_PRESS) {
             /* 按下立即生效（比等下一帧轮询快 <=20ms）。
