@@ -25,8 +25,10 @@ CONFIG_LV_DEF_REFR_PERIOD=20
 CONFIG_LV_FONT_MONTSERRAT_14=y
 CONFIG_LV_FONT_MONTSERRAT_20=y
 # LVGL 内置 malloc 池大小(KB)。它是独立静态区、不与系统堆共享,配大了会白白占用 RAM。
-# 本 demo UI 简单,24KB 足够;若自建复杂界面出现绘制卡死/看门狗,调大此值。
-CONFIG_LV_MEM_SIZE_KILOBYTES=24
+# v5 屏面从约 50 个对象扩到 114 个(选钓场/选标点/图鉴列表),24KB 被撑爆后
+# 分配器自旋 → CPU0 占满、开机白屏、task_wdt 超时(社区真机审核实测)。
+# 提到 96KB(mage 线验证过的安全值),留足余量。
+CONFIG_LV_MEM_SIZE_KILOBYTES=96
 
 # --- 系统 ---
 CONFIG_FREERTOS_HZ=1000
