@@ -22,6 +22,7 @@ extern const lv_image_dsc_t spr_drum;
 extern const lv_image_dsc_t spr_runner_a;
 extern const lv_image_dsc_t spr_runner_b;
 extern const lv_image_dsc_t spr_rock;
+extern const lv_image_dsc_t spr_carrot_s;
 extern const lv_image_dsc_t spr_empty;
 extern const lv_image_dsc_t spr_cnt_3;
 extern const lv_image_dsc_t spr_cnt_2;

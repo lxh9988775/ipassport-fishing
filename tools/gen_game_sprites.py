@@ -200,6 +200,21 @@ RACE_RED = (179, 58, 90)       # 试玩 RED #B33A5A
 RACE_GOLD = (245, 215, 122)    # 试玩 GOLD #F5D77A
 
 
+def draw_race_carrot():
+    """赛跑道上的小萝卜：母版试玩页同款（橙色三角身 + 两片绿叶，约 9x14）。
+    母版画法：身体三角 (cx-4,cy-2)-(cx+4,cy-2)-(cx,cy+6) 填 #E8893C，
+    两片绿叶 #6DBE5E 从 (cx±4,cy-2) 收拢到 (cx,cy-7)。禁用旧接萝卜大萝卜。"""
+    im = canvas(10, 15)
+    d = ImageDraw.Draw(im)
+    OR = C((232, 137, 60))    # #E8893C
+    LF = C((109, 190, 94))    # #6DBE5E
+    cx, cy = 5, 8
+    d.polygon([(cx - 4, cy - 2), (cx + 4, cy - 2), (cx, cy + 6)], fill=OR)
+    d.polygon([(cx - 4, cy - 2), (cx - 1, cy - 7), (cx, cy - 2)], fill=LF)
+    d.polygon([(cx + 4, cy - 2), (cx + 1, cy - 7), (cx, cy - 2)], fill=LF)
+    return im
+
+
 def draw_runner(frame):
     """玩家像素跑者两帧 32x40（试玩 drawMe 的矩形逐条平移翻译，含背包手臂包围盒）。"""
     im = canvas(32, 40)
@@ -274,17 +289,29 @@ def draw_countdown(text):
     return im
 
 
+RACE_BG_ROOM = r"C:\Users\8605464\Desktop\AIpassport\build\pet_ui\ai_bg\16_bit_pixel_art_game_backgrou_2026-11-27T02-46-44.png"
+
 def draw_race_bg():
     """赛跑整屏静态底 240x320，不透明 RGB565 上板。
 
-    翻译试玩 drawRace 的静态部分：全屏暗底（遮罩色调实色化，守红线 6 禁半透明层）、
-    顶部战况条底、上下两条赛道（木带/栅条/中线/起终点旗）、标签牌、底部冲刺条底
-    与静态提示文字。动态元素（兔子/跑者/石头/胡萝卜/动量条/文字）由 LVGL 叠加。
+    翻译试玩 drawRace 的静态部分：房间照片 + 42% 暗罩在烘焙期一次性合成
+    （试玩 g.drawImage(bg_room)+fillRect(rgba 0.42) 的等价实色化，运行时零混合，
+    守红线 6 禁半透明层）、顶部战况条底、上下两条赛道（木带/栅条/中线/起终点旗）、
+    标签牌、底部冲刺条底与静态提示文字。动态元素由 LVGL 叠加。
     """
     im = Image.new("RGB", (240, 320))
     d = ImageDraw.Draw(im)
-    # 全屏暗底（试玩 bg_room+42% 遮罩的固件化实色替代，禁 ARGB8888 整屏混合）
-    d.rectangle([0, 0, 239, 319], fill=(46, 54, 64))
+    # 全屏底：房间照片缩放裁切 + 42% 暗罩（烘焙期合成）
+    try:
+        room = Image.open(RACE_BG_ROOM).convert("RGB")
+        # 整图拉伸铺满 240x320（与试玩 drawImage(bg_room,0,0,W,H) 同构）
+        im.paste(room.resize((240, 320), Image.LANCZOS), (0, 0))
+        tint = Image.new("RGB", (240, 320), (24, 32, 40))
+        im = Image.blend(im, tint, 0.42)
+        d = ImageDraw.Draw(im)
+    except OSError:
+        # 底图缺失时退回纯深色底（不失败，保证可复现构建）
+        d.rectangle([0, 0, 239, 319], fill=(46, 54, 64))
     # 顶部战况条底 (0,0,240,38)
     d.rectangle([0, 0, 239, 37], fill=(24, 32, 40))
     # 两条赛道带 track(84) / track(174)
@@ -471,6 +498,7 @@ def main():
     race_rgba.append(("spr_runner_a", draw_runner(0)))
     race_rgba.append(("spr_runner_b", draw_runner(1)))
     race_rgba.append(("spr_rock", draw_rock()))
+    race_rgba.append(("spr_carrot_s", draw_race_carrot()))
     # 不透明小图（倒计时面板）走 RGB565 省 Flash；标签牌改用 LVGL label+panel 渲染（矢量更清晰），不出贴图
     race_rgb = []
     race_rgb.append(("spr_cnt_3", draw_countdown("3").convert("RGB")))

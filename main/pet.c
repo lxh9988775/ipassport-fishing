@@ -1016,8 +1016,8 @@ static void race_restart(void) {
     for (int i = 0; i < 3; ++i) {
         if (g_race_rock_rb[i]) lv_img_set_src(g_race_rock_rb[i], &spr_rock);
         if (g_race_rock_me[i]) lv_img_set_src(g_race_rock_me[i], &spr_rock);
-        if (g_race_car_rb[i])  lv_img_set_src(g_race_car_rb[i], &spr_carrot);
-        if (g_race_car_me[i])  lv_img_set_src(g_race_car_me[i], &spr_carrot);
+        if (g_race_car_rb[i])  lv_img_set_src(g_race_car_rb[i], &spr_carrot_s);
+        if (g_race_car_me[i])  lv_img_set_src(g_race_car_me[i], &spr_carrot_s);
     }
     if (g_race_rab) lv_obj_set_pos(g_race_rab, race_px(0) - 24, 88);
     if (g_race_me)  lv_obj_set_pos(g_race_me, race_px(0) - 16, 159);
@@ -1135,11 +1135,11 @@ static void game_init(int id) {
             lv_img_set_src(g_race_rock_me[i], &spr_rock);
             lv_obj_set_pos(g_race_rock_me[i], race_px(RACE_ROCK_MM[i]) - 6, 174 + 30);
             g_race_car_rb[i] = lv_img_create(g_layer);
-            lv_img_set_src(g_race_car_rb[i], &spr_carrot);
-            lv_obj_set_pos(g_race_car_rb[i], race_px(RACE_CAR_MM[i]) - 12, 84 + 7);
+            lv_img_set_src(g_race_car_rb[i], &spr_carrot_s);
+            lv_obj_set_pos(g_race_car_rb[i], race_px(RACE_CAR_MM[i]) - 5, 84 + 30);
             g_race_car_me[i] = lv_img_create(g_layer);
-            lv_img_set_src(g_race_car_me[i], &spr_carrot);
-            lv_obj_set_pos(g_race_car_me[i], race_px(RACE_CAR_MM[i]) - 12, 174 + 7);
+            lv_img_set_src(g_race_car_me[i], &spr_carrot_s);
+            lv_obj_set_pos(g_race_car_me[i], race_px(RACE_CAR_MM[i]) - 5, 174 + 30);
         }
 
         /* 动量条（底槽已烘进底图，这里只建填充块） */
