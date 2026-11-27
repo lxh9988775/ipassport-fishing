@@ -33,6 +33,7 @@
 #include "fishing_logic.h"
 #include "fishing_audio.h"
 #include "../assets/sprites/sprites.h"
+#include "../assets/fishing/sonar_assets.h"   /* v6 鱼探换皮：构建期烘焙的 RGB565 底图 + 四拍鱼 sprite */
 
 /* ===================== 中文字体 ===================== */
 /* 屏上文案用中文。LVGL 自带字体不含本游戏用字（实测「钓 鱼 饵 蚯 蚓 竿」等缺字），
@@ -62,16 +63,30 @@ static void use_cjk12(lv_obj_t *o) {
 #define TEAL_C   lv_color_make(108, 190, 174)
 #define RED_C    lv_color_make(198, 76, 104)
 
-/* 收线轨道像素区域 */
-#define TRK_X 196
-#define TRK_W 26
-#define TRK_Y 46
-#define TRK_H 224
-/* 进度条像素区域 */
-#define PRG_X 20
-#define PRG_W 16
-#define PRG_Y 46
-#define PRG_H 224
+/* v6 鱼探换皮（纯渲染坐标；fishing_logic.c 的 0..1000 定点口径不变）。
+ * 试玩母版是 240x320 绝对坐标，g_reel 容器起点 y=HUD_H(22)，
+ * 所以下面所有 y 都减掉 HUD_H —— 否则真机会整体比试玩页低 22px。 */
+#define SONAR_X 8
+#define SONAR_Y (38 - HUD_H)
+#define SONAR_W 112
+#define SONAR_H 250
+#define CTRL_X  128
+#define CTRL_Y  (38 - HUD_H)
+#define CTRL_W  108
+#define CTRL_H  250
+#define ECHO_N  104          /* 历史回波：5.2 秒 @50ms，少了拱形读不出来 */
+#define ECHO_STEP_MS 50
+
+/* 收线轨道像素区域（内嵌在右侧控鱼台里） */
+#define TRK_X 164
+#define TRK_W 32
+#define TRK_Y (136 - HUD_H)
+#define TRK_H 118
+/* 线轮像素区域（v5 收线进度的视觉位置） */
+#define PRG_X 139
+#define PRG_W 10
+#define PRG_Y (136 - HUD_H)
+#define PRG_H 118
 
 /* 钓场道具（竿 / 线 / 漂 / 饵）落点。全部是"场景内相对坐标"。
  *
@@ -251,15 +266,25 @@ static lv_point_precise_t g_rain_pts[ENV_RAIN_DROPS][2];
 static lv_obj_t *g_lbl_env     = NULL;                 /* 左上角「时段 · 天气」 */
 static lv_point_precise_t g_line_pts[2];
 
-/* 收线界面 */
+/* 收线界面（v6：左鱼探 / 右控鱼台，全部是显示对象，玩法读的仍是 st->reel_*） */
 static lv_obj_t *g_reel        = NULL;
-static lv_obj_t *g_track       = NULL;
 static lv_obj_t *g_zone        = NULL;
 static lv_obj_t *g_zone_fill   = NULL;
 static lv_obj_t *g_fishmark    = NULL;
 static lv_obj_t *g_prg_fill    = NULL;
-static lv_obj_t *g_lbl_reel    = NULL;
-static lv_obj_t *g_lbl_gear    = NULL;
+static lv_obj_t *g_lbl_reel    = NULL;   /* 鱼名 */
+static lv_obj_t *g_lbl_gear    = NULL;   /* 四拍徽章文字 */
+static lv_obj_t *g_lbl_pct     = NULL;   /* 收线百分比 */
+static lv_obj_t *g_sonar_depth = NULL;   /* 声呐窗右上角当前深度 */
+static lv_obj_t *g_sonar_bg    = NULL;   /* 112x250 RGB565 静态底图，永不 recolor */
+static lv_obj_t *g_sonar_line  = NULL;   /* 浮漂 -> 鱼的 1px 线 */
+static lv_obj_t *g_sonar_fish  = NULL;   /* 15x10 像素鱼，四拍切图 */
+static lv_obj_t *g_echo[ECHO_N];         /* 104 个 1x3 回波点，循环复用 */
+static lv_obj_t *g_ctrl_bg     = NULL;   /* 108x250 RGB565 静态底图：像素 bevel 框架 + 静态中文，永不 recolor */
+static lv_obj_t *g_seg[10];              /* 分段进度（叠在底图槽上） */
+static lv_obj_t *g_phase_badge = NULL;   /* 四拍色徽章（叠在底图鱼名槽上） */
+static lv_obj_t *g_gear0       = NULL;   /* 竿速按钮选中绿块（叠在底图按钮 bevel 内） */
+static lv_obj_t *g_gear1       = NULL;
 
 /* 上鱼结算 */
 static lv_obj_t *g_result      = NULL;
@@ -345,6 +370,21 @@ static lv_obj_t *make_panel(lv_obj_t *parent, int x, int y, int w, int h, lv_col
     lv_obj_set_style_pad_all(p, 0, 0);
     lv_obj_clear_flag(p, LV_OBJ_FLAG_SCROLLABLE);
     return p;
+}
+
+/* v6 鱼探：无描边的小色块（回波点 / 分段进度 / 徽章），全部不透明 RGB565 色，
+ * 不产生 alpha 混合；尺寸就是实际像素，绝不设 240x320 固定大小。 */
+static lv_obj_t *make_box(lv_obj_t *parent, int x, int y, int w, int h, lv_color_t fill) {
+    lv_obj_t *o = lv_obj_create(parent);
+    lv_obj_set_size(o, w, h);
+    lv_obj_set_pos(o, x, y);
+    lv_obj_set_style_bg_color(o, fill, 0);
+    lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(o, 0, 0);
+    lv_obj_set_style_radius(o, 0, 0);
+    lv_obj_set_style_pad_all(o, 0, 0);
+    lv_obj_clear_flag(o, LV_OBJ_FLAG_SCROLLABLE);
+    return o;
 }
 
 /* ===================== 只在"真的变了"才写给 LVGL =====================
@@ -573,7 +613,7 @@ static void build_ui(void) {
     g_reel = lv_obj_create(scr);
     lv_obj_set_size(g_reel, SCR_W, SCR_H - HUD_H - 24);
     lv_obj_set_pos(g_reel, 0, HUD_H);
-    lv_obj_set_style_bg_color(g_reel, lv_color_make(10, 30, 60), 0);
+    lv_obj_set_style_bg_color(g_reel, lv_color_black(), 0);   /* v6：面板之外纯黑，和试玩母版一致 */
     lv_obj_set_style_bg_opa(g_reel, LV_OPA_COVER, 0);
     /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，
      * 子元素坐标是相对【内容区】的，不清零的话所有子元素都比源码里写的
@@ -587,55 +627,78 @@ static void build_ui(void) {
     lv_obj_clear_flag(g_reel, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_reel, LV_OBJ_FLAG_HIDDEN);
 
-    /* 进度条（左） */
-    lv_obj_t *prg_bg = lv_obj_create(g_reel);
-    lv_obj_set_size(prg_bg, PRG_W, PRG_H);
-    lv_obj_set_pos(prg_bg, PRG_X, PRG_Y);
-    lv_obj_set_style_bg_color(prg_bg, lv_color_make(40, 40, 60), 0);
-    lv_obj_set_style_bg_opa(prg_bg, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(prg_bg, 0, 0);
-    lv_obj_set_style_radius(prg_bg, 0, 0);
-    lv_obj_clear_flag(prg_bg, LV_OBJ_FLAG_SCROLLABLE);
-    g_prg_fill = lv_obj_create(g_reel);
-    lv_obj_set_size(g_prg_fill, PRG_W, 0);
-    lv_obj_set_pos(g_prg_fill, PRG_X, PRG_Y + PRG_H);
-    lv_obj_set_style_bg_color(g_prg_fill, lv_color_make(80, 220, 120), 0);
-    lv_obj_set_style_bg_opa(g_prg_fill, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_prg_fill, 0, 0);
-    lv_obj_set_style_radius(g_prg_fill, 0, 0);
-    lv_obj_clear_flag(g_prg_fill, LV_OBJ_FLAG_SCROLLABLE);
+    /* ===== v6 左侧：鱼探声呐窗（静态 RGB565 底图 + 104 回波 + 鱼线 + 鱼） ===== */
+    g_sonar_bg = lv_img_create(g_reel);
+    lv_img_set_src(g_sonar_bg, &sonar_bg);
+    lv_obj_set_pos(g_sonar_bg, SONAR_X, SONAR_Y);
+    /* 不给 lv_img 设 size：LV_SIZE_CONTENT 会按图片自身尺寸走，隐藏/切图不挪位 */
 
-    /* 收线轨道（右） */
-    g_track = lv_obj_create(g_reel);
-    lv_obj_set_size(g_track, TRK_W, TRK_H);
-    lv_obj_set_pos(g_track, TRK_X, TRK_Y);
-    lv_obj_set_style_bg_color(g_track, lv_color_make(30, 55, 90), 0);
-    lv_obj_set_style_bg_opa(g_track, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_color(g_track, lv_color_make(180, 210, 255), 0);
-    lv_obj_set_style_border_width(g_track, 2, 0);
-    lv_obj_set_style_radius(g_track, 3, 0);
-    lv_obj_clear_flag(g_track, LV_OBJ_FLAG_SCROLLABLE);
+    for (int i = 0; i < ECHO_N; i++) {
+        /* 固定 x 的“瀑布列”，每 50ms 只刷新最老的一列；颜色按新旧分四档，
+         * 靠列位置就能读出由右往左渐暗的历史轨迹，不用每帧搬 104 个对象。 */
+        g_echo[i] = make_box(g_reel, 16 + i, 20, 2, 3, lv_color_make(5, 16, 26));
+    }
+    g_sonar_line = make_box(g_reel, 106, (56 + 3 - HUD_H), 1, 1,
+                            lv_color_make(184, 213, 228));
+    g_sonar_fish = lv_img_create(g_reel);
+    lv_img_set_src(g_sonar_fish, &sonar_fish_cruise);
+    lv_obj_set_pos(g_sonar_fish, 90, 30);
+    g_sonar_depth = make_label(g_reel, "0.0m", 94, 14, WHITE_C);
+    use_cjk12(g_sonar_depth);
 
-    g_zone = lv_obj_create(g_reel);
-    lv_obj_set_size(g_zone, TRK_W - 4, 40);
-    lv_obj_set_pos(g_zone, TRK_X + 2, TRK_Y + 2);
-    lv_obj_set_style_bg_color(g_zone, lv_color_make(90, 230, 140), 0);
-    lv_obj_set_style_bg_opa(g_zone, LV_OPA_50, 0);
-    lv_obj_set_style_border_width(g_zone, 0, 0);
-    lv_obj_set_style_radius(g_zone, 0, 0);
-    lv_obj_clear_flag(g_zone, LV_OBJ_FLAG_SCROLLABLE);
+    /* ===== v6 右侧：像素硬边控鱼台（底图烘 bevel，动态元素叠加） =====
+     * 整块 108x250 的 bevel 框架 + 静态中文烘进 RGB565 贴图，与试玩母版逐像素一致。
+     * 之前用 make_panel() 的纯色 1px 边框 = 一堆大直角块，被用户打回，改用贴图。
+     * lv_img 默认 LV_SIZE_CONTENT，不设固定尺寸，底图永远在最底（先建）。 */
+    g_ctrl_bg = lv_img_create(g_reel);
+    lv_img_set_src(g_ctrl_bg, &ctrl_bg);
+    lv_obj_set_pos(g_ctrl_bg, CTRL_X, CTRL_Y);
 
-    g_fishmark = lv_obj_create(g_reel);
-    lv_obj_set_size(g_fishmark, TRK_W - 6, 10);
-    lv_obj_set_pos(g_fishmark, TRK_X + 3, TRK_Y + 100);
-    lv_obj_set_style_bg_color(g_fishmark, lv_color_make(255, 200, 70), 0);
-    lv_obj_set_style_bg_opa(g_fishmark, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_fishmark, 0, 0);
-    lv_obj_clear_flag(g_fishmark, LV_OBJ_FLAG_SCROLLABLE);
+    /* 底图局部坐标 = 屏幕 - (128,38)；g_reel 内坐标 = 屏幕 - (0,HUD_H)。
+     * 因此贴图内 (bx,by) 的叠加对象在 g_reel 里的位置 = (128+bx, 38-HUD_H+by)。 */
+    #define CTRL_GX 128
+    #define CTRL_GY (38 - HUD_H)
 
-    g_lbl_reel = make_label(g_reel, "收线中", 40, TRK_Y, lv_color_white());
-    /* 竿速 / 鱼的节奏单独一行，不挤进 g_lbl_reel（三行会顶到右边轨道） */
-    g_lbl_gear = make_label(g_reel, "慢竿 巡游", 60, 160, MUTED_C);
+    /* 分段进度格：叠在底图 (6,42,98,11) 的槽上；10 格各 8x7，起点 (8,44) */
+    for (int k = 0; k < 10; k++) {
+        g_seg[k] = make_box(g_reel, CTRL_GX + 8 + k * 9, CTRL_GY + 44, 8, 7,
+                            lv_color_make(23, 44, 64));
+    }
+    /* 收线百分比：底图“收线”在 (6,27)，百分比靠右 (66,24) */
+    g_lbl_pct = make_label(g_reel, "0%", CTRL_GX + 66, CTRL_GY + 24, GOLD_C);
+
+    /* 鱼名 + 四拍徽章：叠在底图鱼名槽 (6,58,98,18) 上 */
+    g_lbl_reel = make_label(g_reel, "", CTRL_GX + 10, CTRL_GY + 60, WHITE_C);
+    use_cjk12(g_lbl_reel);
+    g_phase_badge = make_box(g_reel, CTRL_GX + 70, CTRL_GY + 62, 30, 10,
+                             lv_color_make(255, 200, 70));
+    g_lbl_gear = make_label(g_phase_badge, "巡游", 2, 0, lv_color_make(10, 24, 40));
+    use_cjk12(g_lbl_gear);
+
+    /* 线轮填充：底图线轮槽在 (11,98,10,118)，屏幕 x=139 = PRG_X */
+    g_prg_fill = make_box(g_reel, PRG_X, PRG_Y + PRG_H, PRG_W, 0,
+                          lv_color_make(45, 143, 120));
+
+    /* 轨道窗：底图已画 bevel 框 (36,98,32,118) + 10 道刻度；
+     * 这里只叠绿区与鱼标，不再建纯色轨道板。 */
+    g_zone = make_box(g_reel, TRK_X + 1, TRK_Y, TRK_W - 2, 8,
+                      lv_color_make(141, 255, 184));
+    g_zone_fill = make_box(g_reel, TRK_X + 1, TRK_Y + 1, TRK_W - 2, 6,
+                           lv_color_make(42, 150, 96));
+    g_fishmark = lv_img_create(g_reel);
+    lv_img_set_src(g_fishmark, &sonar_fish_cruise);
+    lv_obj_set_pos(g_fishmark, TRK_X + 8, TRK_Y + 50);
+
+    /* 竿速按钮：底图已画两个 bevel 框；只叠选中态绿块（内缩 2px 留边）
+     * 和“↑慢/↓快”文字。底图按钮在 (38,225,32,17) / (74,225,32,17)。 */
+    g_gear0 = make_box(g_reel, CTRL_GX + 40, CTRL_GY + 227, 28, 13,
+                       lv_color_make(12, 30, 50));
+    g_gear1 = make_box(g_reel, CTRL_GX + 76, CTRL_GY + 227, 28, 13,
+                       lv_color_make(12, 30, 50));
+    lv_obj_t *lbl_gear0 = make_label(g_reel, "↑慢", CTRL_GX + 44, CTRL_GY + 228, WHITE_C);
+    use_cjk12(lbl_gear0);
+    lv_obj_t *lbl_gear1 = make_label(g_reel, "↓快", CTRL_GX + 80, CTRL_GY + 228, WHITE_C);
+    use_cjk12(lbl_gear1);
 
     /* ---------- 结算 ---------- */
     g_result = lv_obj_create(scr);
@@ -1175,66 +1238,157 @@ static void refresh_scene(const fishing_status_t *st) {
 }
 
 /* 收线页控件的"已画值"门闸：像素坐标没变就不调 set_size/set_pos，
- * 少一次失效区就少一次重绘（收线页每帧有 9 个分散的失效区）。 */
+ * 少一次失效区就少一次重绘（v6 又把对象数加到 100+，门闸更不能省）。 */
 static int s_zone_h = -1;
 static int s_zone_y = -1;
 static int s_mark_y = -1;
 static int s_mark_color = -1;
 static int s_prg_h  = -1;
+static int s_seg[10] = {-1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
+static int s_echo_tick = -1;
+static int s_echo_wrap = 0;
+static int s_echo_y[ECHO_N];
+static int s_fish_y = -1;
+static int s_line_h = -1;
+static int s_sonar_fish = -1;
+static int s_phase = -1;
+static int s_gear = -1;
+static int s_pct = -1;
+static int s_depth = -1;
+
+static const lv_image_dsc_t *const SONAR_FISH[4] = {
+    &sonar_fish_cruise, &sonar_fish_warn, &sonar_fish_burst, &sonar_fish_rest,
+};
+static const char *const PHASE_TEXT[4] = {"巡游", "蓄力", "冲刺", "歇息"};
+/* 四拍色（和试玩页 COL.phase 一致）；回波列按新旧乘不同亮度系数 */
+static const uint8_t PHASE_RGB[4][3] = {
+    {255, 200, 70}, {255, 96, 96}, {255, 168, 56}, {150, 170, 190},
+};
+static const uint8_t ECHO_SHADE[4] = {60, 110, 170, 255};
 
 static void refresh_reel(const fishing_status_t *st) {
     char buf[160];
     snprintf(buf, sizeof(buf), "得分 %d", st->score);
     set_text_cached(g_lbl_score, buf);
 
-    /* 捕捉区：把 0..1000 定点换算成像素 */
+    int color_key = st->reel_phase;
+    if (color_key < 0 || color_key > 3) color_key = 0;
+
+    /* 鱼的节奏只在翻转时切图：黄=巡游，红=蓄力预警，橙=冲刺，灰=歇息。
+     * 四张小图都是构建期烘好的，运行时绝不逐像素改色。 */
+    set_img_by_key(g_fishmark, &s_mark_color, color_key, SONAR_FISH[color_key]);
+    set_img_by_key(g_sonar_fish, &s_sonar_fish, color_key, SONAR_FISH[color_key]);
+
+    /* ===== 左侧声呐：鱼位置只做视觉映射，不回写任何逻辑状态 ===== */
+    /* dep 用毫米整数：1m + fishPos/1000*10m + 轻微摆动（试玩页 sin 的整数近似） */
+    uint32_t tick = lv_tick_get();
+    int wig = (int)((tick / 90U) % 17U);
+    int wig_abs = wig > 8 ? 16 - wig : wig;
+    int dep = 1000 + st->reel_fish_pos * 10 + wig_abs * 40;
+    int fish_y = 56 + dep * (282 - 56) / (12 * 1000) - HUD_H - 5;
+    if (fish_y != s_fish_y) {
+        s_fish_y = fish_y;
+        lv_obj_set_pos(g_sonar_fish, 90, fish_y);
+    }
+    int line_h = fish_y + 10 - (56 + 3 - HUD_H);
+    if (line_h < 1) line_h = 1;
+    if (line_h != s_line_h) {
+        s_line_h = line_h;
+        lv_obj_set_size(g_sonar_line, 1, line_h);
+    }
+    if (dep != s_depth) {
+        s_depth = dep;
+        snprintf(buf, sizeof(buf), "%d.%dm", dep / 1000, (dep % 1000) / 100);
+        set_text_cached(g_sonar_depth, buf);
+    }
+
+    /* 历史回波：每 50ms 只动最老的一列。列 x 固定 -> 不用搬 104 个对象，
+     * 亮度按列号分四档 -> 右新左旧一眼可辨；无 alpha、无整屏重绘。 */
+    int slot = (int)(tick / ECHO_STEP_MS);
+    if (slot != s_echo_tick) {
+        s_echo_tick = slot;
+        int idx = s_echo_wrap;
+        s_echo_wrap = (idx + 1) % ECHO_N;
+        int y = 56 + dep * (282 - 56) / (12 * 1000) - HUD_H - 1;
+        if (y != s_echo_y[idx]) {
+            s_echo_y[idx] = y;
+            lv_obj_set_pos(g_echo[idx], 16 + idx, y);
+        }
+        int band = idx * 4 / ECHO_N;
+        int sh = ECHO_SHADE[band];
+        lv_color_t ec = lv_color_make(
+            5 + (PHASE_RGB[color_key][0] - 5) * sh / 255,
+            16 + (PHASE_RGB[color_key][1] - 16) * sh / 255,
+            26 + (PHASE_RGB[color_key][2] - 26) * sh / 255);
+        lv_obj_set_style_bg_color(g_echo[idx], ec, 0);
+    }
+
+    /* ===== 右侧控鱼台：捕捉区换算保持 v5 口径（pos 越大越靠下） ===== */
     int zh = st->reel_bar_h * TRK_H / 1000;
     int top = TRK_Y + st->reel_bar_pos * TRK_H / 1000;
     if (zh < 8) zh = 8;
     if (zh != s_zone_h || top != s_zone_y) {
         s_zone_h = zh;
         s_zone_y = top;
-        lv_obj_set_size(g_zone, TRK_W - 4, zh);
-        lv_obj_set_pos(g_zone, TRK_X + 2, top);
+        lv_obj_set_size(g_zone, TRK_W - 2, zh);
+        lv_obj_set_pos(g_zone, TRK_X + 1, top);
+        lv_obj_set_size(g_zone_fill, TRK_W - 2, zh - 2);
+        lv_obj_set_pos(g_zone_fill, TRK_X + 1, top + 1);
     }
 
     int fy = TRK_Y + st->reel_fish_pos * TRK_H / 1000;
     if (fy != s_mark_y) {
         s_mark_y = fy;
-        lv_obj_set_pos(g_fishmark, TRK_X + 3, fy - 5);
+        lv_obj_set_pos(g_fishmark, TRK_X + 8, fy - 5);
     }
 
     int ph = st->reel_progress * PRG_H / 1000;
-    if (ph != s_prg_h) {          /* 高度与 y 一一对应，一起更新 */
+    if (ph != s_prg_h) {
         s_prg_h = ph;
         lv_obj_set_size(g_prg_fill, PRG_W, ph);
         lv_obj_set_pos(g_prg_fill, PRG_X, PRG_Y + PRG_H - ph);
     }
 
-    /* 鱼的节奏只在翻转时改色：黄=巡游，红=蓄力预警，橙=冲刺。
-     * 每帧无条件 set_style 会把整块轨道重绘，是卡死铁律里的头号杀手。 */
-    int color_key = st->reel_phase;
-    if (color_key > 3) color_key = 0;
-    if (color_key != s_mark_color) {
-        s_mark_color = color_key;
+    /* 分段进度：只翻变化的那一格；最后两格金色 */
+    int seg = st->reel_progress / 100;
+    for (int k = 0; k < 10; k++) {
+        int want = k < seg ? (k >= 8 ? 2 : 1) : 0;
+        if (want == s_seg[k]) continue;
+        s_seg[k] = want;
+        lv_color_t c = want == 2 ? lv_color_make(255, 200, 70)
+                     : want == 1 ? lv_color_make(90, 230, 148)
+                                 : lv_color_make(23, 44, 64);
+        lv_obj_set_style_bg_color(g_seg[k], c, 0);
+    }
+
+    int pct = st->reel_progress / 10;
+    if (pct != s_pct) {
+        s_pct = pct;
+        snprintf(buf, sizeof(buf), "%d%%", pct);
+        set_text_cached(g_lbl_pct, buf);
+    }
+
+    if (color_key != s_phase) {
+        s_phase = color_key;
         lv_color_t c = (color_key == 1) ? lv_color_make(255, 96, 96)
                      : (color_key == 2) ? lv_color_make(255, 168, 56)
                      : (color_key == 3) ? lv_color_make(150, 170, 190)
                      :                    lv_color_make(255, 200, 70);
-        lv_obj_set_style_bg_color(g_fishmark, c, 0);
+        lv_obj_set_style_bg_color(g_phase_badge, c, 0);
+        set_text_cached(g_lbl_gear, PHASE_TEXT[color_key]);
+    }
+
+    int gear = st->reel_gear ? 1 : 0;
+    if (gear != s_gear) {
+        s_gear = gear;
+        lv_obj_set_style_bg_color(g_gear0, gear == 0 ? lv_color_make(29, 107, 86)
+                                                     : lv_color_make(12, 30, 50), 0);
+        lv_obj_set_style_bg_color(g_gear1, gear == 1 ? lv_color_make(29, 107, 86)
+                                                     : lv_color_make(12, 30, 50), 0);
     }
 
     const fish_species_t *f = fishing_species_info(st->cur_species);
-    static const char *const PHASE_LINE[2][4] = {
-        {"慢竿稳线 巡游", "慢竿稳线 蓄力", "慢竿稳线 冲刺", "慢竿稳线 歇息"},
-        {"快竿追击 巡游", "快竿追击 蓄力", "快竿追击 冲刺", "快竿追击 歇息"},
-    };
-    int phase = st->reel_phase;
-    if (phase < 0 || phase > 3) phase = 0;
-    snprintf(buf, sizeof(buf), "收线 %d%%\n%s", st->reel_progress / 10,
-             f ? f->name : "");
-    set_text_cached(g_lbl_reel, buf);
-    set_text_cached(g_lbl_gear, PHASE_LINE[st->reel_gear ? 1 : 0][phase]);
+    set_text_cached(g_lbl_reel, f ? f->name : "");
     /* 「按住 OK 抬竿 · 松开落下」是面板固定文案，已移到 show_only(1) 里只在切面板时写一次 */
 }
 

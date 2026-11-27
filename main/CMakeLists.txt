@@ -3,7 +3,7 @@ idf_component_register(
          "fishing_logic.c"
          "fishing_audio.c"
          "fishing.c"
-    INCLUDE_DIRS "."
+    INCLUDE_DIRS "." "../assets/fishing"
     REQUIRES bsp nvs_flash lvgl freertos
 )
 
@@ -20,4 +20,11 @@ target_sources(${COMPONENT_LIB} PRIVATE
     "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/fish_sprites.c"
     "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/prop_sprites.c"
     "${CMAKE_CURRENT_LIST_DIR}/../assets/sprites/bg_sprites.c"
+)
+
+# v6 鱼探换皮：构建期烘焙的静态底图与四拍鱼 sprite（运行时不重着色）。
+target_sources(${COMPONENT_LIB} PRIVATE
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/fishing/sonar_bg.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/fishing/ctrl_bg.c"
+    "${CMAKE_CURRENT_LIST_DIR}/../assets/fishing/sonar_fish.c"
 )

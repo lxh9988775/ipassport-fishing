@@ -43,6 +43,9 @@ FULL_BLEED = set(PANELS) | {"g_bg", "hud", "g_tint"}
 # 最坏情况代入：把 snprintf 模板换成"能出现的最长一行"，按上限判定
 SUBST = {
     "得分 %d": "得分 8888",
+    # v6 鱼探：深度最多 12m、收线百分比最多 100%
+    "%d.%dm": "12.9m",
+    "%d%%": "100%",
     "最高 %d": "最高 8888",
     "%d": "100",                       # 电量百分比，上限 100（三位）
     "鱼竿   %s": "鱼竿   路亚竿",
@@ -110,11 +113,12 @@ ALLOW_OVERLAP = {
     frozenset(("g_menu_selbar", "menu_row3")),
     frozenset(("g_menu_selbar", "menu_row4")),
     frozenset(("g_menu_selbar", "menu_row5")),
-    frozenset(("g_track", "g_zone")),
-    frozenset(("g_track", "g_fishmark")),
     frozenset(("g_zone", "g_fishmark")),      # 鱼在捕捉区内是玩法本身
     frozenset(("prg_bg", "g_prg_fill")),
     frozenset(("g_batt_body", "g_batt_fill")),
+    # v6 鱼探：竿速文字叠在选中绿块上（绿块是按钮底、文字在上，设计如此）
+    frozenset(("lbl_gear0", "g_gear0")),
+    frozenset(("lbl_gear1", "g_gear1")),
 }
 # 容器/背景层：只判出屏，不参与"谁压住谁"（它们本来就是铺满的底）
 CONTAINERS = set(PANELS) | {"g_bg", "hud", "g_tint"}
@@ -243,7 +247,7 @@ def parse_source():
     src = re.sub(r"//[^\n]*", "", src)
 
     macros = {m.group(1): m.group(2)
-              for m in re.finditer(r"#define\s+(\w+)\s+([-\w\s]+?)\s*$", src, re.M)}
+              for m in re.finditer(r"#define\s+(\w+)\s+([-\w\s()]+?)\s*$", src, re.M)}
 
     def num(expr):
         e = (expr or "").strip()
@@ -291,6 +295,16 @@ def parse_source():
     # v5 像素面板：make_panel(parent, x, y, w, h, color)
     for m in re.finditer(
             r"(\w+)\s*=\s*make_panel\(\s*(\w+)\s*,\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,]+),", src):
+        o = get(m.group(1))
+        o["parent"] = m.group(2)
+        o["kind"] = "obj"
+        o["x"], o["y"] = num(m.group(3)), num(m.group(4))
+        o["w"], o["h"] = num(m.group(5)), num(m.group(6))
+
+    # v6 鱼探：make_box(parent, x, y, w, h, color) —— 与 make_panel 一样要登记父子关系，
+    # 否则这些色块会被当成常驻层，和选钓场/图鉴面板误报 90 处重叠。
+    for m in re.finditer(
+            r"(\w+)\s*=\s*make_box\(\s*(\w+)\s*,\s*([^,]+),\s*([^,]+),\s*([^,]+),\s*([^,]+),", src):
         o = get(m.group(1))
         o["parent"] = m.group(2)
         o["kind"] = "obj"
@@ -572,7 +586,19 @@ def main() -> int:
             return
         if "g_lbl_hint" in pair and any(x.startswith(("spot_row", "cdx_row")) for x in pair):
             return
+        # 祖先/后代关系：底板包着控件是排版本身，不是"压盖"。
+        # 原来只判直接父子，v6 控鱼台多了一层嵌套（g_ctrl_panel -> g_subpanel
+        # -> g_reel_bg）就会把自家祖孙误报成重叠。
+        def is_ancestor(anc, node):
+            p, guard = elems[node]["parent"], 0
+            while p and p in elems and guard < 8:
+                if p == anc:
+                    return True
+                p, guard = elems[p]["parent"], guard + 1
+            return False
         if elems[a]["parent"] == b or elems[b]["parent"] == a:
+            return
+        if is_ancestor(a, b) or is_ancestor(b, a):
             return
         ax, ay, aw, ah = boxes[a]
         bx, by, bw, bh = boxes[b]
