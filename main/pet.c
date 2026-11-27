@@ -21,6 +21,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <math.h>
 #include <time.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -307,7 +308,7 @@ static int s_lvl = -1, s_mood = -99, s_batt = -2;
 static int s_bar[4] = {-1,-1,-1,-1}, s_sel = -1, s_sleep = false;
 
 static const char *HOME_ITEMS[6] = { "喂食", "洗澡", "陪玩", "睡觉", "小游戏", "护照" };
-static const char *MENU_ITEMS[7] = { "接胡萝卜", "颜色配对", "记忆翻牌", "躲猫猫", "节奏蹦蹦", "换装", "返回" };
+static const char *MENU_ITEMS[7] = { "赛跑对战", "颜色配对", "记忆翻牌", "躲猫猫", "节奏蹦蹦", "换装", "返回" };
 
 /* ===================== 简单随机数（无 stdlib rand 依赖） ===================== */
 static uint32_t g_rng = 0x12345678u;
@@ -341,8 +342,112 @@ typedef struct {
     int flash_done;  /* 记忆/躲猫猫 展示完毕 */
     int beats;       /* 节奏已按压次数 */
     int granted;     /* 是否已发贴纸+奖励 */
+    /* ---- 赛跑对战（id==0 专用，接胡萝卜整体替换；毫米整数定点，无浮点累积） ---- */
+    int mom;         /* 动量定点 0..1000（=0..1） */
+    int dist_me;     /* 玩家距离 mm */
+    int dist_rb;     /* 兔子距离 mm */
+    int prev_me;     /* 上一帧玩家距离（crossed 判定） */
+    int prev_rb;     /* 上一帧兔子距离 */
+    int jump_t;      /* 玩家跳跃剩余 ms */
+    int rjump_t;     /* 兔子跳跃视觉剩余 ms（失败不减速，纯演出） */
+    int stumble_t;   /* 玩家撞石头踉跄剩余 ms */
+    int countdown;   /* 倒计时剩余 ms（3/2/1/GO） */
+    int elapsed;     /* 开跑累计 ms */
+    int last_leg;    /* 上一腿：0=上键(左) 1=下键(右) -1=未迈 */
+    int opp;         /* 对手档位 0粘人精/1小傲娇/2慢性子/3好奇宝宝 */
+    int win;         /* 本局胜负（1=玩家赢） */
+    int fr_me;       /* 跑者当前帧影子（触变才 set_src，守 LVGL 铁律 2） */
+    int fr_rb;       /* 兔子当前帧影子 */
+    int bar_w;       /* 动量条宽影子 */
+    int bar_col;     /* 动量条颜色档影子 */
+    int flash_t;     /* 反馈词剩余 ms */
+    int cnt_id;      /* 倒计时贴图影子（-1=隐藏） */
+    int obs_hit[3];  /* 玩家已过石头 */
+    int obs_rhit[3]; /* 兔子已过石头 */
+    int car_got[3];  /* 玩家已吃胡萝卜 */
+    int car_rgot[3]; /* 兔子已吃胡萝卜 */
 } game_t;
 static game_t g_g;
+
+/* ===================== 赛跑对战（id==0）常量：与试玩页 build_pet_race_playable.py 逐项对齐 =====================
+ * 数值一律定点整数：动量/速度比例 x1000，距离毫米（1 m/s = 1 mm/ms）。
+ * 禁止在固件里私调任何数值（红线 4）；手感问题回试玩页重新拍板。 */
+#define RACE_LEN_MM       120000 /* 赛道 120 米 */
+#define RACE_STRIDE_ALT   220    /* 交替迈腿动量 +0.22 */
+#define RACE_STRIDE_SAME  30     /* 同边连按 +0.03（几乎不动，竞技核心） */
+#define RACE_DECAY_U      900    /* 动量自然衰减 0.9/秒 → 每秒掉 900 定点单位 */
+#define RACE_MOM_CAP      1000
+#define RACE_SPD_BASE     8000   /* 玩家基础 8 m/s */
+#define RACE_SPD_MOM      30000  /* +30×mom → 满动量 38 m/s */
+#define RACE_SPD_STUMBLE  7000   /* 踉跄时 7 m/s */
+#define RACE_JUMP_MS      460    /* 跳跃持续时长 */
+#define RACE_STUMBLE_MS   500    /* 撞石头踉跄时长（不扣血不扣分） */
+#define RACE_COUNTDOWN_MS 3200   /* 3/2/1/GO 倒计时 */
+#define RACE_RB_CAR_BONUS 4000   /* 对手吃萝卜直接 +4 米 */
+#define RACE_CAR_MOM      350    /* 踩胡萝卜动量 +0.35（上限 1） */
+#define RACE_RB_CAR_BONUS 4000   /* 对手吃萝卜直接 +4 米 */
+#define RACE_CATCHUP_MM   10000  /* 粘人精：领先玩家 10m 触发 */
+#define RACE_WAVE_BASE    930    /* 对手速度波动 0.93+0.10sin(t*2.6+档位) 定点 */
+#define RACE_WAVE_AMP     100
+#define RACE_WANDER_BASE  820    /* 好奇宝宝 0.82+0.36|sin(t*1.7)| 定点 */
+#define RACE_WANDER_AMP   360
+#define RACE_SLOWSTART_K  620    /* 慢性子开局 2 秒 ×0.62 */
+#define RACE_SLOWSTART_MS 2000
+
+/* 四档对手：速度 m/s(x1000) / 跳石成功率(x1000)，顺序同试玩 PERSONA。
+   失败只做跳跃视觉、不减速（与试玩一致）。 */
+static const int RACE_OPP_SPD[4]  = { 21000, 25000, 17000, 22000 };
+static const int RACE_OPP_JUMP[4] = { 620, 900, 950, 450 };
+/* 石头/胡萝卜位置（米→mm），两赛道同步绘制 */
+static const int RACE_ROCK_MM[3] = { 26000, 55000, 86000 };
+static const int RACE_CAR_MM[3]  = { 18000, 44000, 73000 };
+static const char *const RACE_OPP_NAME[4] = { "粘人精", "小傲娇", "慢性子", "好奇宝宝" };
+/* 结算台词：WIN=兔子赢时说 / LOSE=兔子输时说（原文取自试玩 PERSONA） */
+static const char *const RACE_OPP_WIN[4]  = {
+    "我赢啦！你要陪我玩！", "看到了吗，这就是实力。", "嗯，我赢了一点点。", "我赢啦！你看我厉害吗！",
+};
+static const char *const RACE_OPP_LOSE[4] = {
+    "你好快…再来一次嘛！", "……这次让你一下。", "你跑得，好快呀……", "路上有蝴蝶！下次一定赢！",
+};
+
+/* 赛跑动态对象（只被 id==0 使用；其余游戏零触碰） */
+static lv_obj_t *g_race_bg    = NULL;  /* 整屏不透明 RGB565 底图 */
+static lv_obj_t *g_race_rab   = NULL;  /* 兔子 48×48（原精灵 lv_image_set_scale 缩放） */
+static lv_obj_t *g_race_me    = NULL;  /* 玩家跑者 32×40 两帧 */
+static lv_obj_t *g_race_rock_rb[3] = {0}, *g_race_rock_me[3] = {0};
+static lv_obj_t *g_race_car_rb[3]  = {0}, *g_race_car_me[3]  = {0};
+static lv_obj_t *g_race_bar   = NULL;  /* 动量条填充 */
+static lv_obj_t *g_race_top_l = NULL, *g_race_top_r = NULL;    /* 顶部战况 */
+static lv_obj_t *g_race_m_me  = NULL, *g_race_m_rb = NULL;     /* 右下实时米数 */
+static lv_obj_t *g_race_flash = NULL;  /* 迈腿/跳/石头/胡萝卜 反馈词 */
+static lv_obj_t *g_race_cnt   = NULL;  /* 倒计时贴图（结束切 1×1 隐藏） */
+static lv_obj_t *g_race_fin_p = NULL;  /* 结算面板 */
+static lv_obj_t *g_race_fin[6] = {0};  /* 结算 6 行文字 */
+static lv_obj_t *g_race_tag_rb = NULL, *g_race_tag_me = NULL;  /* 赛道标签牌 */
+
+/* 赛跑战绩：独立 NVS key（低 16 位胜 / 高 16 位负）。
+   不扩 pet_save blob → pet_logic.c/.h 零改动、无 schema 迁移（红线 1）。 */
+#define NVS_KEY_RACE "race_rec"
+static uint32_t race_rec_load(void) {
+    uint32_t v = 0;
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READONLY, &h) != ESP_OK) return 0;
+    nvs_get_u32(h, NVS_KEY_RACE, &v);
+    nvs_close(h);
+    return v;
+}
+static void race_rec_save(uint32_t v) {
+    nvs_handle_t h;
+    if (nvs_open(NVS_NS, NVS_READWRITE, &h) != ESP_OK) return;
+    nvs_set_u32(h, NVS_KEY_RACE, v);
+    nvs_commit(h);
+    nvs_close(h);
+}
+
+/* 距离 mm → 赛道 x（26..214，与试玩 px() 同式） */
+static int race_px(int dist_mm) {
+    return 26 + (int)((int32_t)dist_mm * 188 / RACE_LEN_MM);
+}
 
 /* ===================== 换装叠层 ===================== */
 /* 把当前装扮叠到兔子图上（同尺寸画布，直接同位置覆盖即可对齐头部）。
@@ -523,7 +628,7 @@ static const char *sticker_name(int id) {
         "睡", /* PST_SLEEP1 睡一次     */
         "二", /* PST_LVL2   升到 2 级  */
         "三", /* PST_LVL3   升到 3 级  */
-        "萝", /* PST_GAME_CATCH  接胡萝卜 */
+        "跑", /* PST_GAME_CATCH  赛跑对战胜利 */
         "色", /* PST_GAME_COLOR  颜色配对 */
         "忆", /* PST_GAME_MEMORY 记忆翻牌 */
         "猫", /* PST_GAME_PEEK   躲猫猫   */
@@ -876,6 +981,105 @@ static void color_new_round(bool init) {
     lv_img_set_src(g_g_egg[3], EGG_IMG[g_g.target]);
 }
 
+/* ===================== 赛跑对战：核心函数（只服务 id==0） ===================== */
+/* 反馈词（左腿/右腿/跳/石头/胡萝卜）。事件级调用，非周期刷新。 */
+static void race_flash(const char *txt, int ms, lv_color_t col) {
+    if (g_race_flash) {
+        set_text_cached(g_race_flash, txt);
+        lv_obj_set_style_text_color(g_race_flash, col, 0);
+    }
+    g_g.flash_t = ms;
+}
+
+/* 开局/再来一局的字段复位（对手档位不在这里定：开局随机、重赛沿用） */
+static void race_state_reset(void) {
+    g_g.mom = 0; g_g.dist_me = 0; g_g.dist_rb = 0;
+    g_g.prev_me = 0; g_g.prev_rb = 0;
+    g_g.jump_t = 0; g_g.rjump_t = 0; g_g.stumble_t = 0;
+    g_g.countdown = RACE_COUNTDOWN_MS;
+    g_g.elapsed = 0;
+    g_g.last_leg = -1;
+    g_g.win = 0;
+    g_g.fr_me = -1; g_g.fr_rb = -1;
+    g_g.bar_w = -1; g_g.bar_col = -1;
+    g_g.flash_t = 0; g_g.cnt_id = -1;
+    for (int i = 0; i < 3; ++i) {
+        g_g.obs_hit[i] = 0;  g_g.obs_rhit[i] = 0;
+        g_g.car_got[i] = 0;  g_g.car_rgot[i] = 0;
+    }
+}
+
+/* OK 再来一局（试玩页：结算后按空格/点击即重开，同对手再跑一场）。
+   对象复位走 set_src/pos，不用 HIDDEN 恢复（LVGL 铁律 10）。 */
+static void race_restart(void) {
+    race_state_reset();
+    for (int i = 0; i < 3; ++i) {
+        if (g_race_rock_rb[i]) lv_img_set_src(g_race_rock_rb[i], &spr_rock);
+        if (g_race_rock_me[i]) lv_img_set_src(g_race_rock_me[i], &spr_rock);
+        if (g_race_car_rb[i])  lv_img_set_src(g_race_car_rb[i], &spr_carrot);
+        if (g_race_car_me[i])  lv_img_set_src(g_race_car_me[i], &spr_carrot);
+    }
+    if (g_race_rab) lv_obj_set_pos(g_race_rab, race_px(0) - 24, 88);
+    if (g_race_me)  lv_obj_set_pos(g_race_me, race_px(0) - 16, 159);
+    if (g_race_bar) { lv_obj_set_width(g_race_bar, 1); g_g.bar_w = 1; }
+    if (g_race_flash) set_text_cached(g_race_flash, "");
+    if (g_race_fin_p) lv_obj_set_pos(g_race_fin_p, 400, 92);   /* 屏外=隐藏，绕开 HIDDEN 恢复陷阱 */
+    if (g_race_top_l) set_text_cached(g_race_top_l, "");
+    if (g_race_top_r) set_text_cached(g_race_top_r, "");
+    if (g_race_m_me) set_text_cached(g_race_m_me, "");
+    if (g_race_m_rb) set_text_cached(g_race_m_rb, "");
+}
+
+/* 结算：胜负 + 战绩入 NVS + 贴纸/奖励（仅胜）+ 面板填充。
+   输了只记战绩：不扣四维、不锁功能（红线 8）。 */
+static void race_finish(void) {
+    if (g_g.dist_me > RACE_LEN_MM) g_g.dist_me = RACE_LEN_MM;
+    if (g_g.dist_rb > RACE_LEN_MM) g_g.dist_rb = RACE_LEN_MM;
+    g_g.win = (g_g.dist_me >= g_g.dist_rb) ? 1 : 0;
+    g_g.phase = G_DONE;
+    if (!g_g.granted) {
+        g_g.granted = 1;
+        uint32_t rec = race_rec_load();
+        int wins = (int)(rec & 0xFFFFu);
+        int losses = (int)((rec >> 16) & 0xFFFFu);
+        if (g_g.win) {
+            wins = (wins + 1) & 0xFFFF;
+            pet_sticker_grant(PST_GAME_CATCH);  /* 复用接胡萝卜贴纸槽位，免 NVS 迁移 */
+            pet_add_fun(15);                    /* 沿用固件既有通关奖励 */
+        } else {
+            losses = (losses + 1) & 0xFFFF;
+        }
+        race_rec_save(((uint32_t)losses << 16) | (uint32_t)wins);
+
+        char b[64];
+        snprintf(b, sizeof(b), "%s", g_g.win ? "你 赢 了！" : "兔 子 赢 了");
+        if (g_race_fin[0]) {
+            set_text_cached(g_race_fin[0], b);
+            lv_obj_set_style_text_color(g_race_fin[0],
+                                        g_g.win ? lv_color_make(245, 215, 122)
+                                                : lv_color_make(255, 154, 154), 0);
+        }
+        snprintf(b, sizeof(b), "你 %dm　%s %dm",
+                 g_g.dist_me / 1000, RACE_OPP_NAME[g_g.opp], g_g.dist_rb / 1000);
+        if (g_race_fin[1]) set_text_cached(g_race_fin[1], b);
+        snprintf(b, sizeof(b), "用时 %d.%d 秒", g_g.elapsed / 1000, (g_g.elapsed % 1000) / 100);
+        if (g_race_fin[2]) set_text_cached(g_race_fin[2], b);
+        snprintf(b, sizeof(b), "总战绩 %d 胜 %d 负", wins, losses);
+        if (g_race_fin[3]) set_text_cached(g_race_fin[3], b);
+        snprintf(b, sizeof(b), "%s", g_g.win ? RACE_OPP_LOSE[g_g.opp] : RACE_OPP_WIN[g_g.opp]);
+        if (g_race_fin[4]) {
+            set_text_cached(g_race_fin[4], b);
+            lv_obj_set_style_text_color(g_race_fin[4], lv_color_make(201, 185, 159), 0);
+        }
+        if (g_race_fin[5]) set_text_cached(g_race_fin[5], "OK 再来 · 长按退出");
+        if (g_race_fin_p) lv_obj_set_pos(g_race_fin_p, 20, 92);   /* 移入屏幕 */
+    }
+    fishing_audio_play(g_g.win ? SFX_CATCH : SFX_CLICK);
+    /* v4 多宠物：发贴纸可能触发里程碑解锁，落盘 */
+    pet_unlock_check();
+    nvs_save_now();
+}
+
 /* ===================== 小游戏：初始化 ===================== */
 static void game_init(int id) {
     g_g.id = id;
@@ -890,18 +1094,90 @@ static void game_init(int id) {
     g_g.granted = 0;
     g_g.sel = 0;
 
-    const char *names[5] = { "接胡萝卜", "颜色配对", "记忆翻牌", "躲猫猫", "节奏蹦蹦" };
+    const char *names[5] = { "赛跑对战", "颜色配对", "记忆翻牌", "躲猫猫", "节奏蹦蹦" };
     if (g_g_title) set_text_cached(g_g_title, names[id]);
     if (g_g_msg) set_text_cached(g_g_msg, "按 OK 开始 · 长按 OK 返回");
 
-    if (id == 0) { /* 接胡萝卜：像素胡萝卜从天上掉 */
-        g_g_obj[0] = lv_img_create(g_layer);
-        lv_img_set_src(g_g_obj[0], &rabbit_front);
-        lv_obj_set_pos(g_g_obj[0], 80, 240);
-        g_g.obj_x = 110; g_g.obj_y = 70; g_g.pos = 80;
-        g_g_obj[1] = lv_img_create(g_layer);
-        lv_img_set_src(g_g_obj[1], &spr_carrot);
-        lv_obj_set_pos(g_g_obj[1], g_g.obj_x, g_g.obj_y);
+    if (id == 0) { /* 赛跑对战：你 VS 兔子，交替迈腿 + 跳石头 + 抢胡萝卜（试玩页 1:1 落地） */
+        race_state_reset();
+        g_g.opp = rnd(4);   /* 每局随机遇一位对手，四档=四种性格（执行书 3.1） */
+
+        /* 整屏不透明 RGB565 底图（红线 6：无半透明混合），建后沉底 */
+        g_race_bg = lv_img_create(g_layer);
+        lv_img_set_src(g_race_bg, &spr_race_bg);
+        lv_obj_set_pos(g_race_bg, 0, 0);
+        lv_obj_move_to_index(g_race_bg, 0);
+
+        /* 赛道标签牌（LVGL 矢量字，比位图小字清晰） */
+        g_race_tag_rb = make_panel(g_layer, 20, 62, 46, 20, lv_color_make(24, 34, 46));
+        make_label(g_race_tag_rb, "兔子", 7, 0, lv_color_make(255, 243, 220));
+        g_race_tag_me = make_panel(g_layer, 20, 152, 46, 20, lv_color_make(24, 34, 46));
+        make_label(g_race_tag_me, "你", 15, 0, lv_color_make(255, 243, 220));
+
+        /* 兔子：原 72×72 精灵缩放到 48×48 显示（不改图，试玩同尺寸） */
+        g_race_rab = lv_img_create(g_layer);
+        lv_img_set_src(g_race_rab, &rabbit_front_walk);
+        lv_image_set_scale(g_race_rab, 171);   /* 48/72×256 */
+        lv_obj_set_size(g_race_rab, 48, 48);
+        lv_obj_set_pos(g_race_rab, race_px(0) - 24, 88);
+
+        /* 玩家像素跑者 32×40 两帧 */
+        g_race_me = lv_img_create(g_layer);
+        lv_img_set_src(g_race_me, &spr_runner_a);
+        lv_obj_set_pos(g_race_me, race_px(0) - 16, 159);
+
+        /* 石头 / 胡萝卜：两赛道各 3 处同步绘制 */
+        for (int i = 0; i < 3; ++i) {
+            g_race_rock_rb[i] = lv_img_create(g_layer);
+            lv_img_set_src(g_race_rock_rb[i], &spr_rock);
+            lv_obj_set_pos(g_race_rock_rb[i], race_px(RACE_ROCK_MM[i]) - 6, 84 + 30);
+            g_race_rock_me[i] = lv_img_create(g_layer);
+            lv_img_set_src(g_race_rock_me[i], &spr_rock);
+            lv_obj_set_pos(g_race_rock_me[i], race_px(RACE_ROCK_MM[i]) - 6, 174 + 30);
+            g_race_car_rb[i] = lv_img_create(g_layer);
+            lv_img_set_src(g_race_car_rb[i], &spr_carrot);
+            lv_obj_set_pos(g_race_car_rb[i], race_px(RACE_CAR_MM[i]) - 12, 84 + 7);
+            g_race_car_me[i] = lv_img_create(g_layer);
+            lv_img_set_src(g_race_car_me[i], &spr_carrot);
+            lv_obj_set_pos(g_race_car_me[i], race_px(RACE_CAR_MM[i]) - 12, 174 + 7);
+        }
+
+        /* 动量条（底槽已烘进底图，这里只建填充块） */
+        g_race_bar = make_panel(g_layer, 66, 274, 1, 8, lv_color_make(224, 162, 76));
+
+        /* 顶部战况 / 右下米数 / 反馈词 */
+        g_race_top_l = make_label(g_layer, "", 8, 10, lv_color_make(255, 243, 220));
+        g_race_top_r = make_label(g_layer, "", 8, 10, lv_color_make(216, 230, 240));
+        lv_obj_set_width(g_race_top_r, 224);
+        lv_obj_set_style_text_align(g_race_top_r, LV_TEXT_ALIGN_RIGHT, 0);
+        g_race_m_me = make_label(g_layer, "", 8, 280, lv_color_make(255, 243, 220));
+        lv_obj_set_width(g_race_m_me, 224);
+        lv_obj_set_style_text_align(g_race_m_me, LV_TEXT_ALIGN_RIGHT, 0);
+        g_race_m_rb = make_label(g_layer, "", 8, 300, lv_color_make(216, 230, 240));
+        lv_obj_set_width(g_race_m_rb, 224);
+        lv_obj_set_style_text_align(g_race_m_rb, LV_TEXT_ALIGN_RIGHT, 0);
+        g_race_flash = make_label(g_layer, "", 66, 148, lv_color_make(245, 215, 122));
+        lv_obj_set_width(g_race_flash, 108);
+        lv_obj_set_style_text_align(g_race_flash, LV_TEXT_ALIGN_CENTER, 0);
+
+        /* 倒计时贴图（先 1×1 隐藏，首帧刷新切 3） */
+        g_race_cnt = lv_img_create(g_layer);
+        lv_img_set_src(g_race_cnt, &spr_empty);
+        lv_obj_set_pos(g_race_cnt, 80, 116);
+
+        /* 结算面板：初始屏外（用 pos 出入屏，不用 HIDDEN 恢复——铁律 10） */
+        g_race_fin_p = make_panel(g_layer, 400, 92, 200, 148, lv_color_make(18, 24, 32));
+        static const int FIN_Y[6] = { 8, 32, 54, 76, 100, 122 };   /* 相对面板 */
+        for (int i = 0; i < 6; ++i) {
+            g_race_fin[i] = make_label(g_race_fin_p, "", 0, FIN_Y[i], lv_color_make(255, 243, 220));
+            lv_obj_set_width(g_race_fin[i], 200);
+            lv_obj_set_style_text_align(g_race_fin[i], LV_TEXT_ALIGN_CENTER, 0);
+        }
+        if (g_g_msg) {
+            /* 底图深色：提示文字翻米白，G_INTRO 文案沿用公共段"按 OK 开始" */
+            lv_obj_set_style_text_color(g_g_msg, lv_color_make(216, 230, 240), 0);
+            set_text_cached(g_g_msg, "按 OK 开始 · 长按 OK 返回");
+        }
     } else if (id == 1) { /* 颜色配对：四色彩蛋 */
         color_new_round(true);
     } else if (id == 2) { /* 记忆翻牌：卡面小图标 + 卡纸样式 */
@@ -968,6 +1244,12 @@ static void game_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
     }
     if (g_g.phase == G_DONE) {
         if (btn == BSP_BTN_OK) {
+            if (g_g.id == 0) {
+                /* 赛跑：OK 再来一局（试玩页结算后空格/点击即重开）；长按 OK 走上面公共退出 */
+                race_restart();
+                fishing_audio_play(SFX_CLICK);
+                return;
+            }
             g_scr = SCR_MENU; g_menu_sel = 0; g_rebuild = 1;
             fishing_audio_play(SFX_CLICK);
         }
@@ -976,9 +1258,26 @@ static void game_input(bsp_btn_t btn, bsp_btn_ev_t ev) {
 
     /* G_PLAY */
     switch (g_g.id) {
-        case 0: /* 接胡萝卜：上下移动小兔 */
-            if (btn == BSP_BTN_UP)   g_g.pos = (g_g.pos <= 20) ? 20 : g_g.pos - 14;
-            else if (btn == BSP_BTN_DOWN) g_g.pos = (g_g.pos >= 158) ? 158 : g_g.pos + 14;
+        case 0: /* 赛跑对战：上/下交替迈腿攒动量 · OK 跳石头（真机三键，执行书 3.1） */
+            if (g_g.countdown > 0) break;   /* 倒计时期间不接受迈腿与移动 */
+            if (btn == BSP_BTN_UP || btn == BSP_BTN_DOWN) {
+                int leg = (btn == BSP_BTN_UP) ? 0 : 1;
+                if (leg == g_g.last_leg) {
+                    /* 连按同一边几乎不动：竞技性核心（试玩 stride 同式） */
+                    g_g.mom = (g_g.mom + RACE_STRIDE_SAME >= RACE_MOM_CAP)
+                                  ? RACE_MOM_CAP : g_g.mom + RACE_STRIDE_SAME;
+                } else {
+                    g_g.mom = (g_g.mom + RACE_STRIDE_ALT >= RACE_MOM_CAP)
+                                  ? RACE_MOM_CAP : g_g.mom + RACE_STRIDE_ALT;
+                    g_g.last_leg = leg;
+                }
+                race_flash((leg == 0) ? "左腿" : "右腿", 180, lv_color_make(245, 215, 122));
+            } else if (btn == BSP_BTN_OK) {
+                if (g_g.jump_t <= 0) {
+                    g_g.jump_t = RACE_JUMP_MS;
+                    race_flash("跳！", 250, lv_color_make(245, 215, 122));
+                }
+            }
             break;
         case 1: /* 颜色配对 */
         case 4: /* 节奏（移动靠自动，这里 OK 拍点） */
@@ -1249,18 +1548,181 @@ static void refresh_game(int now, int dt) {
     if (g_g.phase != G_PLAY) return;
 
     switch (g_g.id) {
-        case 0: { /* 接胡萝卜 */
-            g_g.obj_y += 55 * dt / 1000;
-            int pc = g_g.pos + 36, cc = g_g.obj_x + 12;   /* 胡萝卜 24 宽取中心 */
-            if (g_g.obj_y >= 244) {
-                if (cc >= pc - 28 && cc <= pc + 28) { g_g.score++; fishing_audio_play(SFX_CATCH); }
-                g_g.obj_y = 60; g_g.obj_x = 40 + rnd(140);
-                if (g_g.score >= 8) game_finish();
+        case 0: { /* 赛跑对战：50ms 周期推进，挂主循环 dt（不另起定时器） */
+            if (g_g.countdown > 0) {
+                /* 3/2/1/GO：区间与试玩一致（>2.6s=3，>1.6s=2，>0.6s=1，否则 GO） */
+                g_g.countdown -= dt;
+                int cid;
+                if (g_g.countdown > 2600) { cid = 0; }
+                else if (g_g.countdown > 1600) { cid = 1; }
+                else if (g_g.countdown > 600) { cid = 2; }
+                else { cid = 3; }
+                static const lv_image_dsc_t *const CNT_IMG[4] = {
+                    &spr_cnt_3, &spr_cnt_2, &spr_cnt_1, &spr_cnt_go
+                };
+                if (g_g.cnt_id != cid) {
+                    g_g.cnt_id = cid;
+                    if (g_race_cnt) lv_img_set_src(g_race_cnt, CNT_IMG[cid]);
+                }
+                if (g_g.countdown <= 0) {
+                    g_g.cnt_id = -1;
+                    if (g_race_cnt) lv_img_set_src(g_race_cnt, &spr_empty);  /* 1×1 隐藏 */
+                }
+                break;
             }
-            lv_obj_set_pos(g_g_obj[0], g_g.pos, 240);
-            lv_obj_set_pos(g_g_obj[1], g_g.obj_x, g_g.obj_y);
-            char b[40]; snprintf(b, sizeof(b), "接到 %d/8", g_g.score);
-            set_text_cached(g_g_msg, b);
+
+            /* —— 开跑 —— */
+            g_g.elapsed += dt;
+            if (g_g.flash_t > 0) {
+                g_g.flash_t -= dt;
+                if (g_g.flash_t <= 0 && g_race_flash) { set_text_cached(g_race_flash, ""); }
+            }
+            if (g_g.jump_t > 0) { g_g.jump_t -= dt; }
+            if (g_g.rjump_t > 0) { g_g.rjump_t -= dt; }
+            if (g_g.stumble_t > 0) { g_g.stumble_t -= dt; }
+
+            g_g.prev_me = g_g.dist_me;
+            g_g.prev_rb = g_g.dist_rb;
+
+            /* 玩家：动量自然衰减 → 速度 → 距离（毫米定点，停手就被反超） */
+            g_g.mom -= RACE_DECAY_U * dt / 1000;
+            if (g_g.mom < 0) { g_g.mom = 0; }
+            int spd = (g_g.stumble_t > 0) ? RACE_SPD_STUMBLE
+                                          : RACE_SPD_BASE + RACE_SPD_MOM * g_g.mom / RACE_MOM_CAP;
+            g_g.dist_me += spd * dt / 1000;
+
+            /* 兔子 AI：档位基准速 × 波动 × 特性（与试玩 stepRace 同式） */
+            float tf = (float)g_g.elapsed / 1000.0f;
+            int rv = RACE_OPP_SPD[g_g.opp]
+                     * (RACE_WAVE_BASE + (int)(RACE_WAVE_AMP * sinf(tf * 2.6f + (float)g_g.opp)))
+                     / 1000;
+            if (g_g.opp == 3) {   /* 好奇宝宝：忽快忽慢 */
+                rv = rv * (RACE_WANDER_BASE
+                           + (int)(RACE_WANDER_AMP * fabsf(sinf(tf * 1.7f)))) / 1000;
+            }
+            if (g_g.opp == 0 && g_g.dist_rb - g_g.dist_me > RACE_CATCHUP_MM) {
+                rv = rv * 720 / 1000;   /* 粘人精：领先 10m 就放慢等你 */
+            }
+            if (g_g.opp == 2 && g_g.elapsed < RACE_SLOWSTART_MS) {
+                rv = rv * RACE_SLOWSTART_K / 1000;   /* 慢性子：开局热身 */
+            }
+            g_g.dist_rb += rv * dt / 1000;
+
+            /* 石头：玩家撞→踉跄（跳起完全躲过）；兔子按档位成功率跳，失败只做视觉不减速 */
+            for (int i = 0; i < 3; ++i) {
+                if (!g_g.obs_hit[i] &&
+                    g_g.prev_me < RACE_ROCK_MM[i] && g_g.dist_me >= RACE_ROCK_MM[i]) {
+                    g_g.obs_hit[i] = 1;
+                    if (g_race_rock_me[i]) { lv_img_set_src(g_race_rock_me[i], &spr_empty); }
+                    if (g_g.jump_t <= 0) {
+                        g_g.stumble_t = RACE_STUMBLE_MS;
+                        g_g.mom /= 2;
+                        race_flash("石头！减速", 600, lv_color_make(255, 154, 154));
+                    }
+                }
+                if (!g_g.obs_rhit[i] &&
+                    g_g.prev_rb < RACE_ROCK_MM[i] && g_g.dist_rb >= RACE_ROCK_MM[i]) {
+                    g_g.obs_rhit[i] = 1;
+                    if (g_race_rock_rb[i]) { lv_img_set_src(g_race_rock_rb[i], &spr_empty); }
+                    if (rnd(1000) >= RACE_OPP_JUMP[g_g.opp]) {
+                        g_g.rjump_t = 500;
+                    }
+                }
+            }
+            /* 胡萝卜：玩家踩到动量 +0.35（上限 1）；对手直接 +4 米 */
+            for (int i = 0; i < 3; ++i) {
+                if (!g_g.car_got[i] &&
+                    g_g.prev_me < RACE_CAR_MM[i] && g_g.dist_me >= RACE_CAR_MM[i]) {
+                    g_g.car_got[i] = 1;
+                    if (g_race_car_me[i]) { lv_img_set_src(g_race_car_me[i], &spr_empty); }
+                    g_g.mom = (g_g.mom + RACE_CAR_MOM >= RACE_MOM_CAP)
+                                  ? RACE_MOM_CAP : g_g.mom + RACE_CAR_MOM;
+                    race_flash("胡萝卜！加速", 500, lv_color_make(245, 215, 122));
+                }
+                if (!g_g.car_rgot[i] &&
+                    g_g.prev_rb < RACE_CAR_MM[i] && g_g.dist_rb >= RACE_CAR_MM[i]) {
+                    g_g.car_rgot[i] = 1;
+                    if (g_race_car_rb[i]) { lv_img_set_src(g_race_car_rb[i], &spr_empty); }
+                    g_g.dist_rb += RACE_RB_CAR_BONUS;
+                }
+            }
+
+            /* 位置（试玩同式：兔子 48×48 中心、跑者 32×40 中心；跳起抬升） */
+            if (g_race_rab) {
+                lv_obj_set_pos(g_race_rab, race_px(g_g.dist_rb) - 24,
+                               88 - ((g_g.rjump_t > 0) ? 10 : 0));
+            }
+            if (g_race_me) {
+                lv_obj_set_pos(g_race_me, race_px(g_g.dist_me) - 16,
+                               159 - ((g_g.jump_t > 0) ? 11 : 0));
+            }
+            /* 跑动帧：跳跃期间保持当前帧（试玩 jump===0 才更新） */
+            if (g_g.jump_t <= 0 && g_race_me) {
+                int nf = (g_g.elapsed / 111) % 2;
+                if (nf != g_g.fr_me) {
+                    g_g.fr_me = nf;
+                    lv_img_set_src(g_race_me, nf ? &spr_runner_b : &spr_runner_a);
+                }
+            }
+            if (g_g.rjump_t <= 0 && g_race_rab) {
+                int nf = (g_g.elapsed / 111) % 2;
+                if (nf != g_g.fr_rb) {
+                    g_g.fr_rb = nf;
+                    lv_img_set_src(g_race_rab, nf ? &rabbit_front_walk : &rabbit_front_walk_r);
+                }
+            }
+
+            /* 顶部战况：你 VS 对手 + 用时（左）/ 领先·落后（右） */
+            char b[64];
+            snprintf(b, sizeof(b), "你 VS %s %d.%ds", RACE_OPP_NAME[g_g.opp],
+                     g_g.elapsed / 1000, (g_g.elapsed % 1000) / 100);
+            if (set_text_cached(g_race_top_l, b)) {
+                lv_obj_set_style_text_color(g_race_top_l, lv_color_make(255, 243, 220), 0);
+            }
+            int lead_mm = g_g.dist_me - g_g.dist_rb;
+            if (lead_mm >= -2000 && lead_mm <= 2000) {
+                snprintf(b, sizeof(b), "并驾齐驱");
+                if (set_text_cached(g_race_top_r, b)) {
+                    lv_obj_set_style_text_color(g_race_top_r, lv_color_make(245, 215, 122), 0);
+                }
+            } else if (lead_mm > 0) {
+                snprintf(b, sizeof(b), "你领先 %dm", lead_mm / 1000);
+                if (set_text_cached(g_race_top_r, b)) {
+                    lv_obj_set_style_text_color(g_race_top_r, lv_color_make(123, 224, 160), 0);
+                }
+            } else {
+                snprintf(b, sizeof(b), "落后 %dm", (-lead_mm) / 1000);
+                if (set_text_cached(g_race_top_r, b)) {
+                    lv_obj_set_style_text_color(g_race_top_r, lv_color_make(255, 154, 154), 0);
+                }
+            }
+            /* 右下实时米数 */
+            snprintf(b, sizeof(b), "你 %dm", g_g.dist_me / 1000);
+            set_text_cached(g_race_m_me, b);
+            snprintf(b, sizeof(b), "%s %dm", RACE_OPP_NAME[g_g.opp], g_g.dist_rb / 1000);
+            set_text_cached(g_race_m_rb, b);
+
+            /* 动量条：宽 + 配色（触变才动，铁律 2） */
+            int w = 110 * g_g.mom / RACE_MOM_CAP;
+            if (w != g_g.bar_w) {
+                g_g.bar_w = w;
+                if (g_race_bar) { lv_obj_set_width(g_race_bar, w); }
+            }
+            int col = (g_g.mom > 750) ? 2 : ((g_g.mom > 400) ? 1 : 0);
+            if (col != g_g.bar_col) {
+                g_g.bar_col = col;
+                if (g_race_bar) {
+                    lv_obj_set_style_bg_color(g_race_bar,
+                                              (col == 2) ? lv_color_make(245, 215, 122)
+                                              : ((col == 1) ? lv_color_make(123, 224, 160)
+                                                            : lv_color_make(224, 162, 76)), 0);
+                }
+            }
+
+            /* 终点结算 */
+            if (g_g.dist_me >= RACE_LEN_MM || g_g.dist_rb >= RACE_LEN_MM) {
+                race_finish();
+            }
             break;
         }
         case 1: { /* 颜色配对：高亮选中 */

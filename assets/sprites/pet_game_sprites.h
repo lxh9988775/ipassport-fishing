@@ -19,6 +19,15 @@ extern const lv_image_dsc_t spr_bush;
 extern const lv_image_dsc_t spr_arrow;
 extern const lv_image_dsc_t spr_note;
 extern const lv_image_dsc_t spr_drum;
+extern const lv_image_dsc_t spr_runner_a;
+extern const lv_image_dsc_t spr_runner_b;
+extern const lv_image_dsc_t spr_rock;
+extern const lv_image_dsc_t spr_empty;
+extern const lv_image_dsc_t spr_cnt_3;
+extern const lv_image_dsc_t spr_cnt_2;
+extern const lv_image_dsc_t spr_cnt_1;
+extern const lv_image_dsc_t spr_cnt_go;
+extern const lv_image_dsc_t spr_race_bg;
 
 #ifdef __cplusplus
 }
