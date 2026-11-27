@@ -294,9 +294,13 @@ static lv_obj_t *g_res_info    = NULL;
 
 /* 菜单：5 项玩法设置 + 1 项声音开关（声音只有开/关两态，单击直接切，不进编辑态） */
 static lv_obj_t *g_menu        = NULL;
-static lv_obj_t *g_menu_rows[6];
-static lv_obj_t *g_menu_selbar = NULL;
+static lv_obj_t *g_menu_rows[6];         /* 右侧 value label（真实游戏状态） */
+static lv_obj_t *g_menu_keys[6];         /* 左侧 key label（固定文案） */
+static lv_obj_t *g_menu_selbar = NULL;   /* 选中行左侧 3px 红竖条 */
+static lv_obj_t *g_menu_selbg  = NULL;   /* 选中行整行浅底 PANEL2 */
+static lv_obj_t *g_menu_subtitle = NULL;
 static int g_menu_idx = 0;
+static int g_menu_sel_last = -1;         /* 选中态缓存：只在 idx 变化时碰 LVGL */
 static int g_menu_edit = 0;   /* 是否进入编辑某项 */
 
 /* 图鉴 */
@@ -524,12 +528,27 @@ static void build_ui(void) {
 
     g_lbl_batt = make_label(scr, "--", 193, 4, lv_color_white());
 
-    /* 底部提示：文案长短不一，交给 BOTTOM_MID 自动居中，别手算 x 再撞上圆角 */
-    g_lbl_hint = make_label(scr, "", 0, 0, lv_color_white());
-    lv_obj_set_style_bg_color(g_lbl_hint, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(g_lbl_hint, 170, 0);
-    lv_obj_set_style_pad_all(g_lbl_hint, 1, 0);
-    lv_obj_align(g_lbl_hint, LV_ALIGN_BOTTOM_MID, 0, -5);
+    /* X-02 底栏：总监令 P0-5。真机原先是浅蓝圆角条 —— 根因是只给 label 设了
+     * 黑底 170 透明，radius / 边框交给主题默认样式，实机呈现浅底圆角。
+     * 改法：显式建一块 #08101E 不透明、radius=0、1px 双描边的硬边底板，
+     * label 放进底板内、自身透明，文本仍由 set_text_cached 更新。 */
+    lv_obj_t *hint_bar = lv_obj_create(scr);
+    /* 底栏贴屏幕最底（与旧 g_lbl_hint 的 BOTTOM_MID -5 同一位置）。
+     * 它会盖住各页面最底部一行，这是设计如此，非缺陷。 */
+    lv_obj_set_size(hint_bar, SCR_W - 4, 22);
+    lv_obj_align(hint_bar, LV_ALIGN_BOTTOM_MID, 0, -3);
+    lv_obj_set_style_bg_color(hint_bar, lv_color_make(8, 16, 30), 0);
+    lv_obj_set_style_bg_opa(hint_bar, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(hint_bar, lv_color_make(120, 156, 190), 0);
+    lv_obj_set_style_border_width(hint_bar, 1, 0);
+    lv_obj_set_style_radius(hint_bar, 0, 0);
+    lv_obj_set_style_pad_all(hint_bar, 0, 0);
+    lv_obj_clear_flag(hint_bar, LV_OBJ_FLAG_SCROLLABLE);
+
+    g_lbl_hint = make_label(hint_bar, "", 0, 0, lv_color_white());
+    use_cjk12(g_lbl_hint);
+    lv_obj_set_style_bg_opa(g_lbl_hint, LV_OPA_TRANSP, 0);  /* 底板负责底色，label 透明 */
+    lv_obj_align(g_lbl_hint, LV_ALIGN_CENTER, 0, 0);
 
     /* ---------- 钓鱼场景 ---------- */
     g_scene = lv_obj_create(scr);
@@ -726,47 +745,75 @@ static void build_ui(void) {
     lv_obj_set_style_text_line_space(g_res_info, 4, 0);
     lv_label_set_long_mode(g_res_info, LV_LABEL_LONG_WRAP);
 
-    /* ---------- 菜单 ---------- */
+    /* ---------- 菜单：概念图 screen_menu_after() 五条规范复刻 ----------
+     * ①深色硬边底 ②6 行 bevel 卡片（上/左亮、下/右暗）③选中态=整行浅底
+     * +左侧 3px 红竖条 ④标题/副标题 ⑤每行右侧灰色说明（真实游戏状态）。
+     * 只改主菜单渲染；场景/收线/fishing_logic.c 一律不动。
+     * 面板内坐标：g_menu 起点 (0,HUD_H=22)，pad_all=0，子元素坐标即内容区坐标。 */
     g_menu = lv_obj_create(scr);
     lv_obj_set_size(g_menu, SCR_W, SCR_H - HUD_H - 24);
     lv_obj_set_pos(g_menu, 0, HUD_H);
-    lv_obj_set_style_bg_color(g_menu, lv_color_make(6, 18, 36), 0);
+    lv_obj_set_style_bg_color(g_menu, lv_color_make(8, 16, 30), 0);  /* INK */
     lv_obj_set_style_bg_opa(g_menu, LV_OPA_COVER, 0);
-    /* 显式清零内边距：lv_obj_create() 的默认样式带约 13px 内边距，
-     * 子元素坐标是相对【内容区】的，不清零的话所有子元素都比源码里写的
-     * 往右下偏 13px —— 实测证据：菜单选中条比预期低 12~13px、
-     * 右上角「静水塘」胶囊被屏幕右缘切掉、图鉴最后一行被底部提示条压住。
-     * 清零后坐标才名副其实，布局检查器（只加父级 x/y、不计父级内边距）
-     * 也才和实机对得上。 */
-    /* 清零内边距：面板子元素坐标相对内容区，默认内边距会让整体偏 13px */
     lv_obj_set_style_border_width(g_menu, 0, 0);
+    /* 面板子元素坐标相对内容区，默认约 13px 内边距会让整体右下的坑必须清零 */
     lv_obj_set_style_pad_all(g_menu, 0, 0);
     lv_obj_clear_flag(g_menu, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(g_menu, LV_OBJ_FLAG_HIDDEN);
 
-    /* 选中条：跟着菜单行走（菜单行坐标见下，逐条展开给布局检查器还原）。 */
-    g_menu_selbar = lv_obj_create(g_menu);
-    lv_obj_set_size(g_menu_selbar, SCR_W - 12, 30);
-    lv_obj_set_pos(g_menu_selbar, 6, 10);
-    lv_obj_set_style_bg_color(g_menu_selbar, lv_color_make(153, 0, 58), 0); /* 高亮红 */
-    lv_obj_set_style_bg_opa(g_menu_selbar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(g_menu_selbar, 0, 0);
-    lv_obj_set_style_radius(g_menu_selbar, 4, 0);
-    lv_obj_clear_flag(g_menu_selbar, LV_OBJ_FLAG_SCROLLABLE);
+    /* 标题 + 副标题（概念图 14,32 / 14,51 屏幕坐标 → 面板内减 HUD_H=22） */
+    lv_obj_t *menu_title = make_label(g_menu, "钓鱼准备", 14, 10, lv_color_make(232, 240, 248));
+    (void)menu_title;
+    /* 副标题 y=30：标题 16px 字高20（y10..30），副标题 12px 字高15（y30..45），
+     * 卡片从 y=46 起 —— 两段行距都恰好等于/大于字高，不叠字也不压卡片。 */
+    g_menu_subtitle = make_label(g_menu, "选对竿，才知道去哪下钩", 14, 30,
+                                 lv_color_make(140, 164, 190));
+    use_cjk12(g_menu_subtitle);
 
-    /* 6 行铺满整块面板（原来 74+i*30 全挤在上半部，下半屏一大片留白）。
-     * 起始 y=14、行距 42：第 1 行 y=14 … 第 6 行 y=224（行高 20），
-     * 面板高 274，末行底 244，底部留 30px 不压提示条。
-     * 逐条展开而非 for(i)，布局检查器才能解析出真实坐标、检出不出了屏。 */
-    lv_obj_t *menu_row0 = make_label(g_menu, "开始钓鱼", 14, 17, lv_color_white());
-    lv_obj_t *menu_row1 = make_label(g_menu, "鱼竿   手竿", 14, 59, lv_color_white());
-    lv_obj_t *menu_row2 = make_label(g_menu, "饵料   蚯蚓", 14, 101, lv_color_white());
-    lv_obj_t *menu_row3 = make_label(g_menu, "钓点   静水塘", 14, 143, lv_color_white());
-    lv_obj_t *menu_row4 = make_label(g_menu, "图鉴   0/27", 14, 185, lv_color_white());
-    lv_obj_t *menu_row5 = make_label(g_menu, "声音   开", 14, 227, lv_color_white());
+    /* 6 行 bevel 卡片：面板内 y = 46 + i*38，行高34；末行底 270 < 面板高274，
+     * 底部提示条从屏幕 295（面板 273）起，不压。逐条展开给检查器还原坐标。
+     * make_panel 提供上/左亮边，下/右暗边用 1px 色块叠（匿名，不进检查器）。 */
+    lv_obj_t *menu_card0 = make_panel(g_menu, 10, 46, 220, 34, lv_color_make(16, 32, 54));
+    lv_obj_t *menu_card1 = make_panel(g_menu, 10, 84, 220, 34, lv_color_make(16, 32, 54));
+    lv_obj_t *menu_card2 = make_panel(g_menu, 10, 122, 220, 34, lv_color_make(16, 32, 54));
+    lv_obj_t *menu_card3 = make_panel(g_menu, 10, 160, 220, 34, lv_color_make(16, 32, 54));
+    lv_obj_t *menu_card4 = make_panel(g_menu, 10, 198, 220, 34, lv_color_make(16, 32, 54));
+    lv_obj_t *menu_card5 = make_panel(g_menu, 10, 236, 220, 34, lv_color_make(16, 32, 54));
+    lv_obj_t *menu_cards[6] = { menu_card0, menu_card1, menu_card2,
+                                menu_card3, menu_card4, menu_card5 };
+    for (int i = 0; i < 6; ++i) {
+        make_box(menu_cards[i], 1, 33, 218, 1, lv_color_make(27, 46, 66));  /* 下暗边 */
+        make_box(menu_cards[i], 219, 1, 1, 32, lv_color_make(27, 46, 66));  /* 右暗边 */
+    }
+
+    /* 选中态两层：先建浅底、再建红竖条，均在文字下层（后建的文字盖在上面）。
+     * 只在 g_menu_idx 变化时 set_pos，周期刷新不碰重绘 API。 */
+    g_menu_selbg = make_box(g_menu, 11, 47, 218, 32, lv_color_make(24, 46, 74));
+    g_menu_selbar = make_box(g_menu, 10, 46, 3, 34, lv_color_make(198, 76, 104));
+
+    /* 每行 key（固定）+ value（动态真实状态），相对卡片内坐标。
+     * 概念图 key(20,y+9) value(82,y+10) 屏幕坐标 → 卡片内 x=10 / x=72。 */
+    lv_obj_t *menu_key0 = make_label(menu_card0, "开始钓鱼", 10, 9, lv_color_make(232, 240, 248));
+    lv_obj_t *menu_key1 = make_label(menu_card1, "鱼竿", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key2 = make_label(menu_card2, "饵料", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key3 = make_label(menu_card3, "钓点", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key4 = make_label(menu_card4, "图鉴", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key5 = make_label(menu_card5, "声音", 10, 9, lv_color_make(206, 220, 234));
+    g_menu_keys[0] = menu_key0; g_menu_keys[1] = menu_key1;
+    g_menu_keys[2] = menu_key2; g_menu_keys[3] = menu_key3;
+    g_menu_keys[4] = menu_key4; g_menu_keys[5] = menu_key5;
+    for (int i = 0; i < 6; ++i) use_cjk12(g_menu_keys[i]);
+
+    lv_obj_t *menu_row0 = make_label(menu_card0, "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row1 = make_label(menu_card1, "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row2 = make_label(menu_card2, "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row3 = make_label(menu_card3, "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row4 = make_label(menu_card4, "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row5 = make_label(menu_card5, "", 72, 10, lv_color_make(140, 164, 190));
     g_menu_rows[0] = menu_row0; g_menu_rows[1] = menu_row1;
     g_menu_rows[2] = menu_row2; g_menu_rows[3] = menu_row3;
     g_menu_rows[4] = menu_row4; g_menu_rows[5] = menu_row5;
+    for (int i = 0; i < 6; ++i) use_cjk12(g_menu_rows[i]);
 
     /* ---------- 图鉴 ---------- */
     g_codex = lv_obj_create(scr);
@@ -836,38 +883,40 @@ static void build_ui(void) {
         lv_obj_t *spot_row0 = make_panel(g_spot_pick, 10, 46, 220, 42, PANEL_C);
         g_spot_rows[0] = spot_row0;
         g_spot_thumbs[0] = lv_img_create(spot_row0); lv_img_set_src(g_spot_thumbs[0], THUMB_BG_IMG[0]); lv_obj_set_pos(g_spot_thumbs[0], 6, 5);
-        g_spot_names[0] = make_label(spot_row0, "", 48, 4, WHITE_C);
-        g_spot_subs[0]  = make_label(spot_row0, "2 处标点", 48, 20, TEAL_C);
-        g_spot_hooks[0] = make_label(spot_row0, "", 48, 31, MUTED_C);
-        g_spot_new[0]   = make_label(spot_row0, "", 192, 20, GOLD_C);
+        /* X-01：两行 12px（行高 15，行距 17 ≥ 15）；原三行 16px 行距仅 11px 必叠字。
+         * 第一行=钓场名 + 锁/NEW（右侧），第二行=标点数 + 鱼情/门槛。 */
+        g_spot_names[0] = make_label(spot_row0, "", 48, 4, WHITE_C); use_cjk12(g_spot_names[0]);
+        g_spot_subs[0]  = make_label(spot_row0, "2处标点", 48, 21, TEAL_C); use_cjk12(g_spot_subs[0]);
+        g_spot_hooks[0] = make_label(spot_row0, "", 104, 21, MUTED_C); use_cjk12(g_spot_hooks[0]);
+        g_spot_new[0]   = make_label(spot_row0, "", 196, 4, GOLD_C); use_cjk12(g_spot_new[0]);
         lv_obj_t *spot_row1 = make_panel(g_spot_pick, 10, 93, 220, 42, PANEL_C);
         g_spot_rows[1] = spot_row1;
         g_spot_thumbs[1] = lv_img_create(spot_row1); lv_img_set_src(g_spot_thumbs[1], THUMB_BG_IMG[1]); lv_obj_set_pos(g_spot_thumbs[1], 6, 5);
-        g_spot_names[1] = make_label(spot_row1, "", 48, 4, WHITE_C);
-        g_spot_subs[1]  = make_label(spot_row1, "2 处标点", 48, 20, TEAL_C);
-        g_spot_hooks[1] = make_label(spot_row1, "", 48, 31, MUTED_C);
-        g_spot_new[1]   = make_label(spot_row1, "", 192, 20, GOLD_C);
+        g_spot_names[1] = make_label(spot_row1, "", 48, 4, WHITE_C); use_cjk12(g_spot_names[1]);
+        g_spot_subs[1]  = make_label(spot_row1, "2处标点", 48, 21, TEAL_C); use_cjk12(g_spot_subs[1]);
+        g_spot_hooks[1] = make_label(spot_row1, "", 104, 21, MUTED_C); use_cjk12(g_spot_hooks[1]);
+        g_spot_new[1]   = make_label(spot_row1, "", 196, 4, GOLD_C); use_cjk12(g_spot_new[1]);
         lv_obj_t *spot_row2 = make_panel(g_spot_pick, 10, 140, 220, 42, PANEL_C);
         g_spot_rows[2] = spot_row2;
         g_spot_thumbs[2] = lv_img_create(spot_row2); lv_img_set_src(g_spot_thumbs[2], THUMB_BG_IMG[2]); lv_obj_set_pos(g_spot_thumbs[2], 6, 5);
-        g_spot_names[2] = make_label(spot_row2, "", 48, 4, WHITE_C);
-        g_spot_subs[2]  = make_label(spot_row2, "2 处标点", 48, 20, TEAL_C);
-        g_spot_hooks[2] = make_label(spot_row2, "", 48, 31, MUTED_C);
-        g_spot_new[2]   = make_label(spot_row2, "", 192, 20, GOLD_C);
+        g_spot_names[2] = make_label(spot_row2, "", 48, 4, WHITE_C); use_cjk12(g_spot_names[2]);
+        g_spot_subs[2]  = make_label(spot_row2, "2处标点", 48, 21, TEAL_C); use_cjk12(g_spot_subs[2]);
+        g_spot_hooks[2] = make_label(spot_row2, "", 104, 21, MUTED_C); use_cjk12(g_spot_hooks[2]);
+        g_spot_new[2]   = make_label(spot_row2, "", 196, 4, GOLD_C); use_cjk12(g_spot_new[2]);
         lv_obj_t *spot_row3 = make_panel(g_spot_pick, 10, 187, 220, 42, PANEL_C);
         g_spot_rows[3] = spot_row3;
         g_spot_thumbs[3] = lv_img_create(spot_row3); lv_img_set_src(g_spot_thumbs[3], THUMB_BG_IMG[3]); lv_obj_set_pos(g_spot_thumbs[3], 6, 5);
-        g_spot_names[3] = make_label(spot_row3, "", 48, 4, WHITE_C);
-        g_spot_subs[3]  = make_label(spot_row3, "2 处标点", 48, 20, TEAL_C);
-        g_spot_hooks[3] = make_label(spot_row3, "", 48, 31, MUTED_C);
-        g_spot_new[3]   = make_label(spot_row3, "", 192, 20, GOLD_C);
+        g_spot_names[3] = make_label(spot_row3, "", 48, 4, WHITE_C); use_cjk12(g_spot_names[3]);
+        g_spot_subs[3]  = make_label(spot_row3, "2处标点", 48, 21, TEAL_C); use_cjk12(g_spot_subs[3]);
+        g_spot_hooks[3] = make_label(spot_row3, "", 104, 21, MUTED_C); use_cjk12(g_spot_hooks[3]);
+        g_spot_new[3]   = make_label(spot_row3, "", 196, 4, GOLD_C); use_cjk12(g_spot_new[3]);
         lv_obj_t *spot_row4 = make_panel(g_spot_pick, 10, 234, 220, 42, PANEL_C);
         g_spot_rows[4] = spot_row4;
         g_spot_thumbs[4] = lv_img_create(spot_row4); lv_img_set_src(g_spot_thumbs[4], THUMB_BG_IMG[4]); lv_obj_set_pos(g_spot_thumbs[4], 6, 5);
-        g_spot_names[4] = make_label(spot_row4, "", 48, 4, WHITE_C);
-        g_spot_subs[4]  = make_label(spot_row4, "2 处标点", 48, 20, TEAL_C);
-        g_spot_hooks[4] = make_label(spot_row4, "", 48, 31, MUTED_C);
-        g_spot_new[4]   = make_label(spot_row4, "", 192, 20, GOLD_C);
+        g_spot_names[4] = make_label(spot_row4, "", 48, 4, WHITE_C); use_cjk12(g_spot_names[4]);
+        g_spot_subs[4]  = make_label(spot_row4, "2处标点", 48, 21, TEAL_C); use_cjk12(g_spot_subs[4]);
+        g_spot_hooks[4] = make_label(spot_row4, "", 104, 21, MUTED_C); use_cjk12(g_spot_hooks[4]);
+        g_spot_new[4]   = make_label(spot_row4, "", 196, 4, GOLD_C); use_cjk12(g_spot_new[4]);
     }
     g_spot_selbar = lv_obj_create(g_spot_pick);
     lv_obj_set_size(g_spot_selbar, 3, 42);
@@ -1421,20 +1470,27 @@ static void refresh_result(const fishing_status_t *st) {
 
 static void refresh_menu(const fishing_status_t *st) {
     char buf[96];
+    /* 概念图分列：key 由静态 label 显示，这里只刷右侧 value（真实状态） */
     for (int i = 0; i < 6; ++i) {
         const char *txt = "";
         switch (i) {
-            case 0: txt = "开始钓鱼"; break;
-            case 1: snprintf(buf, sizeof(buf), "鱼竿   %s", fishing_rod_name(st->rod)); txt = buf; break;
-            case 2: snprintf(buf, sizeof(buf), "饵料   %s", fishing_bait_name(st->bait)); txt = buf; break;
-            case 3: snprintf(buf, sizeof(buf), "钓点   %s", fishing_spot_name(st->spot)); txt = buf; break;
-            case 4: snprintf(buf, sizeof(buf), "图鉴   %d/%d", st->codex_total, FISH_SPECIES_COUNT); txt = buf; break;
-            case 5: snprintf(buf, sizeof(buf), "声音   %s", fishing_audio_is_muted() ? "关" : "开"); txt = buf; break;
+            case 0: txt = ""; break;   /* 「开始钓鱼」整行是标题，右侧留空 */
+            case 1: txt = fishing_rod_name(st->rod); break;
+            case 2: txt = fishing_bait_name(st->bait); break;
+            case 3: txt = fishing_spot_name(st->spot); break;
+            case 4: snprintf(buf, sizeof(buf), "%d/%d", st->codex_total, FISH_SPECIES_COUNT); txt = buf; break;
+            case 5: txt = fishing_audio_is_muted() ? "关" : "开"; break;
             default: break;
         }
         set_text_cached(g_menu_rows[i], txt);
     }
-    lv_obj_set_pos(g_menu_selbar, 6, 10 + g_menu_idx * 42);   /* 铺满布局：选中条跟着行走 */
+    /* 选中态两层跟随光标：只在 idx 真正变化时动，周期刷新不碰 set_pos */
+    if (g_menu_sel_last != g_menu_idx) {
+        g_menu_sel_last = g_menu_idx;
+        int sy = 46 + g_menu_idx * 38;
+        lv_obj_set_pos(g_menu_selbg, 11, sy + 1);
+        lv_obj_set_pos(g_menu_selbar, 10, sy);
+    }
 
     /* 钓点这一行：没解锁的钓点选不进去（fishing_set_spot 会拒绝），
      * 但之前这版只做了"静默跳过"，玩家按住上下键画面纹丝不动，看上去就是坏了
@@ -1612,7 +1668,7 @@ static void refresh_spot_pick(void) {
     for (int i = 0; i < FISH_SPOT_COUNT; ++i) {
         const bool unlocked = fishing_spot_unlocked((spot_t)i);
         if (!unlocked) lock_mask |= (1 << i);
-        snprintf(buf, sizeof(buf), "%d 处标点", subspot_count_of(i));
+        snprintf(buf, sizeof(buf), "%d处标点", subspot_count_of(i));
         set_text_cached(g_spot_subs[i], buf);
         set_text_cached(g_spot_names[i], fishing_spot_name((spot_t)i));
         if (unlocked) {

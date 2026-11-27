@@ -38,7 +38,7 @@ PANELS = {"g_scene": 0, "g_reel": 1, "g_result": 2, "g_menu": 3, "g_codex": 4,
           "g_spot_pick": 5, "g_sub_pick": 6, "g_cdx_list": 7}
 # 铺满整屏的层：四角被圆角涂黑是设计的一部分（遮的是背景边缘，不是内容）
 # g_tint 是氛围染色层，同样铺满整屏、同样只判出屏不参与压盖关系。
-FULL_BLEED = set(PANELS) | {"g_bg", "hud", "g_tint"}
+FULL_BLEED = set(PANELS) | {"g_bg", "hud", "g_tint", "hint_bar"}
 
 # 最坏情况代入：把 snprintf 模板换成"能出现的最长一行"，按上限判定
 SUBST = {
@@ -113,6 +113,15 @@ ALLOW_OVERLAP = {
     frozenset(("g_menu_selbar", "menu_row3")),
     frozenset(("g_menu_selbar", "menu_row4")),
     frozenset(("g_menu_selbar", "menu_row5")),
+    # 概念图 bevel 卡片三件套：卡片底 / 选中整行浅底 / 左侧红竖条刻意层叠，
+    # 文字（menu_keyN / menu_rowN）压在浅底之上是设计本身。
+    *[frozenset(("g_menu_selbg", "menu_card%d" % i)) for i in range(6)],
+    *[frozenset(("g_menu_selbar", "menu_card%d" % i)) for i in range(6)],
+    frozenset(("g_menu_selbg", "g_menu_selbar")),
+    *[frozenset(("g_menu_selbg", "menu_key%d" % i)) for i in range(6)],
+    *[frozenset(("g_menu_selbg", "menu_row%d" % i)) for i in range(6)],
+    *[frozenset(("g_menu_selbar", "menu_key%d" % i)) for i in range(6)],
+    *[frozenset(("g_menu_selbar", "menu_row%d" % i)) for i in range(6)],
     frozenset(("g_zone", "g_fishmark")),      # 鱼在捕捉区内是玩法本身
     frozenset(("prg_bg", "g_prg_fill")),
     frozenset(("g_batt_body", "g_batt_fill")),
@@ -121,7 +130,7 @@ ALLOW_OVERLAP = {
     frozenset(("lbl_gear1", "g_gear1")),
 }
 # 容器/背景层：只判出屏，不参与"谁压住谁"（它们本来就是铺满的底）
-CONTAINERS = set(PANELS) | {"g_bg", "hud", "g_tint"}
+CONTAINERS = set(PANELS) | {"g_bg", "hud", "g_tint", "hint_bar"}
 
 NOTES: list[str] = []
 
@@ -287,7 +296,9 @@ def parse_source():
             o["texts"].add(m.group(3))
 
     # 元素创建：lv_obj_create(parent) / lv_img_create(parent)
-    for m in re.finditer(r"(\w+)\s*=\s*(lv_obj_create|lv_img_create|lv_label_create)\(\s*(\w+)\s*\)", src):
+    # 支持 `lv_obj_t *hud = lv_obj_create(scr)` 这种带类型声明的写法
+    # （底栏 hint_bar 就用了这种，原先漏登记导致 g_lbl_hint 被当 scr 直属）。
+    for m in re.finditer(r"(?:\w+\s+\*?\s*)?(\w+)\s*=\s*(lv_obj_create|lv_img_create|lv_label_create)\(\s*(\w+)\s*\)", src):
         o = get(m.group(1))
         o["parent"] = m.group(3)
         o["kind"] = "img" if "img" in m.group(2) else "obj"
@@ -402,8 +413,14 @@ def parse_source():
 
     elems = {n: o for n, o in objs.items()
              if n not in ("hud", "l", "lbl", "parent")
-             and o["x"] is not None and o["y"] is not None
+             and (o["x"] is not None and o["y"] is not None or o["auto"])
              and (o["kind"] != "label" or o["texts"] or o["long_text"])}
+    # align 定位的容器（如 hint_bar）x/y 缺省 0，真实位置在 boxes 里按 align 算
+    for o in elems.values():
+        if o["x"] is None:
+            o["x"] = 0
+        if o["y"] is None:
+            o["y"] = 0
 
     # 面板内边距防线：lv_obj_create() 的默认样式带约 13px 内边距，子元素坐标
     # 相对【内容区】。不清零的话，所有面板子元素都会比源码写的往右下偏 13px，
@@ -441,6 +458,85 @@ def worst_text(font, tmpl: str) -> str:
     return s
 
 
+def check_spot_row_line_spacing() -> list:
+    """X-01 防线：选钓场 5 行内，同一列的文字 y 间距必须 >= 实际字号行高。
+
+    数组元素（g_spot_names[i] 等）被 parse_source 当动态表达式跳过，
+    这是真机三行叠字逃过检查的根因。这里直接解析 fishing.c 里
+    spot_rowN 段的 make_label(x,y) + use_cjk12() 补上这道断言。
+    """
+    problems = []
+    src = open(os.path.join(ROOT, "main", "fishing.c"), encoding="utf-8").read()
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = re.sub(r"//[^\n]*", "", src)
+    lh12 = (load_font(FONT_C12) or {}).get("line_height", 15)
+    lh16 = (load_font() or {}).get("line_height", 20)
+    for n in range(5):
+        m = re.search(r"spot_row%d\s*=\s*make_panel\([^)]*\);(.*?)(?=lv_obj_t\s*\*spot_row|\Z)" % n,
+                      src, re.S)
+        if not m:
+            continue
+        block = m.group(1)
+        entries = []
+        for mm in re.finditer(
+                r"(g_spot_\w+)\[\d+\]\s*=\s*make_label\(\s*\w+\s*,[^,]+,\s*([^,]+),\s*([^,]+),", block):
+            name, xe, ye = mm.group(1), mm.group(2), mm.group(3)
+            try:
+                x, y = int(xe.strip()), int(ye.strip())
+            except ValueError:
+                continue
+            tail = block[mm.end():mm.end() + 160]
+            small = ("use_cjk12(%s[" % name) in tail
+            entries.append((name, x, y, lh12 if small else lh16))
+        for i in range(len(entries)):
+            for j in range(i + 1, len(entries)):
+                a, b = entries[i], entries[j]
+                if abs(a[1] - b[1]) > 8:      # x 差大 = 左右并排，不是叠字
+                    continue
+                gap = abs(a[2] - b[2])
+                need = max(a[3], b[3])
+                if gap < need:
+                    problems.append("[叠字] spot_row%d: %s(y=%d) 与 %s(y=%d) 行距 %d < 行高 %d"
+                                    % (n, a[0], a[2], b[0], b[2], gap, need))
+    return problems
+
+
+def check_panel_titles_vs_hud() -> list:
+    """X-04 防线：页面标题（匿名 make_label，未赋值→不进 parse_source）
+    在屏幕上的实际 y = 面板 y + 标题面板内 y，必须落在 HUD 底边之下。
+
+    真机/对比图曾出现"选钓场"压在 HUD"得分 18"上：
+    根因是画图时把面板内坐标(y=10)当屏幕坐标用，漏加面板起点 HUD_H=22。
+    这里直接从 fishing.c 解析 make_panel(g_XXX,...) 的 y + 紧随其后的
+    make_label("标题", x, y) 的第二参数，算出屏幕 y 并断言 > HUD 底边。
+    """
+    problems = []
+    src = open(os.path.join(ROOT, "main", "fishing.c"), encoding="utf-8").read()
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = re.sub(r"//[^\n]*", "", src)
+    hud_bottom = 24  # HUD_H(22) + 2，见 hud 底板 set_size
+    for m in re.finditer(
+            r"(\w+)\s*=\s*make_panel\(\s*scr\s*,\s*(-?\d+)\s*,\s*(\w+|-?\d+)\s*,", src):
+        name, px, py = m.group(1), int(m.group(2)), m.group(3)
+        # 面板起点 y：常量 HUD_H=22 或数字
+        panel_y = 22 if py.strip() == "HUD_H" else (int(py) if py.lstrip("-").isdigit() else None)
+        if panel_y is None:
+            continue
+        # 面板创建后紧接的 200 字符内找匿名 make_label(parent, "标题", x, y, ...)
+        tail = src[m.end():m.end() + 240]
+        for lm in re.finditer(
+                r"make_label\(\s*%s\s*,\s*\"([^\"]+)\"\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*," % name, tail):
+            title, ly = lm.group(1), int(lm.group(3))
+            screen_y = panel_y + ly
+            if screen_y < hud_bottom:
+                problems.append("[标题压HUD] %s 标题「%s」屏幕 y=%d < HUD 底边 %d"
+                                % (name, title, screen_y, hud_bottom))
+            elif screen_y < hud_bottom + 4:
+                problems.append("[标题贴HUD] %s 标题「%s」屏幕 y=%d，距 HUD 底边不足 4px"
+                                % (name, title, screen_y))
+    return problems
+
+
 def main() -> int:
     radius = read_radius()
     font = load_font()
@@ -467,8 +563,8 @@ def main() -> int:
         return x, y
 
     boxes, texts = {}, {}
+    dims = {}                       # name -> (w, h)，先统一算完尺寸再算 align 位置
     for name, o in elems.items():
-        x, y = absolute(name)
         pad = o["pad"]
         if o["kind"] == "label":
             f = font12 if o["small"] else font
@@ -502,20 +598,40 @@ def main() -> int:
         else:
             w, h = o["w"] or 0, o["h"] or 0
             texts[name] = "<graphic>"
+        dims[name] = (w, h)
+
+    # 位置计算：align 对象可能依赖另一个 align 父容器（底栏 label 居中于
+    # hint_bar，而 hint_bar 自己 BOTTOM_MID 于 scr）。按依赖深度排序，
+    # 保证父容器先算好。
+    def chain_len(name, guard=0):
+        """父链长度：父一定先于子计算（底栏 label 依赖 hint_bar 的 box）。"""
+        p = elems[name]["parent"]
+        return 0 if (p not in elems or guard > 8) else 1 + chain_len(p, guard + 1)
+
+    for name in sorted(elems, key=chain_len):
+        o = elems[name]
+        x, y = absolute(name)
+        w, h = dims[name]
         if o["auto"]:                       # lv_obj_align 定位
             mode, dx, dy = o["auto"]
+            parent = o["parent"]
+            if parent and parent != "scr" and parent in boxes:
+                px, py, pw, ph = boxes[parent]
+            else:
+                px, py, pw, ph = 0, 0, SCR_W, SCR_H
             if "RIGHT" in mode:
-                x = SCR_W - w + dx
+                x = px + pw - w + dx
             elif "CENTER" in mode or ("MID" in mode and "LEFT" not in mode and "RIGHT" not in mode):
-                x = (SCR_W - w) / 2 + dx
+                x = px + (pw - w) / 2 + dx
             elif "LEFT" in mode:
-                x = dx
+                x = px + dx
             if "BOTTOM" in mode:
-                y = SCR_H - h + dy
-            elif "MID" in mode and "TOP" not in mode and "BOTTOM" not in mode:
-                y = (SCR_H - h) / 2 + dy
+                y = py + ph - h + dy
+            elif ("MID" in mode or "CENTER" in mode) and "TOP" not in mode and "BOTTOM" not in mode:
+                # LV_ALIGN_CENTER 是纯 CENTER（无 MID 字样），也要垂直居中
+                y = py + (ph - h) / 2 + dy
             elif "TOP" in mode:
-                y = dy
+                y = py + dy
         if w and h:
             boxes[name] = (x, y, w, h)
 
@@ -628,6 +744,12 @@ def main() -> int:
         if panel in groups:
             overlaps(groups[panel], panel)
             cross(hud, groups[panel], "HUD/")
+
+    # X-01：数组元素不在 parse_source 范围，补一道行距断言，防止叠字复发
+    problems += check_spot_row_line_spacing()
+    # X-04：匿名 make_label（未赋值的页面标题）不进 parse_source，
+    # 曾让"选钓场"压住 HUD 逃过检查。补一道面板标题 vs HUD 的独立断言。
+    problems += check_panel_titles_vs_hud()
 
     print("屏幕 %dx%d，圆角半径 %d px，字库 line_height=%d" %
           (SCR_W, SCR_H, radius, font["line_height"]))
