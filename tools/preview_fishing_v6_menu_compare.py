@@ -69,8 +69,8 @@ def draw_new(d):
     for i,(k,v) in enumerate(rows):
         cy = 22 + 46 + i*38          # 面板内 y=46+i*38 → 屏幕
         bevel(d, 10, cy, 220, 34, PANEL)
-        if i == 0:                    # 选中态：整行浅底 + 左侧 3px 红竖条
-            d.rectangle([11, cy+1, 228, cy+32], fill=PANEL2)
+        if i == 0:                    # 选中态：卡片自身底色变浅 + 左侧 3px 红竖条（与固件同实现，文字在上层）
+            bevel(d, 10, cy, 220, 34, PANEL2)
             d.rectangle([10, cy, 12, cy+33], fill=RED)
         d.text((20, cy+9), k, font=f(11), fill=WHITE if i==0 else SOFT)
         if v:

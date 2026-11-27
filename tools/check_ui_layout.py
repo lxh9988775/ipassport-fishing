@@ -113,13 +113,9 @@ ALLOW_OVERLAP = {
     frozenset(("g_menu_selbar", "menu_row3")),
     frozenset(("g_menu_selbar", "menu_row4")),
     frozenset(("g_menu_selbar", "menu_row5")),
-    # 概念图 bevel 卡片三件套：卡片底 / 选中整行浅底 / 左侧红竖条刻意层叠，
-    # 文字（menu_keyN / menu_rowN）压在浅底之上是设计本身。
-    *[frozenset(("g_menu_selbg", "menu_card%d" % i)) for i in range(6)],
+    # 概念图 bevel 卡片：选中态=切换卡片自身底色 + 左侧红竖条（g_menu 级窄条，不与文字同级）。
+    # 旧的 g_menu 级整行覆盖色块已删除（会盖住选中行文字，真机两图证实），故不再列入白名单。
     *[frozenset(("g_menu_selbar", "menu_card%d" % i)) for i in range(6)],
-    frozenset(("g_menu_selbg", "g_menu_selbar")),
-    *[frozenset(("g_menu_selbg", "menu_key%d" % i)) for i in range(6)],
-    *[frozenset(("g_menu_selbg", "menu_row%d" % i)) for i in range(6)],
     *[frozenset(("g_menu_selbar", "menu_key%d" % i)) for i in range(6)],
     *[frozenset(("g_menu_selbar", "menu_row%d" % i)) for i in range(6)],
     frozenset(("g_zone", "g_fishmark")),      # 鱼在捕捉区内是玩法本身
@@ -537,6 +533,39 @@ def check_panel_titles_vs_hud() -> list:
     return problems
 
 
+def check_menu_selection_no_overlay() -> list:
+    """X-05 防线：选中态不得用 g_menu 级覆盖色块压在卡片文字上。
+
+    真机两图证实：选中行整行文字消失。根因是选中浅底色块建在 g_menu 上，
+    与文字的父级(g_menu_cards[N])不同级、且创建在卡片之后，LVGL 里盖住了
+    卡片连同文字。现改为切换卡片自身底色 lv_obj_set_style_bg_color(g_menu_cards[])。
+    这里断言：①g_menu 上不再有宽>=100 的覆盖色块；②卡片底色切换实现仍在；
+    ③key/value 文字挂在 g_menu_cards[N] 上（否则又会被别的父级盖住）。
+    """
+    problems = []
+    src = open(os.path.join(ROOT, "main", "fishing.c"), encoding="utf-8").read()
+    src = re.sub(r"/\*.*?\*/", "", src, flags=re.S)
+    src = re.sub(r"//[^\n]*", "", src)
+
+    for m in re.finditer(
+            r"make_box\(\s*g_menu\s*,\s*(-?\d+)\s*,\s*(-?\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,", src):
+        w = int(m.group(3))
+        if w >= 100:
+            problems.append("[选中覆盖色块] g_menu 上建了宽=%d 的色块，会盖住卡片文字；"
+                            "选中态必须改卡片自身底色" % w)
+
+    if "lv_obj_set_style_bg_color(g_menu_cards[" not in src:
+        problems.append("[选中态缺实现] 未找到切换卡片底色 lv_obj_set_style_bg_color(g_menu_cards[...]")
+
+    n_key = len(re.findall(r'make_label\(\s*g_menu_cards\[\d+\]\s*,\s*"', src))
+    n_val = len(re.findall(r'make_label\(\s*g_menu_cards\[\d+\]\s*,\s*""', src))
+    if n_key < 6:
+        problems.append("[菜单文字父级] 挂在 g_menu_cards[N] 上的 key 文案只有 %d 行（应 6）" % n_key)
+    if n_val < 6:
+        problems.append("[菜单文字父级] 挂在 g_menu_cards[N] 上的 value label 只有 %d 行（应 6）" % n_val)
+    return problems
+
+
 def main() -> int:
     radius = read_radius()
     font = load_font()
@@ -750,6 +779,8 @@ def main() -> int:
     # X-04：匿名 make_label（未赋值的页面标题）不进 parse_source，
     # 曾让"选钓场"压住 HUD 逃过检查。补一道面板标题 vs HUD 的独立断言。
     problems += check_panel_titles_vs_hud()
+    # X-05：g_menu 级覆盖色块曾盖住选中行整行文字（真机两图证实）。独立断言防止回归。
+    problems += check_menu_selection_no_overlay()
 
     print("屏幕 %dx%d，圆角半径 %d px，字库 line_height=%d" %
           (SCR_W, SCR_H, radius, font["line_height"]))

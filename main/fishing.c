@@ -297,7 +297,7 @@ static lv_obj_t *g_menu        = NULL;
 static lv_obj_t *g_menu_rows[6];         /* 右侧 value label（真实游戏状态） */
 static lv_obj_t *g_menu_keys[6];         /* 左侧 key label（固定文案） */
 static lv_obj_t *g_menu_selbar = NULL;   /* 选中行左侧 3px 红竖条 */
-static lv_obj_t *g_menu_selbg  = NULL;   /* 选中行整行浅底 PANEL2 */
+static lv_obj_t *g_menu_cards[6];        /* 6 行卡片：选中态=切换自身底色，不用覆盖色块盖字 */
 static lv_obj_t *g_menu_subtitle = NULL;
 static int g_menu_idx = 0;
 static int g_menu_sel_last = -1;         /* 选中态缓存：只在 idx 变化时碰 LVGL */
@@ -773,43 +773,42 @@ static void build_ui(void) {
     /* 6 行 bevel 卡片：面板内 y = 46 + i*38，行高34；末行底 270 < 面板高274，
      * 底部提示条从屏幕 295（面板 273）起，不压。逐条展开给检查器还原坐标。
      * make_panel 提供上/左亮边，下/右暗边用 1px 色块叠（匿名，不进检查器）。 */
-    lv_obj_t *menu_card0 = make_panel(g_menu, 10, 46, 220, 34, lv_color_make(16, 32, 54));
-    lv_obj_t *menu_card1 = make_panel(g_menu, 10, 84, 220, 34, lv_color_make(16, 32, 54));
-    lv_obj_t *menu_card2 = make_panel(g_menu, 10, 122, 220, 34, lv_color_make(16, 32, 54));
-    lv_obj_t *menu_card3 = make_panel(g_menu, 10, 160, 220, 34, lv_color_make(16, 32, 54));
-    lv_obj_t *menu_card4 = make_panel(g_menu, 10, 198, 220, 34, lv_color_make(16, 32, 54));
-    lv_obj_t *menu_card5 = make_panel(g_menu, 10, 236, 220, 34, lv_color_make(16, 32, 54));
-    lv_obj_t *menu_cards[6] = { menu_card0, menu_card1, menu_card2,
-                                menu_card3, menu_card4, menu_card5 };
+    g_menu_cards[0] = make_panel(g_menu, 10, 46, 220, 34, lv_color_make(16, 32, 54));
+    g_menu_cards[1] = make_panel(g_menu, 10, 84, 220, 34, lv_color_make(16, 32, 54));
+    g_menu_cards[2] = make_panel(g_menu, 10, 122, 220, 34, lv_color_make(16, 32, 54));
+    g_menu_cards[3] = make_panel(g_menu, 10, 160, 220, 34, lv_color_make(16, 32, 54));
+    g_menu_cards[4] = make_panel(g_menu, 10, 198, 220, 34, lv_color_make(16, 32, 54));
+    g_menu_cards[5] = make_panel(g_menu, 10, 236, 220, 34, lv_color_make(16, 32, 54));
     for (int i = 0; i < 6; ++i) {
-        make_box(menu_cards[i], 1, 33, 218, 1, lv_color_make(27, 46, 66));  /* 下暗边 */
-        make_box(menu_cards[i], 219, 1, 1, 32, lv_color_make(27, 46, 66));  /* 右暗边 */
+        make_box(g_menu_cards[i], 1, 33, 218, 1, lv_color_make(27, 46, 66));  /* 下暗边 */
+        make_box(g_menu_cards[i], 219, 1, 1, 32, lv_color_make(27, 46, 66));  /* 右暗边 */
     }
 
-    /* 选中态两层：先建浅底、再建红竖条，均在文字下层（后建的文字盖在上面）。
-     * 只在 g_menu_idx 变化时 set_pos，周期刷新不碰重绘 API。 */
-    g_menu_selbg = make_box(g_menu, 11, 47, 218, 32, lv_color_make(24, 46, 74));
+    /* 选中态：只留左侧 3px 红竖条；整行浅底改为切换卡片自身底色（见 refresh_menu）。
+     * 之前用一块 g_menu 级的覆盖色块，与文字的父级不同、创建在卡片之后，
+     * 结果盖住选中行整行文字 —— 真机两张图证实。现改为卡片自己变色，永不压字。
+     * 只在 g_menu_idx 变化时动，周期刷新不碰重绘 API。 */
     g_menu_selbar = make_box(g_menu, 10, 46, 3, 34, lv_color_make(198, 76, 104));
 
     /* 每行 key（固定）+ value（动态真实状态），相对卡片内坐标。
      * 概念图 key(20,y+9) value(82,y+10) 屏幕坐标 → 卡片内 x=10 / x=72。 */
-    lv_obj_t *menu_key0 = make_label(menu_card0, "开始钓鱼", 10, 9, lv_color_make(232, 240, 248));
-    lv_obj_t *menu_key1 = make_label(menu_card1, "鱼竿", 10, 9, lv_color_make(206, 220, 234));
-    lv_obj_t *menu_key2 = make_label(menu_card2, "饵料", 10, 9, lv_color_make(206, 220, 234));
-    lv_obj_t *menu_key3 = make_label(menu_card3, "钓点", 10, 9, lv_color_make(206, 220, 234));
-    lv_obj_t *menu_key4 = make_label(menu_card4, "图鉴", 10, 9, lv_color_make(206, 220, 234));
-    lv_obj_t *menu_key5 = make_label(menu_card5, "声音", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key0 = make_label(g_menu_cards[0], "开始钓鱼", 10, 9, lv_color_make(232, 240, 248));
+    lv_obj_t *menu_key1 = make_label(g_menu_cards[1], "鱼竿", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key2 = make_label(g_menu_cards[2], "饵料", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key3 = make_label(g_menu_cards[3], "钓点", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key4 = make_label(g_menu_cards[4], "图鉴", 10, 9, lv_color_make(206, 220, 234));
+    lv_obj_t *menu_key5 = make_label(g_menu_cards[5], "声音", 10, 9, lv_color_make(206, 220, 234));
     g_menu_keys[0] = menu_key0; g_menu_keys[1] = menu_key1;
     g_menu_keys[2] = menu_key2; g_menu_keys[3] = menu_key3;
     g_menu_keys[4] = menu_key4; g_menu_keys[5] = menu_key5;
     for (int i = 0; i < 6; ++i) use_cjk12(g_menu_keys[i]);
 
-    lv_obj_t *menu_row0 = make_label(menu_card0, "", 72, 10, lv_color_make(140, 164, 190));
-    lv_obj_t *menu_row1 = make_label(menu_card1, "", 72, 10, lv_color_make(140, 164, 190));
-    lv_obj_t *menu_row2 = make_label(menu_card2, "", 72, 10, lv_color_make(140, 164, 190));
-    lv_obj_t *menu_row3 = make_label(menu_card3, "", 72, 10, lv_color_make(140, 164, 190));
-    lv_obj_t *menu_row4 = make_label(menu_card4, "", 72, 10, lv_color_make(140, 164, 190));
-    lv_obj_t *menu_row5 = make_label(menu_card5, "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row0 = make_label(g_menu_cards[0], "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row1 = make_label(g_menu_cards[1], "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row2 = make_label(g_menu_cards[2], "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row3 = make_label(g_menu_cards[3], "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row4 = make_label(g_menu_cards[4], "", 72, 10, lv_color_make(140, 164, 190));
+    lv_obj_t *menu_row5 = make_label(g_menu_cards[5], "", 72, 10, lv_color_make(140, 164, 190));
     g_menu_rows[0] = menu_row0; g_menu_rows[1] = menu_row1;
     g_menu_rows[2] = menu_row2; g_menu_rows[3] = menu_row3;
     g_menu_rows[4] = menu_row4; g_menu_rows[5] = menu_row5;
@@ -1484,11 +1483,15 @@ static void refresh_menu(const fishing_status_t *st) {
         }
         set_text_cached(g_menu_rows[i], txt);
     }
-    /* 选中态两层跟随光标：只在 idx 真正变化时动，周期刷新不碰 set_pos */
+    /* 选中态：切换卡片自身底色 + 移动左红竖条；只在 idx 真正变化时动。
+     * 旧实现用 g_menu 级覆盖色块，与文字父级不同、建在卡片之后盖住了字 -> 真机选中行空白。 */
     if (g_menu_sel_last != g_menu_idx) {
+        if (g_menu_sel_last >= 0 && g_menu_sel_last < 6) {
+            lv_obj_set_style_bg_color(g_menu_cards[g_menu_sel_last], lv_color_make(16, 32, 54), 0);
+        }
         g_menu_sel_last = g_menu_idx;
+        lv_obj_set_style_bg_color(g_menu_cards[g_menu_idx], lv_color_make(24, 46, 74), 0);
         int sy = 46 + g_menu_idx * 38;
-        lv_obj_set_pos(g_menu_selbg, 11, sy + 1);
         lv_obj_set_pos(g_menu_selbar, 10, sy);
     }
 
