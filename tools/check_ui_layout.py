@@ -536,9 +536,9 @@ def check_panel_titles_vs_hud() -> list:
 def check_menu_selection_no_overlay() -> list:
     """X-05 防线：选中态不得用 g_menu 级覆盖色块压在卡片文字上。
 
-    真机两图证实：选中行整行文字消失。根因是选中浅底色块建在 g_menu 上，
-    与文字的父级(g_menu_cards[N])不同级、且创建在卡片之后，LVGL 里盖住了
-    卡片连同文字。现改为切换卡片自身底色 lv_obj_set_style_bg_color(g_menu_cards[])。
+    真机两图证实：选中第2行则第2行空、选中第1行则第1行空。根因是选中浅底色块
+    建在 g_menu 上，与文字的父级(g_menu_cards[N])不同级、且创建在卡片之后，
+    LVGL 里盖住了卡片连同文字。现改为切换卡片自身底色 lv_obj_set_style_bg_color(g_menu_cards[])。
     这里断言：①g_menu 上不再有宽>=100 的覆盖色块；②卡片底色切换实现仍在；
     ③key/value 文字挂在 g_menu_cards[N] 上（否则又会被别的父级盖住）。
     """
